@@ -1,0 +1,122 @@
+{
+    "$schema": "http://json-schema.org/schema#",
+    "type": "object",
+    "properties": {
+        "datastore": {
+            "type": "object",
+            "properties": {
+                "engine": {
+                    "type": "string",
+                    "enum": ["memory", "postgres", "mysql"],
+                    "default": "memory"
+                },
+                "uri": {
+                    "type":["string", "null"]
+                }
+            }
+        },
+        "grpc": {
+            "type": "object",
+            "properties": {
+                "addr": {
+                    "type": "string",
+                    "default": "0.0.0.0:8081"
+                },
+                "tls": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                }
+            }
+        },
+        "http": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "addr": {
+                    "type": "string",
+                    "default": "0.0.0.0:8080"
+                },
+                "tls": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                },
+                "upstreamTimeout": {
+                    "type": "string"
+                },
+                "corsAllowedOrigins": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "corsAllowedHeaders": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "authn": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "enum": ["none", "preshared", "oidc"]
+                },
+                "preshared": {
+                    "type": "object",
+                    "properties": {
+                        "keys": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minItems": 1
+                            }
+                        }
+                    }
+                },
+                "oidc": {
+                    "type": "object",
+                    "properties": {
+                        "audience": {
+                            "type": ["string", "null"]
+                        },
+                        "issuer": {
+                            "type": ["string", "null"]
+                        }
+                    }
+                }
+            }
+        },
+        "playground": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "port": {
+                    "type": "number",
+                    "default": 3000
+                }
+            }
+        },
+        "metrics": {
+            "type": "object"
+        }
+    }
+}
