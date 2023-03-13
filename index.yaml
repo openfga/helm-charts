@@ -5,6 +5,19 @@ entries:
       artifacthub.io/license: Apache-2.0
     apiVersion: v2
     appVersion: v0.3.6
+    created: "2023-03-13T20:44:32.409491024Z"
+    description: A Kubernetes Helm chart for the OpenFGA project.
+    digest: 475d68da392a3219aa98a7a09a0d7ac46accefef0844262422ade71820662390
+    home: https://openfga.github.io/helm-charts/charts/openfga
+    name: openfga
+    type: application
+    urls:
+    - https://github.com/openfga/helm-charts/releases/download/openfga-0.1.0/openfga-0.1.0.tgz
+    version: 0.1.0
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+    apiVersion: v2
+    appVersion: v0.3.6
     created: "2023-03-13T20:43:31.634702659Z"
     description: A Kubernetes Helm chart for the OpenFGA project.
     digest: b8406285622801b3f02f2f27208840ed3de42f68496ddd59b71e42d35d7eb1cf
@@ -14,4 +27,4 @@ entries:
     urls:
     - https://github.com/openfga/helm-charts/releases/download/openfga-0.0.1/openfga-0.0.1.tgz
     version: 0.0.1
-generated: "2023-03-13T20:43:31.63471416Z"
+generated: "2023-03-13T20:44:32.409498324Z"
