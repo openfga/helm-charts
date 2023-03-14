@@ -18,6 +18,7 @@ entries:
     description: A Kubernetes Helm chart for the OpenFGA project.
     digest: 5ed2d730411e16f80f859e81dd9131f97f38f10ee3f29a402701e62358110080
     home: https://openfga.github.io/helm-charts/charts/openfga
+    icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
     name: openfga
     type: application
     urls:
@@ -31,6 +32,7 @@ entries:
     description: A Kubernetes Helm chart for the OpenFGA project.
     digest: 475d68da392a3219aa98a7a09a0d7ac46accefef0844262422ade71820662390
     home: https://openfga.github.io/helm-charts/charts/openfga
+    icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
     name: openfga
     type: application
     urls:
