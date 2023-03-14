@@ -60,6 +60,14 @@ datastore:
   connMaxIdleTime:
   connMaxLifetime:
 
+postgres:
+  ## @param postgres.enabled Enable the bitnami/postgresql subchart and deploy Postgres
+  enabled: false
+
+mysql:
+  ## @param mysql.enabled Enable the bitnami/mysql subchart and deploy MySQL
+  enabled: false
+
 grpc:
   addr: 0.0.0.0:8081
   tls:

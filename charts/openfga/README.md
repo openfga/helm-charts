@@ -19,6 +19,36 @@ This will deploy a 3-replica deployment of OpenFGA on the Kubernetes cluster usi
 
 > **Tip**: List all releases using `helm list`
 
+
+
+### Installing with Postgres
+If you do not already have a Postgres deployment, you can deploy OpenFGA with Postgres with the following command:
+
+```
+$ helm install openfga openfga/openfga \
+  --set datastore.engine=postgres \
+  --set datastore.uri="postgres://postgres:password@openfga-postgresql.default.svc.cluster.local:5432/postgres?sslmode=disable" \
+  --set postgres.enabled=true \
+  --set postgresql.auth.postgresPassword=password \
+  --set postgresql.auth.database=postgres
+```
+
+This will bootstrap a Postgres deployment using the [`bitnami/postgresql`](https://artifacthub.io/packages/helm/bitnami/postgresql) chart and deploy OpenFGA configured in a way to connect to it.
+
+### Installing with MySQL
+If you do not already have a MySQL deployment, you can deploy OpenFGA with MySQL with the following command:
+
+```
+$ helm install openfga openfga/openfga \
+  --set datastore.engine=mysql \
+  --set datastore.uri="root:password@tcp(openfga-mysql.default.svc.cluster.local:3306)/mysql?parseTime=true" \
+  --set mysql.enabled=true \
+  --set mysql.auth.rootPassword=password \
+  --set mysql.auth.database=mysql
+```
+
+This will bootstrap a MySQL deployment using the [`bitnami/mysql`](https://artifacthub.io/packages/helm/bitnami/mysql) chart and deploy OpenFGA configured in a way to connect to it.
+
 ## Uninstalling the Chart
 To uninstall/delete the `openfga` deployment:
 
