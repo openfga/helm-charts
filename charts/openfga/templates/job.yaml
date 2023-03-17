@@ -1,0 +1,27 @@
+{{- if or .Values.postgres.enabled .Values.mysql.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openfga.fullname" . }}-migrate
+  labels:
+    {{- include "openfga.labels" . | nindent 4 }}
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate-database
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          args: ["migrate"]
+          env:
+            {{- if .Values.datastore.engine }}
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: "{{ .Values.datastore.engine }}"
+            {{- end }}
+
+            {{- if .Values.datastore.uri }}
+            - name: OPENFGA_DATASTORE_URI
+              value: "{{ .Values.datastore.uri }}"
+            {{- end }}
+      restartPolicy: Never
+  backoffLimit: 1
+{{- end }}
