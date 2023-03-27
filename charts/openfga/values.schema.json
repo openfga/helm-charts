@@ -2,6 +2,54 @@
     "$schema": "http://json-schema.org/schema#",
     "type": "object",
     "properties": {
+        "telemetry": {
+            "type": "object",
+            "properties": {
+                "trace": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "enable tracing",
+                            "default": "false"
+                        },
+                        "otlp": {
+                            "type": "object",
+                            "properties": {
+                                "endpoint": {
+                                    "type": ["string", "null"],
+                                    "description": "the grpc endpoint of the OpenTelemetry 'otlp' trace collector"
+                                }
+                            }
+                        },
+                        "sampleRatio": {
+                            "type": ["number", "null"],
+                            "description": "the fraction of traces to sample. 1 means all, 0 means none.",
+                            "default": null
+                        }
+                    }
+                },
+                "metrics": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "enable/disable prometheus metrics on the '/metrics' endpoint",
+                            "default": true
+                        },
+                        "addr": {
+                            "type": "string",
+                            "description": "the host:port address to serve the prometheus metrics server on",
+                            "default": "0.0.0.0:2112"
+                        },
+                        "enableRPCHistograms": {
+                            "type": ["boolean", "null"],
+                            "description": "enables prometheus histogram metrics for RPC latency distributions"
+                        }
+                    }
+                }
+            }
+        },
         "datastore": {
             "type": "object",
             "properties": {
@@ -12,6 +60,50 @@
                 },
                 "uri": {
                     "type":["string", "null"]
+                },
+                "maxCacheSize": {
+                    "type": ["integer", "null"],
+                    "description": "the maximum number of cache keys that the storage cache can store before evicting old keys"
+                },
+                "maxOpenConns": {
+                    "type": ["integer", "null"],
+                    "description": "the maximum number of open connections to the datastore"
+                },
+                "maxIdleConns": {
+                    "type": ["integer", "null"],
+                    "description": "the maximum number of connections to the datastore in the idle connection pool"
+                },
+                "connMaxIdleTime": {
+                    "type": ["string", "null"],
+                    "description": "the maximum amount of time (as a duration) a connection to the datastore may be idle",
+                    "format": "duration",
+                    "examples": ["30s", "1m", "200ms"]
+                },
+                "connMaxLifetime": {
+                    "type": ["string", "null"],
+                    "description": "the maximum amount of time (as a duration) a connection to the datastore may be reused",
+                    "format": "duration",
+                    "examples": ["30s", "1m", "200ms"]
+                }
+            }
+        },
+        "postgres": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "enable the bitnami/postgresql subchart and deploy Postgres",
+                    "default": false
+                }
+            }
+        },
+        "mysql": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "enable the bitnami/mysql subchart and deploy MySQL",
+                    "default": false
                 }
             }
         },
@@ -20,6 +112,7 @@
             "properties": {
                 "addr": {
                     "type": "string",
+                    "description": "the host:port address to serve the grpc server on.",
                     "default": "0.0.0.0:8081"
                 },
                 "tls": {
@@ -27,7 +120,16 @@
                     "properties": {
                         "enabled": {
                             "type": "boolean",
+                            "description": "enables or disables transport layer security (TLS)",
                             "default": false
+                        },
+                        "cert": {
+                            "type": ["string", "null"],
+                            "description": "the (absolute) file path of the certificate to use for the TLS connection"
+                        },
+                        "key": {
+                            "type": ["string", "null"],
+                            "description": "the (absolute) file path of the TLS key that should be used for the TLS connection"
                         }
                     }
                 }
@@ -38,10 +140,12 @@
             "properties": {
                 "enabled": {
                     "type": "boolean",
+                    "description": "enables or disables the OpenFGA HTTP server. If this is set to true then 'grpc.enabled' must be set to true",
                     "default": true
                 },
                 "addr": {
                     "type": "string",
+                    "description": "the host:port address to serve the HTTP server on",
                     "default": "0.0.0.0:8080"
                 },
                 "tls": {
@@ -49,24 +153,38 @@
                     "properties": {
                         "enabled": {
                             "type": "boolean",
+                            "description": "enables or disables transport layer security (TLS)",
                             "default": false
+                        },
+                        "cert": {
+                            "type": ["string", "null"],
+                            "description": "the (absolute) file path of the certificate to use for the TLS connection"
+                        },
+                        "key": {
+                            "type": ["string", "null"],
+                            "description": "the (absolute) file path of the TLS key that should be used for the TLS connection"
                         }
                     }
                 },
                 "upstreamTimeout": {
-                    "type": "string"
+                    "type": ["string", "null"],
+                    "description": "the timeout duration for proxying HTTP requests upstream to the grpc endpoint.",
+                    "format": "duration",
+                    "examples": ["5s", "1m", "200ms"]
                 },
                 "corsAllowedOrigins": {
                     "type": "array",
                     "items": {
                         "type": "string"
-                    }
+                    },
+                    "default": ["*"]
                 },
                 "corsAllowedHeaders": {
                     "type": "array",
                     "items": {
                         "type": "string"
-                    }
+                    },
+                    "default": ["*"]
                 }
             }
         },
@@ -74,14 +192,16 @@
             "type": "object",
             "properties": {
                 "method": {
-                    "type": "string",
-                    "enum": ["none", "preshared", "oidc"]
+                    "type": ["string", "null"],
+                    "description": "the authentication method to use",
+                    "enum": [null, "none", "preshared", "oidc"]
                 },
                 "preshared": {
                     "type": "object",
                     "properties": {
                         "keys": {
                             "type": "array",
+                            "description": "one or more preshared keys to use for authentication (must be set if `authn.method=preshared')",
                             "items": {
                                 "type": "string",
                                 "minItems": 1
@@ -93,10 +213,12 @@
                     "type": "object",
                     "properties": {
                         "audience": {
-                            "type": ["string", "null"]
+                            "type": ["string", "null"],
+                            "description": "the OIDC 'audience' which tokens will be validated against (must be set if `authn.method=oidc`)"
                         },
                         "issuer": {
-                            "type": ["string", "null"]
+                            "type": ["string", "null"],
+                            "description": "the OIDC 'issuer' which tokens will be validated against (must be set if `authn.method=oidc`)"
                         }
                     }
                 }
@@ -107,16 +229,86 @@
             "properties": {
                 "enabled": {
                     "type": "boolean",
+                    "description": "enable/disable the OpenFGA Playground",
                     "default": true
                 },
                 "port": {
                     "type": "number",
+                    "description": "the port to serve the local OpenFGA Playground on",
                     "default": 3000
                 }
             }
         },
-        "metrics": {
-            "type": "object"
+        "profiler": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "enable/disable pprof profiling",
+                    "default": false
+                },
+                "addr": {
+                    "type": "string",
+                    "description": "the host:port address to serve the pprof profiler server on",
+                    "default": "0.0.0.0:3001"
+                }
+            }
+        },
+        "log": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string",
+                    "description": "the log level to set (for production we recommend 'info' level)",
+                    "enum": ["debug", "info", "warn", "error", "panic", "fatal"],
+                    "default": "info"
+                },
+                "format": {
+                    "type": "string",
+                    "description": "the log format to output logs in (for production we recommend 'json' format)",
+                    "enum": ["text", "json"],
+                    "default": "json"
+                }
+            }
+        },
+        "experimentals": {
+            "type": "array",
+            "description": "a list of experimental features to enable",
+            "default": []
+        },
+        "maxTuplesPerWrite": {
+            "type": ["integer", "null"],
+            "description": "the maximum allowed number of tuples per Write transaction"
+        },
+        "maxTypesPerAuthorizationModel": {
+            "type": ["integer", "null"],
+            "description": "the maximum allowed number of type definitions per authorization model"
+        },
+        "changelogHorizonOffset": {
+            "type": ["integer", "null"],
+            "description": "the offset (in minutes) from the current time - changes that occur after this offset will not be included in the response of ReadChanges."
+        },
+        "resolveNodeLimit": {
+            "type": ["integer", "null"],
+            "description": "defines how deeply nested an authorization model can be"
+        },
+        "listObjectsDeadline": {
+            "type": ["string", "null"],
+            "description": "the timeout deadline (as a duration) for serving ListObjects requests",
+            "format": "duration",
+            "examples": ["3s", "1m", "200ms"]
+        },
+        "listObjectsMaxResults": {
+            "type": ["integer", "null"],
+            "description": "the maximum results to return in ListObjects responses"
+        },
+        "allowWriting1_0Models": {
+            "type": ["boolean", "null"],
+            "description": "allow calling WriteAuthorizationModel with models that have 1.0 schema version"
+        },
+        "allowEvaluating1_0Models": {
+            "type": ["boolean", "null"],
+            "description": "allow calling Check, Expand, ListObjects, Write Assertions with models that have 1.0 schema version"
         }
     }
 }

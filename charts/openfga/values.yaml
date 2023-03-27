@@ -36,36 +36,45 @@ service:
   type: ClusterIP
   port: 8080
 
-metrics:
-  ## @param metrics.enabled Expose OpenFGA metrics
-  ##
-  enabled: true
+telemetry:
+  trace:
+    enabled: false
+    otlp:
+      endpoint:
+    sampleRatio:
 
-  ## @param metrics.port The port the '/metrics' endpoint is served on
-  ##
-  port: 2112
+  metrics:
+    ## @param telemetry.metrics.enabled enable/disable prometheus metrics on the '/metrics' endpoint
+    ##
+    enabled: true
 
-  ## @param metrics.podAnnotations [object] Annotations for the Prometheus metrics on etcd pods
-  ##
-  podAnnotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "{{ .Values.containerPorts.prometheus }}"
+    ## @param telemetry.metrics.addr the host:port address to serve the Metrics server on
+    addr: 0.0.0.0:2112
+
+    ## @param telemetry.metrics.enableRPCHistograms enables prometheus histogram metrics for RPC latency distributions
+    enableRPCHistograms:
+
+    ## @param telemetry.metrics.podAnnotations [object] Annotations for the Prometheus metrics on etcd pods
+    ##
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "{{ .Values.containerPorts.prometheus }}"
 
 datastore:
   engine: memory
   uri:
-  maxCacheSize: 100000
+  maxCacheSize:
   maxOpenConns:
   maxIdleConns: 
   connMaxIdleTime:
   connMaxLifetime:
 
 postgres:
-  ## @param postgres.enabled Enable the bitnami/postgresql subchart and deploy Postgres
+  ## @param postgres.enabled enable the bitnami/postgresql subchart and deploy Postgres
   enabled: false
 
 mysql:
-  ## @param mysql.enabled Enable the bitnami/mysql subchart and deploy MySQL
+  ## @param mysql.enabled enable the bitnami/mysql subchart and deploy MySQL
   enabled: false
 
 grpc:
@@ -82,12 +91,12 @@ http:
     enabled: false
     cert:
     key:
-  upstreamTimeout: 5s
+  upstreamTimeout:
   corsAllowedOrigins: ["*"]
   corsAllowedHeaders: ["*"]
 
 authn:
-  method: none
+  method:
   preshared:
     keys: []
   oidc:
@@ -104,21 +113,18 @@ profiler:
 
 log:
   level: info
-  format: text
+  format: json
 
 experimentals: []
 
-maxTuplesPerWrite: 100
-maxTypesPerAuthorizationModel: 100
-changelogHorizonOffset: 0
-resolveNodeLimit: 25
-listObjectsDeadline: 3s
-listObjectsMaxResults: 1000
-
-otel:
-  metrics:
-    endpoint: 0.0.0.0:4317
-    protocol: grpc
+maxTuplesPerWrite:
+maxTypesPerAuthorizationModel:
+changelogHorizonOffset:
+resolveNodeLimit:
+listObjectsDeadline:
+listObjectsMaxResults:
+allowWriting1_0Models:
+allowEvaluating1_0Models:
 
 ingress:
   enabled: false
