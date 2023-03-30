@@ -1,0 +1,21 @@
+apiVersion: v2
+name: openfga-benchmark
+description: A Kubernetes Helm chart to deploy OpenFGA and run the standard benchmark suite against it.
+
+type: application
+version: 0.1.0
+appVersion: "v0.4.2"
+
+home: "https://openfga.github.io/helm-charts/charts/openfga-benchmark"
+icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/signKey: |
+    fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+    url: https://openfga.github.io/helm-charts/pgp-public-key.asc
+
+dependencies:
+  - name: openfga
+    version: "0.1.7"
+    repository: https://openfga.github.io/helm-charts
