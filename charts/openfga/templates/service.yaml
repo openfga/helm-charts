@@ -33,9 +33,9 @@ spec:
       protocol: TCP
     {{- end }}
 
-    {{- if .Values.metrics.enabled }}
+    {{- if .Values.telemetry.metrics.enabled }}
     - name: metrics
-      port: {{ .Values.metrics.port }}
+      port: {{ (split ":" .Values.telemetry.metrics.addr)._1 }}
       targetPort: metrics
       protocol: TCP
     {{- end }}

@@ -19,7 +19,7 @@ spec:
       {{- end }}
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
-        prometheus.io/port: "{{ .Values.metrics.port }}"
+        prometheus.io/port: "{{ (split ":" .Values.telemetry.metrics.addr)._1 }}"
       labels:
         {{- include "openfga.selectorLabels" . | nindent 8 }}
     spec:
@@ -56,12 +56,12 @@ spec:
               protocol: TCP
 
             - name: playground
-              containerPort: {{ (split ":" .Values.profiler.addr)._1 }}
+              containerPort: {{ .Values.playground.port }}
               protocol: TCP
 
-            {{- if .Values.metrics.enabled }}
+            {{- if .Values.telemetry.metrics.enabled }}
             - name: metrics
-              containerPort: {{ .Values.metrics.port }}
+              containerPort: {{ (split ":" .Values.telemetry.metrics.addr)._1 }}
               protocol: TCP
             {{- end }}
 
@@ -129,7 +129,7 @@ spec:
 
             {{- if .Values.http.addr }}
             - name: OPENFGA_HTTP_ADDR
-              value: {{ .Values.http.addr }}
+              value: "{{ .Values.http.addr }}"
             {{- end }}
 
             {{- if .Values.http.tls.enabled }}
@@ -212,7 +212,7 @@ spec:
 
             {{- if .Values.changelogHorizonOffset }}
             - name: OPENFGA_CHANGELOG_HORIZON_OFFSET
-              value: "{{ .Values.changelogHorizonOffset }}""
+              value: "{{ .Values.changelogHorizonOffset }}"
             {{- end }}
 
             {{- if .Values.resolveNodeLimit }}
@@ -230,14 +230,44 @@ spec:
               value: "{{ .Values.listObjectsMaxResults }}"
             {{- end }}
 
-            {{- if .Values.otel.metrics.endpoint }}
-            - name: OPENFGA_OTEL_METRICS_ENDPOINT
-              value: {{ .Values.otel.metrics.endpoint }}
+            {{- if .Values.allowWriting1_0Models }}
+            - name: OPENFGA_ALLOW_WRITING_1_0_MODELS
+              value: "{{ .Values.allowWriting1_0Models }}"
             {{- end }}
 
-            {{- if .Values.otel.metrics.protocol }}
-            - name: OPENFGA_OTEL_METRICS_PROTOCOL
-              value: {{ .Values.otel.metrics.protocol }}
+            {{- if .Values.allowEvaluating1_0Models }}
+            - name: OPENFGA_ALLOW_EVALUATING_1_0_MODELS
+              value: "{{ .Values.allowEvaluating1_0Models }}"
+            {{- end }}
+
+            {{- if .Values.telemetry.metrics.enabled }}
+            - name: OPENFGA_METRICS_ENABLED
+              value: "{{ .Values.telemetry.metrics.enabled }}"
+            {{- end }}
+
+            {{- if .Values.telemetry.metrics.addr }}
+            - name: OPENFGA_METRICS_ADDR
+              value: "{{ .Values.telemetry.metrics.addr }}"
+            {{- end }}
+
+            {{- if .Values.telemetry.metrics.enableRPCHistograms }}
+            - name: OPENFGA_METRICS_ENABLE_RPC_HISTOGRAMS
+              value: "{{ .Values.telemetry.metrics.enableRPCHistograms }}"
+            {{- end }}
+
+            {{- if .Values.telemetry.trace.enabled }}
+            - name: OPENFGA_TRACE_ENABLED
+              value: "{{ .Values.telemetry.trace.enabled }}"
+            {{- end }}
+
+            {{- if .Values.telemetry.trace.otlp.endpoint }}
+            - name: OPENFGA_TRACE_OTLP_ENDPOINT
+              value: {{ .Values.telemetry.trace.otlp.endpoint }}
+            {{- end }}
+
+            {{- if .Values.telemetry.trace.sampleRatio }}
+            - name: OPENFGA_TRACE_SAMPLE_RATIO
+              value: "{{ .Values.telemetry.trace.sampleRatio }}"
             {{- end }}
 
           readinessProbe:
