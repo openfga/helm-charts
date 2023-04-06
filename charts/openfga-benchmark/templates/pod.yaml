@@ -12,7 +12,7 @@ spec:
     image: grafana/k6:0.43.1
     args: ["run", "--out", "cloud", "--env", "API_BASE_URI=http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080", "/etc/scripts/app.bundle.js"]
     volumeMounts:
-    - name: test-script
+    - name: benchmark-script
       mountPath: /etc/scripts
     env:
     - name: K6_CLOUD_PROJECT_ID
@@ -23,7 +23,7 @@ spec:
           name: "{{ .Values.k6.secretKeyName }}"
           key: "{{ .Values.k6.secretKeyToken }}"
   volumes:
-  - name: test-script
+  - name: benchmark-script
     configMap:
-      name: k6-openfga-demo
+      name: openfga-benchmark-script
   restartPolicy: Never

@@ -17,5 +17,5 @@ annotations:
 
 dependencies:
   - name: openfga
-    version: "0.1.7"
+    version: "0.1.9"
     repository: https://openfga.github.io/helm-charts
