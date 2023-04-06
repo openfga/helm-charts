@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: {{ include "openfga-benchmark.fullname" . }}-benchrunner
+  name: {{ include "benchmark.fullname" . }}-benchrunner
 spec:
   initContainers:  
   - name: wait-for-openfga
@@ -10,7 +10,11 @@ spec:
   containers:
   - name: k6
     image: grafana/k6:0.43.1
+    {{- if .Values.k6.projectID }}
     args: ["run", "--out", "cloud", "--env", "API_BASE_URI=http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080", "/etc/scripts/app.bundle.js"]
+    {{ else }}
+    args: ["run", "--env", "API_BASE_URI=http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080", "/etc/scripts/app.bundle.js"]
+    {{- end }}
     volumeMounts:
     - name: benchmark-script
       mountPath: /etc/scripts

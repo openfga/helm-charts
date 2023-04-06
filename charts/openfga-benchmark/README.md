@@ -1,1 +1,0 @@
-# OpenFGA Benchmark Chart
