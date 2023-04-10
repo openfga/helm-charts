@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "benchmark.fullname" . }}-benchrunner
+spec:
+  initContainers:  
+  - name: wait-for-openfga
+    image: groundnuty/k8s-wait-for:v1.6
+    args: ["pod", '-lapp.kubernetes.io/name=openfga']
+  containers:
+  - name: k6
+    image: grafana/k6:0.43.1
+    {{- if .Values.k6.projectID }}
+    args: ["run", "--out", "cloud", "--env", "API_BASE_URI=http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080", "/etc/scripts/app.bundle.js"]
+    {{ else }}
+    args: ["run", "--env", "API_BASE_URI=http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080", "/etc/scripts/app.bundle.js"]
+    {{- end }}
+    volumeMounts:
+    - name: benchmark-script
+      mountPath: /etc/scripts
+    env:
+    - name: K6_CLOUD_PROJECT_ID
+      value: "{{ .Values.k6.projectID }}"
+    - name: K6_CLOUD_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: "{{ .Values.k6.secretKeyName }}"
+          key: "{{ .Values.k6.secretKeyToken }}"
+  volumes:
+  - name: benchmark-script
+    configMap:
+      name: openfga-benchmark-script
+  restartPolicy: Never
