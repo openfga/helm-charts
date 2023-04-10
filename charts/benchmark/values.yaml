@@ -3,7 +3,6 @@ k6:
   secretKeyName: k6-cloud-token
   secretKeyToken: token
 
-
 Nparam: 1
 Mparam: 1
 Kparam: 1
