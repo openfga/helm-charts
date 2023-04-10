@@ -11,14 +11,32 @@ spec:
   - name: k6
     image: grafana/k6:0.43.1
     {{- if .Values.k6.projectID }}
-    args: ["run", "--out", "cloud", "--env", "API_BASE_URI=http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080", "/etc/scripts/app.bundle.js"]
+    args: ["run", "--out", "cloud", "/etc/scripts/app.bundle.js"]
     {{ else }}
-    args: ["run", "--env", "API_BASE_URI=http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080", "/etc/scripts/app.bundle.js"]
+    args: ["run", "/etc/scripts/app.bundle.js"]
     {{- end }}
     volumeMounts:
     - name: benchmark-script
       mountPath: /etc/scripts
     env:
+    - name: API_BASE_URI
+      value: "http://{{ include "openfga.fullname" .Subcharts.openfga }}.default.svc.cluster.local:8080"
+    - name: "N"
+      value: "{{ .Values.Nparam }}"
+    - name: "M"
+      value: "{{ .Values.Mparam }}"
+    - name: "K"
+      value: "{{ .Values.Kparam }}"
+    - name: "TEST_CASE"
+      value: "{{ .Values.testCase }}"
+    {{- if .Values.testCheck }}
+    - name: "TEST_CHECK"
+      value: "{{ .Values.testCheck }}"
+    {{- end }}
+    {{- if .Values.testListObject }}
+    - name: "TEST_LIST_OBJECT"
+      value: {{ .Values.testListObject }}
+    {{- end }}
     - name: K6_CLOUD_PROJECT_ID
       value: "{{ .Values.k6.projectID }}"
     - name: K6_CLOUD_TOKEN
