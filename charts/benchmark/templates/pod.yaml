@@ -35,7 +35,7 @@ spec:
     {{- end }}
     {{- if .Values.testListObject }}
     - name: "TEST_LIST_OBJECT"
-      value: {{ .Values.testListObject }}
+      value: "{{ .Values.testListObject }}"
     {{- end }}
     - name: K6_CLOUD_PROJECT_ID
       value: "{{ .Values.k6.projectID }}"
