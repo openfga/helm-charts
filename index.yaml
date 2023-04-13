@@ -7,6 +7,28 @@ entries:
         fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
         url: https://openfga.github.io/helm-charts/pgp-public-key.asc
     apiVersion: v2
+    appVersion: v0.4.3
+    created: "2023-04-13T20:54:13.660810282Z"
+    dependencies:
+    - name: openfga
+      repository: https://openfga.github.io/helm-charts
+      version: 0.1.9
+    description: A Kubernetes Helm chart to deploy OpenFGA and run the standard benchmark
+      suite against it.
+    digest: 73901f8ba40358bd49aa2ed5840953dd79aeab7077d2ddf3d03a321c8adcbcce
+    home: https://openfga.github.io/helm-charts/charts/benchmark
+    icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+    name: benchmark
+    type: application
+    urls:
+    - https://github.com/openfga/helm-charts/releases/download/benchmark-0.0.4/benchmark-0.0.4.tgz
+    version: 0.0.4
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/signKey: |
+        fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+        url: https://openfga.github.io/helm-charts/pgp-public-key.asc
+    apiVersion: v2
     appVersion: v0.4.2
     created: "2023-04-11T15:13:59.823286705Z"
     dependencies:
@@ -261,4 +283,4 @@ entries:
     urls:
     - https://github.com/openfga/helm-charts/releases/download/openfga-0.1.0/openfga-0.1.0.tgz
     version: 0.1.0
-generated: "2023-04-11T15:13:59.823314005Z"
+generated: "2023-04-13T20:54:13.660999583Z"
