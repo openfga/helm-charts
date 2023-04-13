@@ -2,6 +2,7 @@ k6:
   projectID:
   secretKeyName: k6-cloud-token
   secretKeyToken: token
+  setupTimeoutInSeconds: 1200
 
 Nparam: 1
 Mparam: 1
