@@ -45,7 +45,7 @@ spec:
           name: "{{ .Values.k6.secretKeyName }}"
           key: "{{ .Values.k6.secretKeyToken }}"
     - name: K6_SETUP_TIMEOUT
-      value: "{{ .values.setupTimeout }}"
+      value: "{{ .values.k6.setupTimeoutInSeconds }}"
   volumes:
   - name: benchmark-script
     configMap:

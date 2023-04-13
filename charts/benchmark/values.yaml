@@ -2,6 +2,7 @@ k6:
   projectID:
   secretKeyName: k6-cloud-token
   secretKeyToken: token
+  setupTimeoutInSeconds: 1200
 
 Nparam: 1
 Mparam: 1
@@ -9,4 +10,3 @@ Kparam: 1
 testCase: 1
 testCheck: true
 testListObject: false
-setupTimeout: 1200
