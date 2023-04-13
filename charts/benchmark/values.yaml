@@ -9,3 +9,4 @@ Kparam: 1
 testCase: 1
 testCheck: true
 testListObject: false
+setupTimeout: 1200
