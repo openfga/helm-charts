@@ -3,8 +3,8 @@ name: openfga
 description: A Kubernetes Helm chart for the OpenFGA project.
 
 type: application
-version: 0.1.9
-appVersion: "v0.4.2"
+version: 0.1.10
+appVersion: "v0.4.3"
 
 home: "https://openfga.github.io/helm-charts/charts/openfga"
 icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
