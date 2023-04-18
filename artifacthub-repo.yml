@@ -5,4 +5,4 @@ owners:
   - name: jon-whit
     email: jon.b.whitaker@gmail.com
 ignore:
-  - name: openfga-benchmark
+  - name: benchmark
