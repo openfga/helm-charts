@@ -7,6 +7,28 @@ entries:
         fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
         url: https://openfga.github.io/helm-charts/pgp-public-key.asc
     apiVersion: v2
+    appVersion: v1.0.1
+    created: "2023-04-18T19:29:08.565644591Z"
+    dependencies:
+    - name: openfga
+      repository: https://openfga.github.io/helm-charts
+      version: 0.1.9
+    description: A Kubernetes Helm chart to deploy OpenFGA and run the standard benchmark
+      suite against it.
+    digest: dc6b880fc5329da7e377347154f5465f65af45ffa0c0f4948dc7a2cdeb433066
+    home: https://openfga.github.io/helm-charts/charts/benchmark
+    icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+    name: benchmark
+    type: application
+    urls:
+    - https://github.com/openfga/helm-charts/releases/download/benchmark-0.0.7/benchmark-0.0.7.tgz
+    version: 0.0.7
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/signKey: |
+        fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+        url: https://openfga.github.io/helm-charts/pgp-public-key.asc
+    apiVersion: v2
     appVersion: v0.4.3
     created: "2023-04-14T16:54:46.752198483Z"
     dependencies:
@@ -134,6 +156,32 @@ entries:
     - https://github.com/openfga/helm-charts/releases/download/benchmark-0.0.1/benchmark-0.0.1.tgz
     version: 0.0.1
   openfga:
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/signKey: |
+        fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+        url: https://openfga.github.io/helm-charts/pgp-public-key.asc
+    apiVersion: v2
+    appVersion: v1.0.1
+    created: "2023-04-18T19:29:08.742147405Z"
+    dependencies:
+    - condition: postgres.enabled
+      name: postgresql
+      repository: https://charts.bitnami.com/bitnami
+      version: 12.2.3
+    - condition: mysql.enabled
+      name: mysql
+      repository: https://charts.bitnami.com/bitnami
+      version: 9.6.0
+    description: A Kubernetes Helm chart for the OpenFGA project.
+    digest: 6cb5a066acfb1672744af16d1b1ffe962db79019993f05d83afc9ecc02102952
+    home: https://openfga.github.io/helm-charts/charts/openfga
+    icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+    name: openfga
+    type: application
+    urls:
+    - https://github.com/openfga/helm-charts/releases/download/openfga-0.1.11/openfga-0.1.11.tgz
+    version: 0.1.11
   - annotations:
       artifacthub.io/license: Apache-2.0
       artifacthub.io/signKey: |
@@ -353,4 +401,4 @@ entries:
     urls:
     - https://github.com/openfga/helm-charts/releases/download/openfga-0.1.0/openfga-0.1.0.tgz
     version: 0.1.0
-generated: "2023-04-14T16:54:46.752234585Z"
+generated: "2023-04-18T19:29:08.742279107Z"
