@@ -272,7 +272,7 @@ spec:
 
           readinessProbe:
             exec:
-              command: ["/bin/grpc_health_probe", "-addr={{ .Values.grpc.addr }}"]
+              command: ["/usr/local/bin/grpc_health_probe", "-addr={{ .Values.grpc.addr }}"]
             initialDelaySeconds: 5
 
           resources:
