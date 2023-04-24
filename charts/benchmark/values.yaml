@@ -10,3 +10,5 @@ Kparam: 1
 testCase: 1
 testCheck: true
 testListObject: false
+tuplesPerWrite: 100
+tuplesPosition: start

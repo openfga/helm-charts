@@ -29,6 +29,10 @@ spec:
       value: "{{ .Values.Kparam }}"
     - name: "TEST_CASE"
       value: "{{ .Values.testCase }}"
+    - name: "TUPLES_PER_WRITE"
+      value: "{{ .Values.tuplesPerWrite }}"
+    - name: "POSITION"
+      value: "{{ .Values.tuplesPosition }}"
     {{- if .Values.testCheck }}
     - name: "TEST_CHECK"
       value: "{{ .Values.testCheck }}"
