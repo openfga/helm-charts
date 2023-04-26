@@ -63,6 +63,7 @@ telemetry:
 datastore:
   engine: memory
   uri:
+  uriSecret:
   maxCacheSize:
   maxOpenConns:
   maxIdleConns: 
