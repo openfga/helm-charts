@@ -61,6 +61,10 @@
                 "uri": {
                     "type":["string", "null"]
                 },
+                "uriSecret": {
+                    "type":["string", "null"],
+                    "description": "the secret name where to get the datastore URI, it expects a key named uri to exist in the secret"
+                },
                 "maxCacheSize": {
                     "type": ["integer", "null"],
                     "description": "the maximum number of cache keys that the storage cache can store before evicting old keys"
