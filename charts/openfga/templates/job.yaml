@@ -5,6 +5,10 @@ metadata:
   name: {{ include "openfga.fullname" . }}-migrate
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install, pre-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-weight: "1"
 spec:
   template:
     spec:
