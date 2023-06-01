@@ -1,4 +1,4 @@
-{{- if or .Values.postgres.enabled .Values.mysql.enabled -}}
+{{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
