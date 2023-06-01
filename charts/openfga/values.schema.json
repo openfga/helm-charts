@@ -313,6 +313,40 @@
         "allowEvaluating1_0Models": {
             "type": ["boolean", "null"],
             "description": "allow calling Check, Expand, ListObjects, Write Assertions with models that have 1.0 schema version"
+        },
+        "annotations": {
+            "type": "object",
+            "description": "Map of annotations to add to the deployment's manifest",
+            "additionalProperties": { "type": "string" },
+            "default": { }
+        },
+        "podAnnotations": {
+            "type": "object",
+            "description": "Map of annotations to add to the pods' manifest",
+            "additionalProperties": { "type": "string" },
+            "default": { }
+        },
+        "service": {
+            "type": "object",
+            "properties": {
+                "annotations": {
+                    "type": "object",
+                    "description": "Map of annotations to add to the service's manifest",
+                    "additionalProperties": { "type": "string" },
+                    "default": { }
+                }
+            }
+        },
+        "ingress": {
+            "type": "object",
+            "properties": {
+                "annotations": {
+                    "type": "object",
+                    "description": "Map of annotations to add to the ingress' manifest",
+                    "additionalProperties": { "type": "string" },
+                    "default": { }
+                }
+            }
         }
     }
 }
