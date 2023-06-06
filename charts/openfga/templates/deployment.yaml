@@ -30,7 +30,7 @@ spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if or .Values.postgres.enabled .Values.mysql.enabled }}
+      {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations }}
       initContainers:
         - name: wait-for-migration
           image: groundnuty/k8s-wait-for:v1.6

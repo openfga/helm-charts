@@ -69,6 +69,7 @@ datastore:
   maxIdleConns: 
   connMaxIdleTime:
   connMaxLifetime:
+  applyMigrations: false
 
 postgres:
   ## @param postgres.enabled enable the bitnami/postgresql subchart and deploy Postgres

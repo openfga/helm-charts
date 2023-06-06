@@ -88,6 +88,11 @@
                     "description": "the maximum amount of time (as a duration) a connection to the datastore may be reused",
                     "format": "duration",
                     "examples": ["30s", "1m", "200ms"]
+                },
+                "applyMigrations": {
+                    "type": "boolean",
+                    "description": "enable/disable the job that runs migrations in the datastore",
+                    "default": false
                 }
             }
         },
