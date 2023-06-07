@@ -10,6 +10,11 @@ spec:
   containers:
   - name: k6
     image: grafana/k6:0.43.1
+    resources:
+      requests:
+        memory: "256Mi"
+      limits:
+        memory: "512Mi"
     {{- if .Values.k6.projectID }}
     args: ["run", "--out", "cloud", "/etc/scripts/app.bundle.js"]
     {{ else }}
