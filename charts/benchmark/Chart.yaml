@@ -3,7 +3,7 @@ name: benchmark
 description: A Kubernetes Helm chart to deploy OpenFGA and run the standard benchmark suite against it.
 
 type: application
-version: 0.0.11
+version: 0.0.12
 appVersion: "v1.0.1"
 
 home: "https://openfga.github.io/helm-charts/charts/benchmark"

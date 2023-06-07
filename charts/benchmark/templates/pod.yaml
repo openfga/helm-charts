@@ -12,9 +12,9 @@ spec:
     image: grafana/k6:0.43.1
     resources:
       requests:
-        memory: "256Mi"
+        memory: {{ .Values.resources.requests.memory }}
       limits:
-        memory: "512Mi"
+        memory: {{ .Values.resources.limits.memory }}
     {{- if .Values.k6.projectID }}
     args: ["run", "--out", "cloud", "/etc/scripts/app.bundle.js"]
     {{ else }}
