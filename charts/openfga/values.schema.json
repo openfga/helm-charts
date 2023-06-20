@@ -92,7 +92,7 @@
                 "applyMigrations": {
                     "type": "boolean",
                     "description": "enable/disable the job that runs migrations in the datastore",
-                    "default": false
+                    "default": true
                 }
             }
         },
