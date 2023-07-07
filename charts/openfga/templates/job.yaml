@@ -10,6 +10,8 @@ spec:
     spec:
       containers:
         - name: migrate-database
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           args: ["migrate"]
           env:
