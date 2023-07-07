@@ -37,6 +37,8 @@ spec:
       {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations }}
       initContainers:
         - name: wait-for-migration
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           image: groundnuty/k8s-wait-for:v1.6
           args: ["job", '{{ include "openfga.fullname" . }}-migrate']
       {{- end }}
