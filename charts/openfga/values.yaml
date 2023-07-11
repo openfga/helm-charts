@@ -39,6 +39,11 @@ service:
   type: ClusterIP
   port: 8080
 
+deployment:
+  extraEnvVars: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
 telemetry:
   trace:
     enabled: false
