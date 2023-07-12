@@ -282,6 +282,10 @@ spec:
               value: "{{ .Values.telemetry.trace.sampleRatio }}"
             {{- end }}
 
+            {{- with .Values.deployment.extraEnvVars }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+
           readinessProbe:
             exec:
               command: ["grpc_health_probe", "-addr={{ .Values.grpc.addr }}"]
@@ -289,6 +293,15 @@ spec:
 
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.deployment.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+      {{- with .Values.deployment.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
