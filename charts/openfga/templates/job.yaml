@@ -8,6 +8,7 @@ metadata:
 spec:
   template:
     spec:
+      serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       containers:
         - name: migrate-database
           securityContext:
