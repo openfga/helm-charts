@@ -222,7 +222,7 @@ tolerations: []
 
 affinity: {}
 
-# @param sidecars Add additional sidecar containers to the Keycloak pods
+# @param sidecars Add additional sidecar containers to the pods
 # Example:
 # sidecars:
 #   - name: your-image-name
