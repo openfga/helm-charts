@@ -221,3 +221,14 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# @param sidecars Add additional sidecar containers to the Keycloak pods
+# Example:
+# sidecars:
+#   - name: your-image-name
+#     image: your-image
+#     imagePullPolicy: Always
+#     ports:
+#       - name: portname
+#         containerPort: 1234
+sidecars: []
