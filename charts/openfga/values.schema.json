@@ -352,6 +352,126 @@
                     "default": { }
                 }
             }
+        },
+        "livenessProbe": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable liveness probes on OpenFGA containers."
+                },
+                "initialDelaySeconds": {
+                    "type": "number",
+                    "default": 60,
+                    "description": "Number of seconds after the container has started before liveness probes are initiated."
+                },
+                "periodSeconds": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "How often (in seconds) to perform the probe."
+                },
+                "timeoutSeconds": {
+                    "type": "number",
+                    "default": 5,
+                    "duration": "Number of seconds after which the probe times out."
+                },
+                "failureThreshold": {
+                    "type": "number",
+                    "default": 12,
+                    "description": "Failure threshold for liveness probes."
+                },
+                "successThreshold": {
+                    "type": "number",
+                    "default": 1,
+                    "description": "Success threshold for liveness probes."
+                }
+            }
+        },
+        "readinessProbe": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable readiness probes on OpenFGA containers."
+                },
+                "initialDelaySeconds": {
+                    "type": "number",
+                    "default": 5,
+                    "description": "Number of seconds after the container has started before readiness probes are initiated."
+                },
+                "periodSeconds": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "How often (in seconds) to perform the probe."
+                },
+                "timeoutSeconds": {
+                    "type": "number",
+                    "default": 5,
+                    "description": "Number of seconds after which the probe times out."
+                },
+                "failureThreshold": {
+                    "type": "number",
+                    "default": 6,
+                    "description": "Failure threshold for readiness probes."
+                },
+                "successThreshold": {
+                    "type": "number",
+                    "default": 1,
+                    "description": "Success threshold for readiness probes."
+                }
+            }
+        },
+        "startupProbe": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable startup probes on OpenFGA containers."
+                },
+                "initialDelaySeconds": {
+                    "type": "number",
+                    "default": 60,
+                    "description": "Number of seconds after the container has started before startup probes are initiated."
+                },
+                "periodSeconds": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "How often (in seconds) to perform the probe."
+                },
+                "timeoutSeconds": {
+                    "type": "number",
+                    "default": 5,
+                    "description": "Number of seconds after which the probe times out."
+                },
+                "failureThreshold": {
+                    "type": "number",
+                    "default": 30,
+                    "description": "Failure threshold for readiness probes."
+                },
+                "successThreshold": {
+                    "type": "number",
+                    "default": 1,
+                    "description": "Success threshold for readiness probes."
+                }
+            }
+        },
+        "customLivenessProbe": {
+            "type": "object",
+            "default": null,
+            "description": "Overrides the default liveness probe with a custom one."
+        },
+        "customReadinessProbe": {
+            "type": "object",
+            "default": null,
+            "description": "Overrides the default readiness probe with a custom one."
+        },
+        "customStartupProbe": {
+            "type": "object",
+            "default": null,
+            "description": "Overrides the default startup probe with a custom one."
         }
     }
 }

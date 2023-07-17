@@ -34,6 +34,66 @@ securityContext: {}
   # runAsNonRoot: true
   # runAsUser: 1000
 
+## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes
+
+## @param livenessProbe.enabled Enable liveness probes on OpenFGA containers.
+## @param livenessProbe.initialDelaySeconds Number of seconds after the container has started before liveness probes are initiated.
+## @param livenessProbe.periodSeconds How often (in seconds) to perform the probe.
+## @param livenessProbe.timeoutSeconds Number of seconds after which the probe times out.
+## @param livenessProbe.failureThreshold Failure threshold for liveness probes.
+## @param livenessProbe.successThreshold Success threshold for liveness probes.
+##
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 12
+  successThreshold: 1
+
+## @param readinessProbe.enabled Enable readiness probes on OpenFGA containers.
+## @param readinessProbe.initialDelaySeconds Number of seconds after the container has started before readiness probes are initiated.
+## @param readinessProbe.periodSeconds How often (in seconds) to perform the probe.
+## @param readinessProbe.timeoutSeconds Number of seconds after which the probe times out.
+## @param readinessProbe.failureThreshold Failure threshold for readiness probes.
+## @param readinessProbe.successThreshold Success threshold for readiness probes.
+##
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+## @param startupProbe.enabled Enable startup probes on OpenFGA containers.
+## @param startupProbe.initialDelaySeconds Number of seconds after the container has started before startup probes are initiated.
+## @param startupProbe.periodSeconds How often (in seconds) to perform the probe.
+## @param startupProbe.timeoutSeconds Number of seconds after which the probe times out.
+## @param startupProbe.failureThreshold Failure threshold for startup probes.
+## @param startupProbe.successThreshold Success threshold for startup probes.
+##
+startupProbe:
+  enabled: false
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+
+## @param customLivenessProbe Overrides the default liveness probe with a custom one.
+##
+customLivenessProbe: {}
+
+## @param customReadinessProbe Overrides the default readiness probe with a custom one.
+##
+customReadinessProbe: {}
+
+## @param customStartupProbe Overrides the default startup probe with a custom one.
+##
+customStartupProbe: {}
+
 service:
   annotations: {}
   type: ClusterIP

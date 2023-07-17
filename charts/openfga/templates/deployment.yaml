@@ -282,10 +282,29 @@ spec:
               value: "{{ .Values.telemetry.trace.sampleRatio }}"
             {{- end }}
 
-          readinessProbe:
+          {{- if .Values.customReadinessProbe }}
+          readinessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customReadinessProbe "context" $) | nindent 12 }}
+          {{- else if .Values.readinessProbe.enabled }}
+          readinessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.readinessProbe "enabled") "context" $) | nindent 12 }}
             exec:
               command: ["grpc_health_probe", "-addr={{ .Values.grpc.addr }}"]
-            initialDelaySeconds: 5
+          {{- end }}
+
+          {{- if .Values.customLivenessProbe }}
+          livenessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customLivenessProbe "context" $) | nindent 12 }}
+          {{- else if .Values.livenessProbe.enabled }}
+          livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.livenessProbe "enabled") "context" $) | nindent 12 }}
+            grpc:
+              port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
+
+          {{- if .Values.customStartupProbe }}
+          startupProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customStartupProbe "context" $) | nindent 12 }}
+          {{- else if .Values.startupProbe.enabled }}
+          startupProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.startupProbe "enabled") "context" $) | nindent 12 }}
+            grpc:
+              port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
 
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
