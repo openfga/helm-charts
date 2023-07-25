@@ -353,7 +353,6 @@
                 }
             }
         },
-<<<<<<< HEAD
         "livenessProbe": {
             "type": "object",
             "properties": {
@@ -473,7 +472,6 @@
             "type": "object",
             "default": null,
             "description": "Overrides the default startup probe with a custom one."
-=======
         "sidecars": {
             "type": "array",
             "description": "add additional sidecar containers to the pods",
@@ -488,7 +486,6 @@
                     "default": []
                 }
             }
->>>>>>> 445ce8a (updated based on comments)
         }
     }
 }
