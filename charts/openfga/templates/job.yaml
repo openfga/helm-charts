@@ -31,7 +31,7 @@ spec:
                   name: "{{ .Values.datastore.uriSecret }}"
                   key: "uri"
             {{- end }}
-        {{- if .Values.migrateSidecars }}
+        {{- if .Values.migrate.sidecars }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.sidecars "context" $) | nindent 8 }}
         {{- end }}
       restartPolicy: Never
