@@ -190,12 +190,10 @@ spec:
               value: {{ .Values.authn.oidc.issuer }}
             {{- end }}
 
-            {{- if .Values.playground.enabled }}
             - name: OPENFGA_PLAYGROUND_ENABLED
               value: "{{ .Values.playground.enabled }}"
             - name: OPENFGA_PLAYGROUND_PORT
               value: "{{ .Values.playground.port }}"
-            {{- end }}
 
             {{- if .Values.profiler.enabled }}
             - name: OPENFGA_PROFILER_ENABLED
