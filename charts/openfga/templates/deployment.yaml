@@ -115,7 +115,7 @@ spec:
 
             {{- if .Values.experimentals }}
             - name: OPENFGA_EXPERIMENTALS
-              value: {{ .Values.experimentals }}
+              value: "{{ join "," .Values.experimentals }}"
             {{- end }}
 
             {{- if .Values.grpc.addr }}
@@ -126,7 +126,7 @@ spec:
             {{- if .Values.grpc.tls.enabled }}
             - name: OPENFGA_GRPC_TLS_ENABLED
               value: {{ .Values.grpc.tls.enabled }}
-            
+
             - name: OPENFGA_GRPC_TLS_CERT
               value: {{ .Values.grpc.tls.cert }}
 
@@ -150,7 +150,7 @@ spec:
 
             - name: OPENFGA_HTTP_TLS_CERT
               value: {{ .Values.http.tls.cert }}
-            
+
             - name: OPENFGA_HTTP_TLS_KEY
               value: {{ .Values.http.tls.key }}
             {{- end }}
