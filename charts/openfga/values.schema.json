@@ -494,34 +494,29 @@
                 "default": { }
             }
         },
-        "deployment": {
-            "type": "object",
-            "properties": {
-                "extraEnvVars": {
-                    "type": "array",
-                    "description": "List of additional environment variables to add to the deployment's main container",
-                    "items": {
-                        "type": "object"
-                    },
-                    "default": []
-                },
-                "extraVolumes": {
-                    "type": "array",
-                    "description": "Lis of additional volumes to add to the deployment",
-                    "items": {
-                        "type": "object"
-                    },
-                    "default": []
-                },
-                "extraVolumeMounts": {
-                    "type": "array",
-                    "description": "Lis of additional volumes to add to the deployment",
-                    "items": {
-                        "type": "object"
-                    },
-                    "default": []
-                }
-            }
+        "extraEnvVars": {
+            "type": "array",
+            "description": "List of additional environment variables to add to the deployment's main container",
+            "items": {
+                "type": "object"
+            },
+            "default": []
+        },
+        "extraVolumeMounts": {
+            "type": "array",
+            "description": "Lis of additional volumes to add to the deployment",
+            "items": {
+                "type": "object"
+            },
+            "default": []
+        },
+        "extraVolumes": {
+            "type": "array",
+            "description": "Lis of additional volumes to add to the deployment",
+            "items": {
+                "type": "object"
+            },
+            "default": []
         }
     }
 }

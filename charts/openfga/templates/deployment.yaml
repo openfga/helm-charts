@@ -280,7 +280,7 @@ spec:
               value: "{{ .Values.telemetry.trace.sampleRatio }}"
             {{- end }}
 
-            {{- with .Values.deployment.extraEnvVars }}
+            {{- with .Values.extraEnvVars }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
 
@@ -311,7 +311,7 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
 
-          {{- with .Values.deployment.extraVolumeMounts }}
+          {{- with .Values.extraVolumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -320,7 +320,7 @@ spec:
         {{- include "common.tplvalues.render" ( dict "value" .Values.sidecars "context" $) | nindent 8 }}
         {{- end }}
 
-      {{- with .Values.deployment.extraVolumes }}
+      {{- with .Values.extraVolumes }}
       volumes:
         {{- toYaml . | nindent 8 }}
       {{- end }}

@@ -23,6 +23,10 @@ annotations: {}
 
 podAnnotations: {}
 
+extraEnvVars: []
+extraVolumes: []
+extraVolumeMounts: []
+
 podSecurityContext: {}
   # fsGroup: 2000
 
@@ -98,11 +102,6 @@ service:
   annotations: {}
   type: ClusterIP
   port: 8080
-
-deployment:
-  extraEnvVars: []
-  extraVolumes: []
-  extraVolumeMounts: []
 
 telemetry:
   trace:
