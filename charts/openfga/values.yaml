@@ -234,3 +234,4 @@ affinity: {}
 sidecars: []
 migrate:
   sidecars: []
+  annotations: {}
