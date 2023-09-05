@@ -146,6 +146,7 @@ mysql:
   ## @param mysql.enabled enable the bitnami/mysql subchart and deploy MySQL
   enabled: false
 
+
 grpc:
   addr: 0.0.0.0:8081
   tls:
