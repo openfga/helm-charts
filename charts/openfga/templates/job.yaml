@@ -5,6 +5,10 @@ metadata:
   name: {{ include "openfga.fullname" . }}-migrate
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+  {{- with .Values.migrate.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   template:
     spec:

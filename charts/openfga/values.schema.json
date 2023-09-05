@@ -486,6 +486,12 @@
                     "description": "add additional sidecar containers to the migration job",
                     "default": []
                 }
+            },
+            "annotations": {
+                "type": "object",
+                "description": "Map of annotations to add to the migration job's manifest",
+                "additionalProperties": { "type": "string" },
+                "default": { }
             }
         }
     }
