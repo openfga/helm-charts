@@ -23,6 +23,10 @@ annotations: {}
 
 podAnnotations: {}
 
+extraEnvVars: []
+extraVolumes: []
+extraVolumeMounts: []
+
 podSecurityContext: {}
   # fsGroup: 2000
 
