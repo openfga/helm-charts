@@ -11,6 +11,11 @@ metadata:
   {{- end }}
 spec:
   template:
+    metadata:
+      {{- with .Values.migrate.annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       containers:
