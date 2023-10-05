@@ -108,6 +108,8 @@ telemetry:
     enabled: false
     otlp:
       endpoint:
+      tls:
+        enabled: false
     sampleRatio:
 
   metrics:
@@ -133,7 +135,7 @@ datastore:
   uriSecret:
   maxCacheSize:
   maxOpenConns:
-  maxIdleConns: 
+  maxIdleConns:
   connMaxIdleTime:
   connMaxLifetime:
   applyMigrations: true
@@ -151,7 +153,7 @@ grpc:
   tls:
     enabled: false
     cert:
-    key: 
+    key:
 
 http:
   enabled: true
@@ -184,14 +186,24 @@ log:
   level: info
   format: json
 
+checkQueryCache:
+  enabled: false
+  limit:
+  ttl:
+
 experimentals: []
 
 maxTuplesPerWrite:
 maxTypesPerAuthorizationModel:
+maxAuthorizationModelSizeInBytes:
+maxConcurrentReadsForCheck:
+maxConcurrentReadsForListObjects:
 changelogHorizonOffset:
 resolveNodeLimit:
+resolveNodeBreadthLimit:
 listObjectsDeadline:
 listObjectsMaxResults:
+requestDurationDatastoreQueryCountBuckets: [50, 200]
 allowWriting1_0Models:
 allowEvaluating1_0Models:
 

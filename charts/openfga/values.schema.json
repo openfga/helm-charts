@@ -19,6 +19,16 @@
                                 "endpoint": {
                                     "type": ["string", "null"],
                                     "description": "the grpc endpoint of the OpenTelemetry 'otlp' trace collector"
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean",
+                                            "description": "whether to use TLS connection for the trace collector",
+                                            "default": false
+                                        }
+                                    }
                                 }
                             }
                         },
@@ -280,6 +290,27 @@
                 }
             }
         },
+        "checkQueryCache": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "when executing Check and ListObjects requests, enables caching. This will turn Check and ListObjects responses into eventually consistent responses",
+                    "default": "false"
+                },
+                "limit": {
+                    "type": ["integer", "null"],
+                    "description": "if caching of Check and ListObjects calls is enabled, this is the size limit (in items) of the cache",
+                    "default": "10000"
+                },
+                "ttl": {
+                    "type": ["string", "null"],
+                    "description": "if caching of Check and ListObjects is enabled, this is the TTL of each value",
+                    "format": "duration",
+                    "default": "10s"
+                }
+            }
+        },
         "experimentals": {
             "type": "array",
             "description": "a list of experimental features to enable",
@@ -293,6 +324,20 @@
             "type": ["integer", "null"],
             "description": "the maximum allowed number of type definitions per authorization model"
         },
+        "maxAuthorizationModelSizeInBytes": {
+            "type": ["integer", "null"],
+            "description": "the maximum size in bytes allowed for persisting an authorization model"
+        },
+        "maxConcurrentReadsForCheck": {
+            "type": ["integer", "null"],
+            "description": "the maximum allowed number of concurrent reads in a single Check query",
+            "default": 4294967295
+        },
+        "maxConcurrentReadsForListObjects": {
+            "type": ["integer", "null"],
+            "description": "the maximum allowed number of concurrent reads in a single ListObjects query",
+            "default": 4294967295
+        },
         "changelogHorizonOffset": {
             "type": ["integer", "null"],
             "description": "the offset (in minutes) from the current time - changes that occur after this offset will not be included in the response of ReadChanges."
@@ -300,6 +345,11 @@
         "resolveNodeLimit": {
             "type": ["integer", "null"],
             "description": "defines how deeply nested an authorization model can be"
+        },
+        "resolveNodeBreadthLimit": {
+            "type": ["integer", "null"],
+            "description": "defines how many nodes on a given level can be evaluated concurrently in a Check resolution tree.",
+            "default": 100
         },
         "listObjectsDeadline": {
             "type": ["string", "null"],
@@ -310,6 +360,16 @@
         "listObjectsMaxResults": {
             "type": ["integer", "null"],
             "description": "the maximum results to return in ListObjects responses"
+        },
+        "requestDurationDatastoreQueryCountBuckets": {
+            "description": "datastore query count buckets used to label the histogram metric for measuring request duration.",
+            "type": "array",
+            "items": {
+                "minimum": 0,
+                "type": "integer"
+            },
+            "minItems": 1,
+            "default": [50, 200]
         },
         "allowWriting1_0Models": {
             "type": ["boolean", "null"],
