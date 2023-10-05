@@ -11,5 +11,5 @@ spec:
     - name: wget
       image: busybox
       command: ['wget']
-      args: ['{{ include "openfga.fullname" . }}:{{ .Values.service.port }}']
+      args: ['--spider', '{{ include "openfga.fullname" . }}:{{ .Values.service.port }}/healthz']
   restartPolicy: Never
