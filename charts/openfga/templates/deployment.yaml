@@ -305,9 +305,9 @@ spec:
               value: {{ .Values.telemetry.trace.otlp.endpoint }}
             {{- end }}
 
-            {{- if .Values.telemetry.trace.otlp.tls }}
+            {{- if .Values.telemetry.trace.otlp.tls.enabled }}
             - name: OPENFGA_TRACE_OTLP_TLS_ENABLED
-              value: {{ .Values.telemetry.trace.otlp.tls }}
+              value: {{ .Values.telemetry.trace.otlp.tls.enabled }}
             {{- end }}
 
             {{- if .Values.telemetry.trace.sampleRatio }}
