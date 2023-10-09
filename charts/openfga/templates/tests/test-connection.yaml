@@ -7,9 +7,13 @@ metadata:
   annotations:
     "helm.sh/hook": test
 spec:
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 8 }}
+  {{- end }}
   containers:
-    - name: wget
-      image: busybox
-      command: ['wget']
-      args: ['{{ include "openfga.fullname" . }}:{{ .Values.service.port }}']
+    - name: grpc-health-probe
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      command: ["grpc_health_probe", '-addr={{ include "openfga.fullname" . }}:{{ (split ":" .Values.grpc.addr)._1 }}']
   restartPolicy: Never
