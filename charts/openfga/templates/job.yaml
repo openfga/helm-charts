@@ -10,8 +10,12 @@ metadata:
   {{- end}}
   {{- with .Values.migrate.annotations }}
   annotations:
+    "helm.sh/hook": "post-install, post-upgrade, post-rollback"
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+    {{- with .Values.migrate.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   template:
     metadata:
