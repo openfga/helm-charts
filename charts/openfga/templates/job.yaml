@@ -10,7 +10,7 @@ metadata:
   {{- end}}
   {{- with .Values.migrate.annotations }}
   annotations:
-    "helm.sh/hook": "pre-install, pre-upgrade, pre-rollback"
+    "helm.sh/hook": "pre-install, pre-upgrade, pre-rollback, pre-delete"
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
     {{- with .Values.migrate.annotations }}
