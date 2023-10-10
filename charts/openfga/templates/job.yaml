@@ -10,9 +10,9 @@ metadata:
   {{- end}}
   {{- with .Values.migrate.annotations }}
   annotations:
-    "helm.sh/hook": "post-install, post-upgrade, post-rollback"
+    "helm.sh/hook": "pre-install, pre-upgrade, pre-rollback"
     "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation
     {{- with .Values.migrate.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
