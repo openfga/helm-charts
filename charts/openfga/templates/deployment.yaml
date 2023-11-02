@@ -42,7 +42,7 @@ spec:
           image: groundnuty/k8s-wait-for:v1.6
           args: ["job", '{{ include "openfga.fullname" . }}-migrate']
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}
