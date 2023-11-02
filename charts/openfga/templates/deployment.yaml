@@ -39,7 +39,8 @@ spec:
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: groundnuty/k8s-wait-for:v1.6
+          image: "{{ .Values.datastore.migrations.image.repository }}:{{ .Values.datastore.migrations.image.tag }}"
+          imagePullPolicy: {{ .Values.datastore.migrations.image.pullPolicy }}
           args: ["job", '{{ include "openfga.fullname" . }}-migrate']
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
