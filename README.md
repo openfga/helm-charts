@@ -1,6 +1,6 @@
 # Helm Charts Curated by OpenFGA
 
-Various Helm charts maintained by the OpenFGA team!
+Helm charts maintained by the OpenFGA team!
 
 [![Artifact HUB](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/openfga)](https://artifacthub.io/packages/helm/openfga/openfga)
 [![Discord Server](https://img.shields.io/discord/759188666072825867?color=7289da&logo=discord "Discord Server")](https://discord.gg/8naAwJfWN6)
