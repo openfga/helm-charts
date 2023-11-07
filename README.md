@@ -3,6 +3,7 @@
 Helm charts maintained by the OpenFGA team!
 
 [![Artifact HUB](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/openfga)](https://artifacthub.io/packages/helm/openfga/openfga)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Discord Server](https://img.shields.io/discord/759188666072825867?color=7289da&logo=discord "Discord Server")](https://discord.gg/8naAwJfWN6)
 [![Twitter](https://img.shields.io/twitter/follow/openfga?color=%23179CF0&logo=twitter&style=flat-square "@openfga on Twitter")](https://twitter.com/openfga)
 
@@ -18,6 +19,10 @@ It is designed to make it easy for developers to model their application permiss
 
 See [CONTRIBUTING](https://github.com/openfga/.github/blob/main/CONTRIBUTING.md).
 
+## Author
+
+[OpenFGA](https://github.com/openfga)
+
 ## License
 
-[Apache-2.0](https://github.com/openfga/helm-charts/blob/main/LICENSE).
+This project is licensed under the Apache-2.0 license. See the [LICENSE](https://github.com/openfga/helm-charts/blob/main/LICENSE) file for more info.
