@@ -50,7 +50,7 @@ spec:
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- if .Values.migrate.sidecars }}
-        {{- include "common.tplvalues.render" ( dict "value" .Values.sidecars "context" $) | nindent 8 }}
+        {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
         {{- end }}
       restartPolicy: Never
       {{- with .Values.nodeSelector }}

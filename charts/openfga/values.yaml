@@ -141,6 +141,10 @@ datastore:
   applyMigrations: true
   migrations:
     resources: {}
+    image:
+      repository: groundnuty/k8s-wait-for
+      pullPolicy: Always
+      tag: "v1.6"
 
 postgres:
   ## @param postgres.enabled enable the bitnami/postgresql subchart and deploy Postgres
