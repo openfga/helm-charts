@@ -17,7 +17,7 @@ annotations:
 
 dependencies:
   - name: postgresql
-    version: "12.2.3"
+    version: "12.12.10"
     repository: https://charts.bitnami.com/bitnami
     condition: postgres.enabled
   - name: mysql
