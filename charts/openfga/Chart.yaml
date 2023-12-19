@@ -3,8 +3,8 @@ name: openfga
 description: A Kubernetes Helm chart for the OpenFGA project.
 
 type: application
-version: 0.1.31
-appVersion: "v1.3.6"
+version: 0.1.32
+appVersion: "v1.3.10"
 
 home: "https://openfga.github.io/helm-charts/charts/openfga"
 icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
@@ -17,7 +17,7 @@ annotations:
 
 dependencies:
   - name: postgresql
-    version: "12.2.3"
+    version: "12.12.10"
     repository: https://charts.bitnami.com/bitnami
     condition: postgres.enabled
   - name: mysql
@@ -25,7 +25,7 @@ dependencies:
     repository: https://charts.bitnami.com/bitnami
     condition: mysql.enabled
   - name: common
-    version: "2.6.0"
+    version: "2.13.3"
     repository: oci://registry-1.docker.io/bitnamicharts
     tags:
       - bitnami-common
