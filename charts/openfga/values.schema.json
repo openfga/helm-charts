@@ -2,6 +2,129 @@
     "$schema": "http://json-schema.org/schema#",
     "type": "object",
     "properties": {
+        "image": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "The container repository to pull the main OpenFGA image from",
+                    "default": "openfga/openfga"
+                },
+                "tag": {
+                    "type": "string",
+                    "description": "Overrides the image tag of the main OpenFGA image whose default is the chart appVersion"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "description": "The image pull policy",
+                    "default": "Always"
+                }
+            },
+            "additionalProperties": false
+        },
+        "replicaCount": {
+            "type": "number",
+            "description": "The number of OpenFGA server replicas (pods) to deploy",
+            "default": 3
+        },
+        "autoscaling": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable/disable horizontal pod autoscaling of the OpenFGA deployment",
+                    "default": false
+                },
+                "minReplicas": {
+                    "type": "number",
+                    "description": "The min number of OpenFGA replicas that the autoscaler will scale down to",
+                    "default": 1
+                },
+                "maxReplicas": {
+                    "type": "number",
+                    "description": "The max number of OpenFGA replicas that the autoscaler will scale up to",
+                    "default": 100
+                },
+                "targetCPUUtilizationPercentage": {
+                    "type": "number",
+                    "description": "The CPU utilization percentage at which the autoscaler will trigger a scale up event",
+                    "default": 80
+                },
+                "targetMemoryUtilizationPercentage": {
+                    "type": "number",
+                    "description": "The memory utilization percentage at which the autoscaler will trigger a scale up event",
+                    "default": 80
+                }
+            },
+            "additionalProperties": false
+        },
+        "fullnameOverride": {
+            "type": "string",
+            "description": "Overrides the default fully qualified app name",
+            "default": ""
+        },
+        "nameOverride": {
+            "type": "string",
+            "description": "Overrides the default name of the chart which defaults to the Chart name",
+            "default": ""
+        },
+        "securityContext": {
+            "type": "object",
+            "description": "Defines the container security context for the OpenFGA container. For more information see https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container.",
+            "default": {}
+        },
+        "podSecurityContext": {
+            "type": "object",
+            "description": "Defines the pod security context for the OpenFGA pods. For more information see https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod.",
+            "default": {}
+        },
+        "imagePullSecrets": {
+            "type": "array",
+            "description": "An optional list of references to secrets in the same namespace to use for pulling any of the images used by the pod spec. If specified, these secrets will be passed to individual puller implementations for them to use. For more information see https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod."
+        },
+        "nodeSelector": {
+            "type": "object",
+            "description": "Specifies the node which pods managed by the deployment will get assigned to. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector.",
+            "default": {}
+        },
+        "affinity": {
+            "type": "object",
+            "description": "Specifies the deployment affinity which expands the types of constraints you can define on pods assignment and scheduling. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity.",
+            "default": {}
+        },
+        "resources": {
+            "type": "object",
+            "description": "Specifies the pod resource constraints for the pods managed by the deployment. For more information see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/.",
+            "default": {}
+        },
+        "tolerations": {
+            "type": "array",
+            "description": "Specifies the pod toleration constraints for the pod managed by the deployment. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/.",
+            "default": []
+        },
+        "serviceAccount": {
+            "type": "object",
+            "properties": {
+                "create": {
+                    "type": "boolean",
+                    "description": "Specifies whether the service account should be created.",
+                    "default": true
+                },
+                "name": {
+                    "type": "string",
+                    "description": "The name of the service account to create.",
+                    "default": ""
+                },
+                "annotations": {
+                    "type": "object",
+                    "description": "Map of annotations to add to the service account.",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "default": {}
+                }
+            }
+        },
         "telemetry": {
             "type": "object",
             "properties": {
@@ -17,7 +140,10 @@
                             "type": "object",
                             "properties": {
                                 "endpoint": {
-                                    "type": ["string", "null"],
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
                                     "description": "the grpc endpoint of the OpenTelemetry 'otlp' trace collector"
                                 },
                                 "tls": {
@@ -33,7 +159,10 @@
                             }
                         },
                         "sampleRatio": {
-                            "type": ["number", "null"],
+                            "type": [
+                                "number",
+                                "null"
+                            ],
                             "description": "the fraction of traces to sample. 1 means all, 0 means none.",
                             "default": null
                         }
@@ -53,7 +182,10 @@
                             "default": "0.0.0.0:2112"
                         },
                         "enableRPCHistograms": {
-                            "type": ["boolean", "null"],
+                            "type": [
+                                "boolean",
+                                "null"
+                            ],
                             "description": "enables prometheus histogram metrics for RPC latency distributions"
                         }
                     }
@@ -65,39 +197,72 @@
             "properties": {
                 "engine": {
                     "type": "string",
-                    "enum": ["memory", "postgres", "mysql"],
+                    "enum": [
+                        "memory",
+                        "postgres",
+                        "mysql"
+                    ],
                     "default": "memory"
                 },
                 "uri": {
-                    "type":["string", "null"]
+                    "type": [
+                        "string",
+                        "null"
+                    ]
                 },
                 "uriSecret": {
-                    "type":["string", "null"],
+                    "type": [
+                        "string",
+                        "null"
+                    ],
                     "description": "the secret name where to get the datastore URI, it expects a key named uri to exist in the secret"
                 },
                 "maxCacheSize": {
-                    "type": ["integer", "null"],
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
                     "description": "the maximum number of cache keys that the storage cache can store before evicting old keys"
                 },
                 "maxOpenConns": {
-                    "type": ["integer", "null"],
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
                     "description": "the maximum number of open connections to the datastore"
                 },
                 "maxIdleConns": {
-                    "type": ["integer", "null"],
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
                     "description": "the maximum number of connections to the datastore in the idle connection pool"
                 },
                 "connMaxIdleTime": {
-                    "type": ["string", "null"],
+                    "type": [
+                        "string",
+                        "null"
+                    ],
                     "description": "the maximum amount of time (as a duration) a connection to the datastore may be idle",
                     "format": "duration",
-                    "examples": ["30s", "1m", "200ms"]
+                    "examples": [
+                        "30s",
+                        "1m",
+                        "200ms"
+                    ]
                 },
                 "connMaxLifetime": {
-                    "type": ["string", "null"],
+                    "type": [
+                        "string",
+                        "null"
+                    ],
                     "description": "the maximum amount of time (as a duration) a connection to the datastore may be reused",
                     "format": "duration",
-                    "examples": ["30s", "1m", "200ms"]
+                    "examples": [
+                        "30s",
+                        "1m",
+                        "200ms"
+                    ]
                 },
                 "applyMigrations": {
                     "type": "boolean",
@@ -143,11 +308,17 @@
                             "default": false
                         },
                         "cert": {
-                            "type": ["string", "null"],
+                            "type": [
+                                "string",
+                                "null"
+                            ],
                             "description": "the (absolute) file path of the certificate to use for the TLS connection"
                         },
                         "key": {
-                            "type": ["string", "null"],
+                            "type": [
+                                "string",
+                                "null"
+                            ],
                             "description": "the (absolute) file path of the TLS key that should be used for the TLS connection"
                         }
                     }
@@ -176,34 +347,51 @@
                             "default": false
                         },
                         "cert": {
-                            "type": ["string", "null"],
+                            "type": [
+                                "string",
+                                "null"
+                            ],
                             "description": "the (absolute) file path of the certificate to use for the TLS connection"
                         },
                         "key": {
-                            "type": ["string", "null"],
+                            "type": [
+                                "string",
+                                "null"
+                            ],
                             "description": "the (absolute) file path of the TLS key that should be used for the TLS connection"
                         }
                     }
                 },
                 "upstreamTimeout": {
-                    "type": ["string", "null"],
+                    "type": [
+                        "string",
+                        "null"
+                    ],
                     "description": "the timeout duration for proxying HTTP requests upstream to the grpc endpoint.",
                     "format": "duration",
-                    "examples": ["5s", "1m", "200ms"]
+                    "examples": [
+                        "5s",
+                        "1m",
+                        "200ms"
+                    ]
                 },
                 "corsAllowedOrigins": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
-                    "default": ["*"]
+                    "default": [
+                        "*"
+                    ]
                 },
                 "corsAllowedHeaders": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
-                    "default": ["*"]
+                    "default": [
+                        "*"
+                    ]
                 }
             }
         },
@@ -211,9 +399,17 @@
             "type": "object",
             "properties": {
                 "method": {
-                    "type": ["string", "null"],
+                    "type": [
+                        "string",
+                        "null"
+                    ],
                     "description": "the authentication method to use",
-                    "enum": [null, "none", "preshared", "oidc"]
+                    "enum": [
+                        null,
+                        "none",
+                        "preshared",
+                        "oidc"
+                    ]
                 },
                 "preshared": {
                     "type": "object",
@@ -232,11 +428,17 @@
                     "type": "object",
                     "properties": {
                         "audience": {
-                            "type": ["string", "null"],
+                            "type": [
+                                "string",
+                                "null"
+                            ],
                             "description": "the OIDC 'audience' which tokens will be validated against (must be set if `authn.method=oidc`)"
                         },
                         "issuer": {
-                            "type": ["string", "null"],
+                            "type": [
+                                "string",
+                                "null"
+                            ],
                             "description": "the OIDC 'issuer' which tokens will be validated against (must be set if `authn.method=oidc`)"
                         }
                     }
@@ -279,13 +481,23 @@
                 "level": {
                     "type": "string",
                     "description": "the log level to set (for production we recommend 'info' level)",
-                    "enum": ["debug", "info", "warn", "error", "panic", "fatal"],
+                    "enum": [
+                        "debug",
+                        "info",
+                        "warn",
+                        "error",
+                        "panic",
+                        "fatal"
+                    ],
                     "default": "info"
                 },
                 "format": {
                     "type": "string",
                     "description": "the log format to output logs in (for production we recommend 'json' format)",
-                    "enum": ["text", "json"],
+                    "enum": [
+                        "text",
+                        "json"
+                    ],
                     "default": "json"
                 }
             }
@@ -299,12 +511,18 @@
                     "default": "false"
                 },
                 "limit": {
-                    "type": ["integer", "null"],
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
                     "description": "if caching of Check and ListObjects calls is enabled, this is the size limit (in items) of the cache",
                     "default": "10000"
                 },
                 "ttl": {
-                    "type": ["string", "null"],
+                    "type": [
+                        "string",
+                        "null"
+                    ],
                     "description": "if caching of Check and ListObjects is enabled, this is the TTL of each value",
                     "format": "duration",
                     "default": "10s"
@@ -317,48 +535,82 @@
             "default": []
         },
         "maxTuplesPerWrite": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "the maximum allowed number of tuples per Write transaction"
         },
         "maxTypesPerAuthorizationModel": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "the maximum allowed number of type definitions per authorization model"
         },
         "maxAuthorizationModelSizeInBytes": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "the maximum size in bytes allowed for persisting an authorization model"
         },
         "maxConcurrentReadsForCheck": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "the maximum allowed number of concurrent reads in a single Check query",
             "default": 4294967295
         },
         "maxConcurrentReadsForListObjects": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "the maximum allowed number of concurrent reads in a single ListObjects query",
             "default": 4294967295
         },
         "changelogHorizonOffset": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "the offset (in minutes) from the current time - changes that occur after this offset will not be included in the response of ReadChanges."
         },
         "resolveNodeLimit": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "defines how deeply nested an authorization model can be"
         },
         "resolveNodeBreadthLimit": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "defines how many nodes on a given level can be evaluated concurrently in a Check resolution tree.",
             "default": 100
         },
         "listObjectsDeadline": {
-            "type": ["string", "null"],
+            "type": [
+                "string",
+                "null"
+            ],
             "description": "the timeout deadline (as a duration) for serving ListObjects requests",
             "format": "duration",
-            "examples": ["3s", "1m", "200ms"]
+            "examples": [
+                "3s",
+                "1m",
+                "200ms"
+            ]
         },
         "listObjectsMaxResults": {
-            "type": ["integer", "null"],
+            "type": [
+                "integer",
+                "null"
+            ],
             "description": "the maximum results to return in ListObjects responses"
         },
         "requestDurationDatastoreQueryCountBuckets": {
@@ -369,27 +621,40 @@
                 "type": "integer"
             },
             "minItems": 1,
-            "default": [50, 200]
+            "default": [
+                50,
+                200
+            ]
         },
         "allowWriting1_0Models": {
-            "type": ["boolean", "null"],
+            "type": [
+                "boolean",
+                "null"
+            ],
             "description": "allow calling WriteAuthorizationModel with models that have 1.0 schema version"
         },
         "allowEvaluating1_0Models": {
-            "type": ["boolean", "null"],
+            "type": [
+                "boolean",
+                "null"
+            ],
             "description": "allow calling Check, Expand, ListObjects, Write Assertions with models that have 1.0 schema version"
         },
         "annotations": {
             "type": "object",
             "description": "Map of annotations to add to the deployment's manifest",
-            "additionalProperties": { "type": "string" },
-            "default": { }
+            "additionalProperties": {
+                "type": "string"
+            },
+            "default": {}
         },
         "podAnnotations": {
             "type": "object",
             "description": "Map of annotations to add to the pods' manifest",
-            "additionalProperties": { "type": "string" },
-            "default": { }
+            "additionalProperties": {
+                "type": "string"
+            },
+            "default": {}
         },
         "service": {
             "type": "object",
@@ -397,8 +662,10 @@
                 "annotations": {
                     "type": "object",
                     "description": "Map of annotations to add to the service's manifest",
-                    "additionalProperties": { "type": "string" },
-                    "default": { }
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "default": {}
                 }
             }
         },
@@ -408,8 +675,10 @@
                 "annotations": {
                     "type": "object",
                     "description": "Map of annotations to add to the ingress' manifest",
-                    "additionalProperties": { "type": "string" },
-                    "default": { }
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "default": {}
                 }
             }
         },
@@ -550,8 +819,10 @@
             "annotations": {
                 "type": "object",
                 "description": "Map of annotations to add to the migration job's manifest",
-                "additionalProperties": { "type": "string" },
-                "default": { }
+                "additionalProperties": {
+                    "type": "string"
+                },
+                "default": {}
             }
         },
         "extraEnvVars": {
@@ -564,7 +835,7 @@
         },
         "extraVolumeMounts": {
             "type": "array",
-            "description": "Lis of additional volumes to add to the deployment",
+            "description": "List of additional volume mounts to add to the deployment",
             "items": {
                 "type": "object"
             },
@@ -572,11 +843,34 @@
         },
         "extraVolumes": {
             "type": "array",
-            "description": "Lis of additional volumes to add to the deployment",
+            "description": "List of additional volumes to add to the deployment",
             "items": {
                 "type": "object"
             },
             "default": []
-        }
-    }
+        },
+        "initContainer": {
+            "type": "object",
+            "description": "",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "The container image repository to pull the initContainer from",
+                    "default": "groundnuty/k8s-wait-for"
+                },
+                "tag": {
+                    "type": "string",
+                    "description": "The specific initContainer image tag to pull",
+                    "default": "v1.6"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "description": "The image pull policy to apply to the initContainer",
+                    "default": "IfNotPresent"
+                }
+            }
+        },
+        "common": {}
+    },
+    "additionalProperties": false
 }

@@ -39,8 +39,8 @@ spec:
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.datastore.migrations.image.repository }}:{{ .Values.datastore.migrations.image.tag }}"
-          imagePullPolicy: {{ .Values.datastore.migrations.image.pullPolicy }}
+          image: "{{ .Values.initContainer.repository }}:{{ .Values.initContainer.tag }}"
+          imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
           args: ["job", '{{ include "openfga.fullname" . }}-migrate']
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}

@@ -3,7 +3,6 @@ replicaCount: 3
 image:
   repository: openfga/openfga
   pullPolicy: Always
-  # Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
 imagePullSecrets: []
@@ -37,6 +36,11 @@ securityContext: {}
   # readOnlyRootFilesystem: true
   # runAsNonRoot: true
   # runAsUser: 1000
+
+initContainer:
+  repository: groundnuty/k8s-wait-for
+  tag: "v1.6"
+  pullPolicy: IfNotPresent
 
 ## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes
@@ -141,10 +145,6 @@ datastore:
   applyMigrations: true
   migrations:
     resources: {}
-    image:
-      repository: groundnuty/k8s-wait-for
-      pullPolicy: Always
-      tag: "v1.6"
 
 postgres:
   ## @param postgres.enabled enable the bitnami/postgresql subchart and deploy Postgres
