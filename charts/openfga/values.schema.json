@@ -99,6 +99,10 @@
                     "format": "duration",
                     "examples": ["30s", "1m", "200ms"]
                 },
+                "migrateJobTtlSecondsAfterFinished": {
+                    "type": ["integer", "null"],
+                    "description": "the number of seconds to wait after the job completes before the job is marked for cleanup (deleted cascadingly)"
+                },
                 "applyMigrations": {
                     "type": "boolean",
                     "description": "enable/disable the job that runs migrations in the datastore",

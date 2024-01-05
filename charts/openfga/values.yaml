@@ -138,6 +138,7 @@ datastore:
   maxIdleConns:
   connMaxIdleTime:
   connMaxLifetime:
+  migrateJobTtlSecondsAfterFinished:
   applyMigrations: true
   migrations:
     resources: {}
