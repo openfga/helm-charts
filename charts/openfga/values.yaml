@@ -145,7 +145,7 @@ datastore:
     image:
       repository: groundnuty/k8s-wait-for
       pullPolicy: Always
-      tag: "v1.6"
+      tag: "v2.0"
 
 postgres:
   ## @param postgres.enabled enable the bitnami/postgresql subchart and deploy Postgres
@@ -258,5 +258,8 @@ affinity: {}
 sidecars: []
 migrate:
   sidecars: []
-  annotations: {}
+  annotations:
+    helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
