@@ -8,8 +8,10 @@ metadata:
   {{- with .Values.migrate.labels }}
     {{- toYaml . | nindent 4}}
   {{- end}}
-  {{- with .Values.migrate.annotations }}
   annotations:
+    helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
+    helm.sh/hook-delete-policy: "before-hook-creation"
+  {{- with .Values.migrate.annotations }}
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
