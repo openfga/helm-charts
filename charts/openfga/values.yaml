@@ -132,6 +132,8 @@ telemetry:
 datastore:
   engine: memory
   uri:
+  # A secret containing a "uri" key with the database URI to use.  Use this if you have a
+  # password in the URI (for example)
   uriSecret:
   maxCacheSize:
   maxOpenConns:
@@ -145,6 +147,11 @@ datastore:
       repository: groundnuty/k8s-wait-for
       pullPolicy: Always
       tag: "v2.0"
+    # The database URI to use for migrations.  If unset, the URI from datastore.uri is used.
+    uri:
+    # A secret containing a "uri" key with the database URI to use for migrations.  Use this
+    # if you have a password in the URI (for example).
+    uriSecret:
 
 postgres:
   ## @param postgres.enabled enable the bitnami/postgresql subchart and deploy Postgres
@@ -262,3 +269,15 @@ migrate:
     helm.sh/hook-weight: "-5"
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
+  extraEnvVars: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  serviceAccount:
+    # Specifies whether a separate migration service account should be created
+    create: false
+    # Annotations to add to the migration service account.  If unset, the annotations
+    # from serviceAccount.annotations are used.
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""

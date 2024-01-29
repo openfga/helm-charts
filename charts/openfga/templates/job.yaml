@@ -1,4 +1,4 @@
-{{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations -}}
+{{- if (include "openfga.haveMigration" .) -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -24,7 +24,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ include "openfga.serviceAccountName" . }}
+      serviceAccountName: {{ include "openfga.migrationServiceAccountName" . }}
       containers:
         - name: migrate-database
           securityContext:
@@ -37,7 +37,16 @@ spec:
               value: "{{ .Values.datastore.engine }}"
             {{- end }}
 
-            {{- if .Values.datastore.uri }}
+            {{- if .Values.datastore.migrations.uri}}
+            - name: OPENFGA_DATASTORE_URI
+              value: "{{ .Values.datastore.migrations.uri }}"
+            {{- else if .Values.datastore.migrations.uriSecret }}
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.datastore.migrations.uriSecret }}"
+                  key: "uri"
+            {{- else if .Values.datastore.uri }}
             - name: OPENFGA_DATASTORE_URI
               value: "{{ .Values.datastore.uri }}"
             {{- else if .Values.datastore.uriSecret }}
@@ -47,12 +56,25 @@ spec:
                   name: "{{ .Values.datastore.uriSecret }}"
                   key: "uri"
             {{- end }}
+            {{- if .Values.migrate.extraEnvVars }}
+            {{- toYaml .Values.migrate.extraEnvVars | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
+
+          {{- with .Values.migrate.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
         {{- if .Values.migrate.sidecars }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
         {{- end }}
+
       restartPolicy: Never
+      {{- with .Values.migrate.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

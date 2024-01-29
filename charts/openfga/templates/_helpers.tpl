@@ -62,6 +62,28 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Create the name of the service account to use for the migration job
+*/}}
+{{- define "openfga.migrationServiceAccountName" -}}
+{{- if .Values.migrate.serviceAccount.name }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- else if .Values.migrate.serviceAccount.create }}
+{{- default (printf "%s-%s" (include "openfga.fullname" .) "migrate") .Values.migrate.serviceAccount.name }}
+{{- else }}
+{{- include "openfga.serviceAccountName" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Return true if migration job is enabled
+*/}}
+{{- define "openfga.haveMigration" -}}
+{{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations }}
+  {{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Return true if a secret object should be created
 */}}
 {{- define "openfga.createSecret" -}}
