@@ -26,6 +26,7 @@ podAnnotations: {}
 extraEnvVars: []
 extraVolumes: []
 extraVolumeMounts: []
+extraInitContainers: []
 
 podSecurityContext: {}
   # fsGroup: 2000
