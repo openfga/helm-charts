@@ -145,6 +145,7 @@ datastore:
   connMaxIdleTime:
   connMaxLifetime:
   applyMigrations: true
+  waitForMigrations: true
   migrations:
     resources: {}
     image:
