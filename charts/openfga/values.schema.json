@@ -854,6 +854,14 @@
             },
             "default": []
         },
+        "extraInitContainers": {
+            "type": "array",
+            "description": "List of additional initContainers to add to the deployment",
+            "items": {
+                "type": "object"
+            },
+            "default": []
+        },
         "initContainer": {
             "type": "object",
             "description": "",
