@@ -198,6 +198,7 @@ profiler:
 log:
   level: info
   format: json
+  timestampFormat: Unix
 
 checkQueryCache:
   enabled: false
