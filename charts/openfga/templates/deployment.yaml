@@ -213,6 +213,11 @@ spec:
               value: {{ .Values.log.level }}
             {{- end }}
 
+            {{- if .Values.log.timestampFormat }}
+            - name: OPENFGA_LOG_TIMESTAMP_FORMAT
+              value: {{ .Values.log.timestampFormat }}
+            {{- end }}
+
             {{- if .Values.maxTuplesPerWrite }}
             - name: OPENFGA_MAX_TUPLES_PER_WRITE
               value: "{{ .Values.maxTuplesPerWrite }}"
