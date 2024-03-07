@@ -276,7 +276,7 @@
                 }
             }
         },
-        "postgres": {
+        "postgresql": {
             "type": "object",
             "properties": {
                 "enabled": {
@@ -884,7 +884,7 @@
                 }
             }
         },
-        "common": {}
+        "common": {},
     },
     "additionalProperties": false
 }
