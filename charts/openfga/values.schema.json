@@ -884,7 +884,7 @@
                 }
             }
         },
-        "common": {},
+        "common": {}
     },
     "additionalProperties": false
 }
