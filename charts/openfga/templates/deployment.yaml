@@ -10,7 +10,7 @@ metadata:
   {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
   {{- end }}
   selector:
     matchLabels:
@@ -216,6 +216,11 @@ spec:
             {{- if .Values.log.level }}
             - name: OPENFGA_LOG_LEVEL
               value: {{ .Values.log.level }}
+            {{- end }}
+
+            {{- if .Values.log.timestampFormat }}
+            - name: OPENFGA_LOG_TIMESTAMP_FORMAT
+              value: {{ .Values.log.timestampFormat }}
             {{- end }}
 
             {{- if .Values.maxTuplesPerWrite }}

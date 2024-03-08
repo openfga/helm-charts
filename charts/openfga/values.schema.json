@@ -276,7 +276,7 @@
                 }
             }
         },
-        "postgres": {
+        "postgresql": {
             "type": "object",
             "properties": {
                 "enabled": {
@@ -504,6 +504,15 @@
                         "json"
                     ],
                     "default": "json"
+                },
+                "timestampFormat": {
+                    "type": "string",
+                    "description": "The timestamp format to use for the log output",
+                    "enum": [
+                        "Unix",
+                        "ISO8601"
+                    ],
+                    "default": "Unix"
                 }
             }
         },
