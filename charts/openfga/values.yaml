@@ -41,7 +41,7 @@ securityContext:
 
 initContainer:
   repository: groundnuty/k8s-wait-for
-  tag: "v1.6"
+  tag: "v2.0"
   pullPolicy: IfNotPresent
 
 ## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
