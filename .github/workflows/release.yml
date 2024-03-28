@@ -31,7 +31,7 @@ jobs:
         run: gpg --export-secret-keys > ~/.gnupg/pubring.gpg
 
       - name: Install Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@v4
         with:
           version: v3.5.0
 
