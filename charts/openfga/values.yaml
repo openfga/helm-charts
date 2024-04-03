@@ -123,6 +123,56 @@ telemetry:
     ##
     enabled: true
 
+    serviceMonitor:
+      ## @param telemetry.metrics.serviceMonitor.enabled enable/disable installation of serviceMonitor custom resource
+      ##
+      enabled: false
+
+      ## @param telemetry.metrics.serviceMonitor.additionalLabels additional labels to be added to the serivceMonitor resource
+      ##
+      additionalLabels: {}
+
+      ## @param telemetry.metrics.serviceMonitor.annotations annotations to be added to the serviceMonitor resource
+      ##
+      annotations: {}
+
+      ## @param telemetry.metrics.serviceMonitor.jobLabel the label to use to retrieve the job name from
+      ##
+      jobLabel: "app.kubernetes.io/name"
+
+      ## @param telemetry.metrics.serviceMonitor.namespace namespace where the serviceMonitor resource should be installed to
+      ##
+      namespace: ""
+
+      ## @param telemetry.metrics.serviceMonitor.namespaceSelector which namespaces should be scraped
+      ##
+      ## Default: scrape .Release.Namespace or namespaceOverride only
+      ## To scrape all, use the following:
+      ## namespaceSelector:
+      ##   any: true
+      ##
+      namespaceSelector: {}
+
+      ## @param telemetry.metrics.serviceMonitor.scrapeInterval prometheus scrape interval
+      ##
+      scrapeInterval: 30s
+
+      ## @param telemetry.metrics.serviceMonitor.scrapeTimeout prometheus scrape timeout
+      ##
+      scrapeTimeout: 10s
+
+      ## @param telemetry.metrics.serviceMonitor.targetLabels additional target labels to scrape
+      ##
+      targetLabels: []
+
+      ## @param telemetry.metrics.serviceMonitor.relabelings add job relabelings
+      ##
+      relabelings: []
+
+      ## @param telemetry.metrics.serviceMonitor.metricRelabelings add metric relabelings
+      ##
+      metricRelabelings: []
+
     ## @param telemetry.metrics.addr the host:port address to serve the Metrics server on
     addr: 0.0.0.0:2112
 
