@@ -42,7 +42,7 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.initContainer.repository }}:{{ .Values.initContainer.tag }}"
           imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
-          args: ["job", '{{ include "openfga.fullname" . }}-migrate']
+          args: ["job-wr", '{{ include "openfga.fullname" . }}-migrate']
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
