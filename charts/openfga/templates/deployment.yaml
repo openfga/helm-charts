@@ -258,6 +258,16 @@ spec:
               value: "{{ .Values.listObjectsMaxResults }}"
             {{- end }}
 
+            {{- if .Values.listUsersDeadline }}
+            - name: OPENFGA_LIST_USERS_DEADLINE
+              value: "{{ .Values.listUsersDeadline }}"
+            {{- end }}
+
+            {{- if .Values.listUsersMaxResults }}
+            - name: OPENFGA_LIST_USERS_MAX_RESULTS
+              value: "{{ .Values.listUsersMaxResults }}"
+            {{- end }}
+
             {{- if .Values.checkQueryCache.enabled }}
             - name: OPENFGA_CHECK_QUERY_CACHE_ENABLED
               value: "{{ .Values.checkQueryCache.enabled }}"

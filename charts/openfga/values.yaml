@@ -262,11 +262,14 @@ maxTypesPerAuthorizationModel:
 maxAuthorizationModelSizeInBytes:
 maxConcurrentReadsForCheck:
 maxConcurrentReadsForListObjects:
+maxConcurrentReadsForListUsers:
 changelogHorizonOffset:
 resolveNodeLimit:
 resolveNodeBreadthLimit:
 listObjectsDeadline:
 listObjectsMaxResults:
+listUsersDeadline:
+listUsersMaxResults:
 requestDurationDatastoreQueryCountBuckets: [50, 200]
 allowWriting1_0Models:
 allowEvaluating1_0Models:
