@@ -51,6 +51,11 @@ spec:
                   name: "{{ .Values.datastore.uriSecret }}"
                   key: "uri"
             {{- end }}
+
+            {{- with .Values.extraEnvVars }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- if .Values.migrate.sidecars }}
