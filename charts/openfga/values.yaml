@@ -25,6 +25,7 @@ podAnnotations: {}
 extraEnvVars: []
 extraVolumes: []
 extraVolumeMounts: []
+extraInitContainers: []
 
 podSecurityContext:
   {}
