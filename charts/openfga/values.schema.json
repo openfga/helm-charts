@@ -609,7 +609,12 @@
         "experimentals": {
             "type": "array",
             "description": "a list of experimental features to enable",
-            "default": []
+            "default": [],
+            "examples": ["enable-list-users"],
+            "items": {
+                "type": "string",
+                "enum": ["enable-list-users"]
+            }
         },
         "maxTuplesPerWrite": {
             "type": [
@@ -646,6 +651,14 @@
                 "null"
             ],
             "description": "the maximum allowed number of concurrent reads in a single ListObjects query",
+            "default": 4294967295
+        },
+        "maxConcurrentReadsForListUsers": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "the maximum allowed number of concurrent reads in a single ListUsers query",
             "default": 4294967295
         },
         "changelogHorizonOffset": {
@@ -689,6 +702,26 @@
                 "null"
             ],
             "description": "the maximum results to return in ListObjects responses"
+        },
+        "listUsersDeadline": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "the timeout deadline (as a duration) for serving ListUsers requests",
+            "format": "duration",
+            "examples": [
+                "3s",
+                "1m",
+                "200ms"
+            ]
+        },
+        "listUsersMaxResults": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "the maximum results to return in ListUsers responses"
         },
         "requestDurationDatastoreQueryCountBuckets": {
             "description": "datastore query count buckets used to label the histogram metric for measuring request duration.",
