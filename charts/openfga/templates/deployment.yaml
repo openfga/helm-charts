@@ -120,6 +120,21 @@ spec:
             - name: OPENFGA_DATASTORE_CONN_MAX_LIFETIME
               value: "{{ .Values.datastore.connMaxLifetime }}"
             {{- end }}
+            
+            {{- if .Values.maxConcurrentReadsForCheck }}
+            - name: OPENFGA_MAX_CONCURRENT_READS_FOR_CHECK
+              value: "{{ .Values.maxConcurrentReadsForCheck }}"
+            {{- end }}
+
+            {{- if .Values.maxConcurrentReadsForListObjects }}
+            - name: OPENFGA_MAX_CONCURRENT_READS_FOR_LIST_OBJECTS
+              value: "{{ .Values.maxConcurrentReadsForListObjects }}"
+            {{- end }}
+
+            {{- if .Values.maxConcurrentReadsForListUsers }}
+            - name: OPENFGA_MAX_CONCURRENT_READS_FOR_LIST_USERS
+              value: "{{ .Values.maxConcurrentReadsForListUsers }}"
+            {{- end }}
 
             {{- if .Values.experimentals }}
             - name: OPENFGA_EXPERIMENTALS
@@ -261,6 +276,16 @@ spec:
             {{- if .Values.listObjectsMaxResults }}
             - name: OPENFGA_LIST_OBJECTS_MAX_RESULTS
               value: "{{ .Values.listObjectsMaxResults }}"
+            {{- end }}
+
+            {{- if .Values.listUsersDeadline }}
+            - name: OPENFGA_LIST_USERS_DEADLINE
+              value: "{{ .Values.listUsersDeadline }}"
+            {{- end }}
+
+            {{- if .Values.listUsersMaxResults }}
+            - name: OPENFGA_LIST_USERS_MAX_RESULTS
+              value: "{{ .Values.listUsersMaxResults }}"
             {{- end }}
 
             {{- if .Values.checkQueryCache.enabled }}

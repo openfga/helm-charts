@@ -2,6 +2,9 @@
     "$schema": "http://json-schema.org/schema#",
     "type": "object",
     "properties": {
+        "global": {
+            "type": "object"
+        },
         "image": {
             "type": "object",
             "properties": {
@@ -176,6 +179,66 @@
                             "description": "enable/disable prometheus metrics on the '/metrics' endpoint",
                             "default": true
                         },
+			"serviceMonitor": {
+		            "type": "object",
+			    "properties": {
+			        "enabled": {
+                                    "type": "boolean",
+                                    "description": "enable/disable installation of serviceMonitor custom resource",
+                                    "default": false
+			        },
+			        "additionalLabels": {
+			            "type": "object",
+			            "description": "additional labels to be added to the serivceMonitor resource",
+			            "default": {}
+			        },
+			        "annotations": {
+		                    "type": "object",
+			            "description": "annotations to be added to the serviceMonitor resource",
+			            "default": {}
+			        },
+			        "jobLabel": {
+			            "type": "string",
+			            "description": "the label to use to retrieve the job name from",
+			            "default": "app.kubernetes.io/name"
+			        },
+			        "namespace": {
+		                    "type": "string",
+			            "description": "namespace where the serviceMonitor resource should be installed to",
+			            "default": ""
+			        },
+			        "namespaceSelector": {
+			            "type": "object",
+			            "description": "which namespaces should be scraped",
+			            "default": {}
+			        },
+			        "scrapeInterval": {
+			            "type": "string",
+			            "description": "prometheus scrape interval",
+			            "default": "30s"
+			        },
+			        "scrapeTimeout": {
+			            "type": "string",
+			            "description": "prometheus scrape timeout",
+			            "default": "10s"
+			        },
+			        "targetLabels": {
+			            "type": "array",
+			            "description": "additional target labels to scrape",
+			            "default": []
+			        },
+			        "relabelings": {
+			            "type": "array",
+			            "description": "add job relabelings",
+			            "default": []
+			        },
+			        "metricRelabelings": {
+			            "type": "array",
+			            "description": "add metric relabelings",
+			            "default": []
+			        }
+			    }
+			},
                         "addr": {
                             "type": "string",
                             "description": "the host:port address to serve the prometheus metrics server on",
@@ -546,7 +609,12 @@
         "experimentals": {
             "type": "array",
             "description": "a list of experimental features to enable",
-            "default": []
+            "default": [],
+            "examples": ["enable-list-users"],
+            "items": {
+                "type": "string",
+                "enum": ["enable-list-users"]
+            }
         },
         "maxTuplesPerWrite": {
             "type": [
@@ -583,6 +651,14 @@
                 "null"
             ],
             "description": "the maximum allowed number of concurrent reads in a single ListObjects query",
+            "default": 4294967295
+        },
+        "maxConcurrentReadsForListUsers": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "the maximum allowed number of concurrent reads in a single ListUsers query",
             "default": 4294967295
         },
         "changelogHorizonOffset": {
@@ -626,6 +702,26 @@
                 "null"
             ],
             "description": "the maximum results to return in ListObjects responses"
+        },
+        "listUsersDeadline": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "the timeout deadline (as a duration) for serving ListUsers requests",
+            "format": "duration",
+            "examples": [
+                "3s",
+                "1m",
+                "200ms"
+            ]
+        },
+        "listUsersMaxResults": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "the maximum results to return in ListUsers responses"
         },
         "requestDurationDatastoreQueryCountBuckets": {
             "description": "datastore query count buckets used to label the histogram metric for measuring request duration.",
