@@ -51,6 +51,11 @@ spec:
                   name: "{{ .Values.datastore.uriSecret }}"
                   key: "uri"
             {{- end }}
+
+            {{- if .Values.migrate.timeout }}
+            - name: OPENFGA_TIMEOUT
+              value: "{{ .Values.migrate.timeout }}"
+            {{- end }}
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- if .Values.migrate.sidecars }}
