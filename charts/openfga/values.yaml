@@ -322,12 +322,17 @@ migrate:
   extraVolumes: []
   extraVolumeMounts: []
   sidecars: []
-  annotations:
-    helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
-    helm.sh/hook-weight: "-5"
-    helm.sh/hook-delete-policy: "before-hook-creation"
+  # https://github.com/fluxcd/flux2/discussions/1085#discussioncomment-473271
+  # https://github.com/helm/helm/issues/9027#issuecomment-1908032461
+  hook:
+    enable: false
+    hook: "post-install, post-upgrade, post-rollback, post-delete"
+    hookWeight: "-5"
+    hookDeletePolicy: "before-hook-creation"
+  annotations: {}
   labels: {}
-  timeout:
+  timeout: 10m
+  ttlSecondsAfterFinished: -1
 
 # -- Array of extra K8s manifests to deploy
 ## Note: Supports use of custom Helm templates
