@@ -924,15 +924,24 @@
                     "type": "array",
                     "description": "add additional sidecar containers to the migration job",
                     "default": []
-                }
-            },
-            "annotations": {
-                "type": "object",
-                "description": "Map of annotations to add to the migration job's manifest",
-                "additionalProperties": {
-                    "type": "string"
                 },
-                "default": {}
+                "annotations": {
+                    "type": "object",
+                    "description": "Map of annotations to add to the migration job's manifest",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "default": {}
+                },
+                "timeout": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "A timeout for the time it takes the migrate process to connect to the database",
+                    "format": "duration",
+                    "default": "1m"
+                }
             }
         },
         "extraEnvVars": {
