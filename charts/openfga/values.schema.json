@@ -925,6 +925,31 @@
                     "description": "add additional sidecar containers to the migration job",
                     "default": []
                 },
+                "hook": {
+                    "type": "object",
+                    "properties": {
+                        "enable": {
+                            "type": "boolean",
+                            "description": "Enable/disable the hook for the migration job",
+                            "default": true
+                        },
+                        "hook": {
+                            "type": "string",
+                            "description": "Names of hook for the migration job, separated by a comma",
+                            "default": "post-install, post-upgrade, post-rollback, post-delete"
+                        },
+                        "hookWeight": {
+                            "type": "string",
+                            "description": "Weight of Helm hook",
+                            "default": "-5"
+                        },
+                        "hookDeletePolicy": {
+                            "type": "string",
+                            "description": "Delete policy of the Helm hook for the migration job",
+                            "default": "before-hook-creation"
+                        }
+                    }
+                },
                 "annotations": {
                     "type": "object",
                     "description": "Map of annotations to add to the migration job's manifest",
