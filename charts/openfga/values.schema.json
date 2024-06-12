@@ -189,7 +189,7 @@
 			        },
 			        "additionalLabels": {
 			            "type": "object",
-			            "description": "additional labels to be added to the serivceMonitor resource",
+			            "description": "additional labels to be added to the serviceMonitor resource",
 			            "default": {}
 			        },
 			        "annotations": {
@@ -279,6 +279,41 @@
                         "null"
                     ],
                     "description": "the secret name where to get the datastore URI, it expects a key named uri to exist in the secret"
+                },
+                "username": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the connection username to connect to the datastore (overwrites any username provided in the connection uri)"
+                },
+                "password": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the connection password to connect to the datastore (overwrites any password provided in the connection uri)"
+                },
+                "credentialsSecret": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the secret name where to get the username and password for the datastore database"
+                },
+                "credentialsSecretUsernameKey": {
+                    "type": [
+                        "string"
+                    ],
+                    "description": "the key for the username in the credentialsSecret",
+                    "default": "username"
+                },
+                "credentialsSecretPasswordKey": {
+                    "type": [
+                        "string"
+                    ],
+                    "description": "the key for the password in the credentialsSecret",
+                    "default": "password"
                 },
                 "maxCacheSize": {
                     "type": [
