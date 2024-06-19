@@ -63,10 +63,20 @@ spec:
 
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
+
+          {{- with .Values.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
         {{- if .Values.migrate.sidecars }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
         {{- end }}
       restartPolicy: Never
+      {{- with .Values.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
