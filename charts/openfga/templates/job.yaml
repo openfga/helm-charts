@@ -18,6 +18,11 @@ spec:
       {{- with .Values.migrate.annotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
+        {{- if .Values.migrate.hook.enable }}
+          helm.sh/hook: {{ .Values.migrate.hook.hook }}
+          helm.sh/hook-weight: {{ .Values.migrate.hook.hookWeight }}
+          helm.sh/hook-delete-policy: {{ .Values.migrate.hook.hookDeletePolicy }}
+        {{- end}}
       {{- end }}
       {{- with .Values.migrate.labels }}
       labels:
