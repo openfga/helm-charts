@@ -328,3 +328,16 @@ migrate:
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
   timeout:
+
+# -- Array of extra K8s manifests to deploy
+## Note: Supports use of custom Helm templates
+extraObjects: []
+## Example: Deploying a CloudnativePG Postgres cluster for use with OpenFGA:
+# - apiVersion: postgresql.cnpg.io/v1
+#   kind: Cluster
+#   metadata:
+#     name: openfga
+#   spec:
+#     instances: 3
+#     storage:
+#       size: 10Gi

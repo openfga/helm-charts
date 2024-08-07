@@ -1007,7 +1007,14 @@
                 }
             }
         },
-        "common": {}
+        "common": {},
+        "extraObjects": {
+            "type": "array",
+            "items": {
+                "type": "object"
+            },
+            "default": []
+        }
     },
     "additionalProperties": false
 }
