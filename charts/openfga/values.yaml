@@ -319,6 +319,8 @@ affinity: {}
 #         containerPort: 1234
 sidecars: []
 migrate:
+  extraVolumes: []
+  extraVolumeMounts: []
   sidecars: []
   annotations:
     helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
