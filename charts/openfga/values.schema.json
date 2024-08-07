@@ -960,6 +960,16 @@
                     "description": "add additional sidecar containers to the migration job",
                     "default": []
                 },
+                "extraVolumes": {
+                    "type": "array",
+                    "description": "add additional volumes to the migration job",
+                    "default": []
+                },
+                "extraVolumeMounts": {
+                    "type": "array",
+                    "description": "add additional volumeMounts to the migration job",
+                    "default": []
+                },
                 "annotations": {
                     "type": "object",
                     "description": "Map of annotations to add to the migration job's manifest",
@@ -1032,7 +1042,14 @@
                 }
             }
         },
-        "common": {}
+        "common": {},
+        "extraObjects": {
+            "type": "array",
+            "items": {
+                "type": "object"
+            },
+            "default": []
+        }
     },
     "additionalProperties": false
 }
