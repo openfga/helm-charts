@@ -205,12 +205,12 @@ spec:
 
             {{- if .Values.authn.oidc.audience }}
             - name: OPENFGA_AUTHN_OIDC_AUDIENCE
-              value: {{ .Values.authn.oidc.audience }}
+              value: "{{ .Values.authn.oidc.audience }}"
             {{- end }}
 
             {{- if .Values.authn.oidc.issuer }}
             - name: OPENFGA_AUTHN_OIDC_ISSUER
-              value: {{ .Values.authn.oidc.issuer }}
+              value: "{{ .Values.authn.oidc.issuer }}"
             {{- end }}
 
             - name: OPENFGA_PLAYGROUND_ENABLED
