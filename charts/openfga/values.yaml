@@ -323,7 +323,7 @@ migrate:
   extraVolumeMounts: []
   sidecars: []
   annotations:
-    helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
+    helm.sh/hook: "post-install, post-upgrade, post-rollback"
     helm.sh/hook-weight: "-5"
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
