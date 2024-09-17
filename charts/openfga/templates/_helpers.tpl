@@ -77,3 +77,19 @@ Return true if a secret object should be created
     {{- true -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Generate an environment variable for the datastore URI
+*/}}
+{{- define "openfga.datastoreURIEnvVar" -}}
+{{- if .Values.datastore.uri -}}
+- name: OPENFGA_DATASTORE_URI
+  value: "{{ .Values.datastore.uri }}"
+{{- else if .Values.datastore.uriSecret -}}
+- name: OPENFGA_DATASTORE_URI
+  valueFrom:
+    secretKeyRef:
+      name: "{{ tpl .Values.datastore.uriSecret . }}"
+      key: "{{ tpl (.Values.datastore.uriSecretKey | default "uri") . }}"
+{{- end -}}
+{{- end -}}
