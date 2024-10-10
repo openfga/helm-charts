@@ -148,7 +148,7 @@ spec:
 
             {{- if .Values.grpc.tls.enabled }}
             - name: OPENFGA_GRPC_TLS_ENABLED
-              value: {{ .Values.grpc.tls.enabled }}
+              value: "{{ .Values.grpc.tls.enabled }}"
 
             - name: OPENFGA_GRPC_TLS_CERT
               value: {{ .Values.grpc.tls.cert }}

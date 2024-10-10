@@ -5,21 +5,21 @@ metadata:
   name: {{ include "openfga.fullname" . }}-migrate
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
-  {{- with .Values.migrate.labels }}
+  {{- with .Values.datastore.migrations.labels }}
     {{- toYaml . | nindent 4}}
   {{- end}}
-  {{- with .Values.migrate.annotations }}
+  {{- with .Values.datastore.migrations.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
   template:
     metadata:
-      {{- with .Values.migrate.annotations }}
+      {{- with .Values.datastore.migrations.annotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.migrate.labels }}
+      {{- with .Values.datastore.migrations.labels }}
       labels:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -52,9 +52,9 @@ spec:
                   key: "uri"
             {{- end }}
 
-            {{- if .Values.migrate.timeout }}
+            {{- if .Values.datastore.migrations.timeout }}
             - name: OPENFGA_TIMEOUT
-              value: "{{ .Values.migrate.timeout }}"
+              value: "{{ .Values.datastore.migrations.timeout }}"
             {{- end }}
 
             {{- with .Values.extraEnvVars }}
@@ -63,15 +63,15 @@ spec:
 
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
-          {{- with .Values.migrate.extraVolumeMounts }}
+          {{- with .Values.datastore.migrations.extraVolumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-        {{- if .Values.migrate.sidecars }}
-        {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
+        {{- if .Values.datastore.migrations.sidecars }}
+        {{- include "common.tplvalues.render" ( dict "value" .Values.datastore.migrations.sidecars "context" $) | nindent 8 }}
         {{- end }}
       restartPolicy: Never
-      {{- with .Values.migrate.extraVolumes }}
+      {{- with .Values.datastore.migrations.extraVolumes }}
       volumes:
         {{- toYaml . | nindent 8 }}
       {{- end }}
