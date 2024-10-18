@@ -96,6 +96,28 @@ spec:
                   key: "uri"
             {{- end }}
 
+            {{- if .Values.datastore.password}}
+            - name: OPENFGA_DATASTORE_PASSWORD
+              value: "{{ .Values.datastore.password }}"
+            {{- else if .Values.datastore.passwordSecret }}
+            - name: OPENFGA_DATASTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.datastore.passwordSecret }}"
+                  key: "password"
+            {{- end }}
+
+            {{- if .Values.datastore.username }}
+            - name: OPENFGA_DATASTORE_USER
+              value: "{{ .Values.datastore.username }}"
+            {{- else if .Values.datastore.usernameSecret }}
+            - name: OPENFGA_DATASTORE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.datastore.userSecret }}"
+                  key: "username"
+            {{- end }}
+
             {{- if .Values.datastore.maxCacheSize }}
             - name: OPENFGA_DATASTORE_MAX_CACHE_SIZE
               value: "{{ .Values.datastore.maxCacheSize }}"
