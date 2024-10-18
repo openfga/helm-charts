@@ -19,21 +19,12 @@ jobs:
       - name: Configure Git
         run: |
           git config user.name github-actions
-          git config user.email contact@openfga.dev
-
-      - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_KEY_PASSPHRASE }}
-
-      - name: Export GPG key to legacy format
-        run: gpg --export-secret-keys > ~/.gnupg/pubring.gpg
+          git config user.email jasper.vaneessen@ugent.be
 
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
-          version: v3.5.0
+          version: v3.16.2
 
       - name: Add Helm Repositories
         run: |
@@ -43,8 +34,6 @@ jobs:
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.6.0
-        with:
-          config: .github/cr.yaml
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           CR_SKIP_EXISTING: true
