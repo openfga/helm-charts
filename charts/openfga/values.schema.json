@@ -329,8 +329,20 @@
                 },
                 "applyMigrations": {
                     "type": "boolean",
-                    "description": "enable/disable the job that runs migrations in the datastore",
+                    "description": "enable/disable the running of migrations in the datastore",
                     "default": true
+                },
+                "migrationType": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "how the migrations will be run",
+                    "default": "job",
+                    "enum": [
+                        "job",
+                        "initContainer"
+                    ]
                 },
                 "waitForMigrations": {
                     "type": "boolean",
