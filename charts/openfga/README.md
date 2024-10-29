@@ -21,6 +21,23 @@ This will deploy a 3-replica deployment of OpenFGA on the Kubernetes cluster usi
 
 
 
+## Customization 
+If you wish to customize the OpenFGA deployment you may supply paremeters such as the ones listed in the [values.yaml](/charts/openfga/values.yaml). 
+
+### Installing with Custom Common Labels
+You can specify custom labels to insert into resources inline or via Values files:
+
+```sh
+$ helm install openfga openfga/openfga \
+  --set-json 'commonLabels={"app.example.com/domain": "example", "app.example.com/system": "permissions"}'
+```
+
+```yaml
+commonLabels:
+    app.example.com/system: permissions
+    app.example.com/domain: example
+```
+
 ### Installing with Postgres
 If you do not already have a Postgres deployment, you can deploy OpenFGA with Postgres with the following command:
 

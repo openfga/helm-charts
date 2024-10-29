@@ -44,6 +44,9 @@ Common labels
 {{- define "openfga.labels" -}}
 helm.sh/chart: {{ include "openfga.chart" . }}
 {{ include "openfga.selectorLabels" . }}
+{{- with .Values.commonLabels }}
+{{ . | toYaml }}
+{{- end }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
