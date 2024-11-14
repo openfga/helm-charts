@@ -15,6 +15,7 @@ spec:
   selector:
     matchLabels:
       {{- include "openfga.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
   template:
     metadata:
       annotations:
@@ -26,6 +27,7 @@ spec:
         prometheus.io/port: "{{ (split ":" .Values.telemetry.metrics.addr)._1 }}"
       labels:
         {{- include "openfga.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
