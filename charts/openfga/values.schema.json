@@ -61,6 +61,11 @@
             },
             "additionalProperties": false
         },
+        "commonLabels": {
+            "type": "object",
+            "description": "Common labels to apply to OpenFGA resources",
+            "default": {}
+        },
         "fullnameOverride": {
             "type": "string",
             "description": "Overrides the default fully qualified app name",
