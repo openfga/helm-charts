@@ -15,11 +15,28 @@ $ helm repo add openfga https://openfga.github.io/helm-charts
 $ helm install openfga openfga/openfga
 ```
 
-This will deploy a 3-replica deployment of OpenFGA on the Kubernetes cluster using the default configurations for OpenFGA. For more information on the default values, please see the official [OpenFGA documentation](https://openfga.dev/docs/getting-started/setup-openfga/docker#configuring-the-server). The [Parameters](#parameters) section below lists the parameters that can be configured during installation.
+This will deploy a 3-replica deployment of OpenFGA on the Kubernetes cluster using the default configurations for OpenFGA. For more information on the default values, please see the official [OpenFGA documentation](https://openfga.dev/docs/getting-started/setup-openfga/docker#configuring-the-server). The [Chart Parameters](#chart-parameters) section below lists the parameters that can be configured during installation.
 
 > **Tip**: List all releases using `helm list`
 
 
+
+## Customization 
+If you wish to customize the OpenFGA deployment you may supply paremeters such as the ones listed in the [values.yaml](/charts/openfga/values.yaml). 
+
+### Installing with Custom Common Labels
+You can specify custom labels to insert into resources inline or via Values files:
+
+```sh
+$ helm install openfga openfga/openfga \
+  --set-json 'commonLabels={"app.example.com/domain": "example", "app.example.com/system": "permissions"}'
+```
+
+```yaml
+commonLabels:
+    app.example.com/system: permissions
+    app.example.com/domain: example
+```
 
 ### Installing with Postgres
 If you do not already have a Postgres deployment, you can deploy OpenFGA with Postgres with the following command:

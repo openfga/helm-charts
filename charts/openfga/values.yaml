@@ -9,6 +9,13 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# Specify additional labels to apply to OpenFGA resources
+# Usage example:
+# commonLabels:
+#     app.example.com/system: permissions
+#     app.example.com/domain: example
+commonLabels: {}
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
