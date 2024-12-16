@@ -109,7 +109,6 @@ spec:
 
           env:
             {{- include "openfga.datastore.envConfig" . | nindent 12 }}
-
             {{- if .Values.datastore.maxCacheSize }}
             - name: OPENFGA_DATASTORE_MAX_CACHE_SIZE
               value: "{{ .Values.datastore.maxCacheSize }}"
