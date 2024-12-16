@@ -18,11 +18,11 @@ annotations:
 dependencies:
   - name: postgresql
     version: "12.12.10"
-    repository: https://charts.bitnami.com/bitnami
+    repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
   - name: mysql
     version: "9.6.0"
-    repository: https://charts.bitnami.com/bitnami
+    repository: oci://registry-1.docker.io/bitnamicharts
     condition: mysql.enabled
   - name: common
     version: "2.13.3"
