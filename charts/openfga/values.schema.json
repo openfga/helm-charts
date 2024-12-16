@@ -300,19 +300,38 @@
                     ],
                     "description": "the secret name where to get the datastore URI, it expects a key named uri to exist in the secret"
                 },
-                "usernameSecret": {
+                "existingSecret": {
                     "type": [
                         "string",
                         "null"
                     ],
-                    "description": "the secret name where to get the datastore username, it expects a key named username to exist in the secret"
+                    "description": "the name of an existing secret that contains the datastore uri and credentials"
                 },
-                "passwordSecret": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "description": "the secret name where to get the datastore password, it expects a key named password to exist in the secret"
+                "secretKeys": {
+                    "type": "object",
+                    "properties": {
+                        "uriKey": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the key in the existing secret mapping to the datastore uri"
+                        },
+                        "usernameKey": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the key in the existing secret mapping to the datastore username"
+                        },
+                        "passwordKey": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the key in the existing secret mapping to the datastore password"
+                        }
+                    }
                 },
                 "maxCacheSize": {
                     "type": [
