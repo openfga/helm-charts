@@ -783,6 +783,14 @@
             },
             "default": {}
         },
+        "podExtraLabels": {
+            "type": "object",
+            "description": "Map of labels to add to the pods' manifest",
+            "additionalProperties": {
+                "type": "string"
+            },
+            "default": {}
+        },
         "service": {
             "type": "object",
             "properties": {

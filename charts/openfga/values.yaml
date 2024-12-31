@@ -28,6 +28,7 @@ serviceAccount:
 annotations: {}
 
 podAnnotations: {}
+podExtraLabels: {}
 
 extraEnvVars: []
 extraVolumes: []
