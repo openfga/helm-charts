@@ -66,6 +66,50 @@ $ helm install openfga openfga/openfga \
 
 This will bootstrap a MySQL deployment using the [`bitnami/mysql`](https://artifacthub.io/packages/helm/bitnami/mysql) chart and deploy OpenFGA configured in a way to connect to it.
 
+### Connecting to an existing Postgres or MySQL deployment
+
+If you have an existing Postgres or MySQL deployment, you can connect OpenFGA to it by providing the `datastore.uri` parameter. For example, to connect to a Postgres deployment:
+
+```
+$ helm install openfga openfga/openfga \
+  --set datastore.engine=postgres \
+  --set datastore.uri="postgres://postgres:password@postgres.postgres:5432/postgres?sslmode=disable"
+```
+
+### Using an existing secret for Postgres or MySQL
+
+If you have an existing secret with the connection details for Postgres or MySQL, you can reference the secret in the values file. For example, say you have created the following secret for Postgres:
+
+```sh
+kubectl create secret generic my-postgres-secret \
+  --from-literal=uri="postgres://postgres.postgres:5432/postgres?sslmode=disable" \
+  --from-literal=username=postgres --from-literal=password=password
+```
+
+You can reference this secret in the values file as follows:
+
+```yaml
+datastore:
+  engine: postgres
+  existingSecret: my-postgres-secret
+  secretKeys:
+    uri: uri
+    username: username
+    password: password
+```
+
+You can also mix and match both static config and secret references. When the secret key is defined, the static config will be ignored. The following example shows how to reference the secret for username and password, but provide the URI statically:
+
+```yaml
+datastore:
+  engine: postgres
+  uri: "postgres://postgres.postgres:5432/postgres?sslmode=disable"
+  existingSecret: my-postgres-secret
+  secretKeys:
+    username: username
+    password: password
+```
+
 ## Uninstalling the Chart
 To uninstall/delete the `openfga` deployment:
 
