@@ -161,7 +161,7 @@ spec:
             - name: OPENFGA_DATASTORE_CONN_MAX_LIFETIME
               value: "{{ .Values.datastore.connMaxLifetime }}"
             {{- end }}
-            
+
             {{- if .Values.maxConcurrentReadsForCheck }}
             - name: OPENFGA_MAX_CONCURRENT_READS_FOR_CHECK
               value: "{{ .Values.maxConcurrentReadsForCheck }}"
@@ -226,7 +226,8 @@ spec:
 
             {{- if .Values.http.corsAllowedOrigins }}
             - name: OPENFGA_HTTP_CORS_ALLOWED_ORIGINS
-              value: "{{ join "," .Values.http.corsAllowedOrigins }}"
+              value: {{ include "common.tplvalues.render" ( dict "value" (join "," .Values.http.corsAllowedOrigins) "context" $ ) }}
+
             {{- end }}
 
             {{- if .Values.http.corsAllowedHeaders }}
@@ -251,7 +252,7 @@ spec:
 
             {{- if .Values.authn.oidc.issuer }}
             - name: OPENFGA_AUTHN_OIDC_ISSUER
-              value: "{{ .Values.authn.oidc.issuer }}"
+              value: "{{ include "common.tplvalues.render" ( dict "value" .Values.authn.oidc.issuer "context" $ ) }}"
             {{- end }}
 
             - name: OPENFGA_PLAYGROUND_ENABLED
