@@ -52,6 +52,28 @@ spec:
                   key: "uri"
             {{- end }}
 
+            {{- if .Values.datastore.username }}
+            - name: OPENFGA_DATASTORE_USERNAME
+              value: "{{ .Values.datastore.username }}"
+            {{- else if .Values.datastore.credentialsSecret }}
+            - name: OPENFGA_DATASTORE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.datastore.credentialsSecret }}"
+                  key: "{{ .Values.datastore.credentialsSecretUsernameKey }}"
+            {{- end }}
+
+            {{- if .Values.datastore.password }}
+            - name: OPENFGA_DATASTORE_PASSWORD
+              value: "{{ .Values.datastore.password }}"
+            {{- else if .Values.datastore.credentialsSecret }}
+            - name: OPENFGA_DATASTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.datastore.credentialsSecret }}"
+                  key: "{{ .Values.datastore.credentialsSecretPasswordKey }}"
+            {{- end }}
+
             {{- if .Values.migrate.timeout }}
             - name: OPENFGA_TIMEOUT
               value: "{{ .Values.migrate.timeout }}"
