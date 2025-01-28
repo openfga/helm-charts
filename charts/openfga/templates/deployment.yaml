@@ -164,7 +164,7 @@ spec:
             - name: OPENFGA_DATASTORE_CONN_MAX_LIFETIME
               value: "{{ .Values.datastore.connMaxLifetime }}"
             {{- end }}
-            
+
             {{- if .Values.maxConcurrentReadsForCheck }}
             - name: OPENFGA_MAX_CONCURRENT_READS_FOR_CHECK
               value: "{{ .Values.maxConcurrentReadsForCheck }}"
@@ -192,7 +192,7 @@ spec:
 
             {{- if .Values.grpc.tls.enabled }}
             - name: OPENFGA_GRPC_TLS_ENABLED
-              value: {{ .Values.grpc.tls.enabled }}
+              value: "{{ .Values.grpc.tls.enabled }}"
 
             - name: OPENFGA_GRPC_TLS_CERT
               value: {{ .Values.grpc.tls.cert }}
