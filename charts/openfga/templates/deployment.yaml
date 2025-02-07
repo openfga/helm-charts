@@ -26,9 +26,6 @@ spec:
         prometheus.io/port: "{{ (split ":" .Values.telemetry.metrics.addr)._1 }}"
       labels:
         {{- include "openfga.labels" . | nindent 8 }}
-        {{- with .Values.commonLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
         {{- with .Values.podExtraLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
