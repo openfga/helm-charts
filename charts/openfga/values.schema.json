@@ -506,6 +506,13 @@
                                 "type": "string",
                                 "minItems": 1
                             }
+                        },
+                        "keysSecret": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "description": "the secret name where to get the preshared keys, it expects a key named 'presharedKeys' to exist in the secret containing a comma-separated list of keys"
                         }
                     }
                 },
