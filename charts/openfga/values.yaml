@@ -304,6 +304,8 @@ ingress:
 
 resources: {}
 
+lifecycle: {}
+
 autoscaling:
   enabled: false
   minReplicas: 1
