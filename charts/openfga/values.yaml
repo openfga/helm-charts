@@ -137,7 +137,7 @@ telemetry:
       ##
       enabled: false
 
-      ## @param telemetry.metrics.serviceMonitor.additionalLabels additional labels to be added to the serivceMonitor resource
+      ## @param telemetry.metrics.serviceMonitor.additionalLabels additional labels to be added to the serviceMonitor resource
       ##
       additionalLabels: {}
 
@@ -198,6 +198,11 @@ datastore:
   engine: memory
   uri:
   uriSecret:
+  username:
+  password:
+  credentialsSecret:
+  credentialsSecretUsernameKey: username
+  credentialsSecretPasswordKey: password
   maxCacheSize:
   maxOpenConns:
   maxIdleConns:
