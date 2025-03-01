@@ -107,7 +107,7 @@
         },
         "lifecycle": {
             "type": "object",
-            "description": "Specifies the pod lifecycle constraints for the pods managed by the deployment. For more information see https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/.",
+            "description": "Specifies lifecycle hooks for the container. For more information see https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/.",
             "default": {}
         },
         "tolerations": {
