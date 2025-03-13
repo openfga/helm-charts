@@ -30,6 +30,13 @@ annotations: {}
 podAnnotations: {}
 podExtraLabels: {}
 
+# Extra env variables to pass to the containers
+# Usage Example:
+#   extraEnvVars:
+#     - name: OPENFGA_CACHE_CONTROLLER_ENABLED
+#       value: "true"
+#     - name: OPENFGA_CACHE_CONTROLLER_TTL
+#       value: 1s
 extraEnvVars: []
 extraVolumes: []
 extraVolumeMounts: []

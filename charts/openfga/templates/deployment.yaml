@@ -390,7 +390,7 @@ spec:
 
             {{- if .Values.telemetry.trace.otlp.tls.enabled }}
             - name: OPENFGA_TRACE_OTLP_TLS_ENABLED
-              value: {{ .Values.telemetry.trace.otlp.tls.enabled }}
+              value: "{{ .Values.telemetry.trace.otlp.tls.enabled }}"
             {{- end }}
 
             {{- if .Values.telemetry.trace.sampleRatio }}
