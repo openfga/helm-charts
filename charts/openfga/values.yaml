@@ -242,7 +242,11 @@ http:
 authn:
   method:
   preshared:
+    # Specify a list of preshared keys directly:
     keys: []
+    # Or reference a secret that contains a list of preshared keys:
+    # Secret should have a "presharedKeys" key
+    # keysSecret: "my-preshared-keys-secret"
   oidc:
     audience:
     issuer:
