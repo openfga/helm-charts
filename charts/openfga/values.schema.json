@@ -627,7 +627,7 @@
             "type": "array",
             "description": "a list of experimental features to enable",
             "default": [],
-            "examples": ["enable-list-users","enable-access-control"],
+            "examples": ["enable-check-optimizations","enable-access-control"],
             "items": {
                 "type": "string",
                 "enum": ["enable-check-optimizations","enable-access-control"]
