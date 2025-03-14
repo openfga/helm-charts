@@ -630,7 +630,7 @@
             "examples": ["enable-list-users","enable-access-control"],
             "items": {
                 "type": "string",
-                "enum": ["enable-list-users","enable-access-control"]
+                "enum": ["enable-check-optimizations","enable-access-control"]
             }
         },
         "maxTuplesPerWrite": {
