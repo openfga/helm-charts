@@ -627,10 +627,10 @@
             "type": "array",
             "description": "a list of experimental features to enable",
             "default": [],
-            "examples": ["enable-list-users"],
+            "examples": ["enable-check-optimizations","enable-access-control"],
             "items": {
                 "type": "string",
-                "enum": ["enable-list-users"]
+                "enum": ["enable-check-optimizations","enable-access-control"]
             }
         },
         "maxTuplesPerWrite": {
@@ -778,6 +778,14 @@
         "podAnnotations": {
             "type": "object",
             "description": "Map of annotations to add to the pods' manifest",
+            "additionalProperties": {
+                "type": "string"
+            },
+            "default": {}
+        },
+        "podExtraLabels": {
+            "type": "object",
+            "description": "Map of labels to add to the pods' manifest",
             "additionalProperties": {
                 "type": "string"
             },

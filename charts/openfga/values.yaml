@@ -28,6 +28,7 @@ serviceAccount:
 annotations: {}
 
 podAnnotations: {}
+podExtraLabels: {}
 
 extraEnvVars: []
 extraVolumes: []
@@ -204,6 +205,7 @@ datastore:
   connMaxLifetime:
   applyMigrations: true
   waitForMigrations: true
+  migrationType: job
   migrations:
     resources: {}
     image:
