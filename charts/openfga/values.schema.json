@@ -265,11 +265,7 @@
             "properties": {
                 "engine": {
                     "type": "string",
-                    "enum": [
-                        "memory",
-                        "postgres",
-                        "mysql"
-                    ],
+                    "description": "the datastore engine to use, currently openfga supports memory (default), postgres, mysql and sqlite implementations, be sure to adapt your configuration accordingly",
                     "default": "memory"
                 },
                 "uri": {
