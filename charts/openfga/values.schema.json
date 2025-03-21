@@ -632,10 +632,10 @@
             "type": "array",
             "description": "a list of experimental features to enable",
             "default": [],
-            "examples": ["enable-list-users"],
+            "examples": ["enable-check-optimizations","enable-access-control"],
             "items": {
                 "type": "string",
-                "enum": ["enable-list-users"]
+                "enum": ["enable-check-optimizations","enable-access-control"]
             }
         },
         "maxTuplesPerWrite": {
