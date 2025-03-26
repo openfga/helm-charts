@@ -1042,6 +1042,14 @@
                 }
             }
         },
+        "testPodSpec": {
+            "type": "object",
+            "description": "Extra spec for the test pod to match cluster policy"
+        },
+        "testContainerSpec": {
+            "type": "object",
+            "description": "Extra spec for the test container to match cluster policy"
+        },
         "common": {},
         "extraObjects": {
             "type": "array",

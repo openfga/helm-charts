@@ -342,6 +342,9 @@ migrate:
   labels: {}
   timeout:
 
+testPodSpec: {}
+testContainerSpec: {}
+
 # -- Array of extra K8s manifests to deploy
 ## Note: Supports use of custom Helm templates
 extraObjects: []
