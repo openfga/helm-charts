@@ -402,6 +402,13 @@
                             "description": "enables or disables transport layer security (TLS)",
                             "default": false
                         },
+                        "ca": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the (absolute) file path of the CA certificate to use for the TLS connection"
+                        },
                         "cert": {
                             "type": [
                                 "string",
