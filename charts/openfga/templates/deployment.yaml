@@ -201,10 +201,8 @@ spec:
               value: {{ .Values.grpc.tls.key }}
             {{- end }}
 
-            {{- if .Values.http.enabled }}
             - name: OPENFGA_HTTP_ENABLED
               value: "{{ .Values.http.enabled }}"
-            {{- end }}
 
             {{- if .Values.http.addr }}
             - name: OPENFGA_HTTP_ADDR
@@ -363,10 +361,8 @@ spec:
               value: "{{ .Values.allowEvaluating1_0Models }}"
             {{- end }}
 
-            {{- if .Values.telemetry.metrics.enabled }}
             - name: OPENFGA_METRICS_ENABLED
               value: "{{ .Values.telemetry.metrics.enabled }}"
-            {{- end }}
 
             {{- if .Values.telemetry.metrics.addr }}
             - name: OPENFGA_METRICS_ADDR
