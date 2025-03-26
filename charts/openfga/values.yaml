@@ -317,6 +317,8 @@ nodeSelector: {}
 
 tolerations: []
 
+topologySpreadConstraints: []
+
 affinity: {}
 
 # @param sidecars Add additional sidecar containers to the pods

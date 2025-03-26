@@ -115,6 +115,11 @@
             "description": "Specifies the pod toleration constraints for the pod managed by the deployment. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/.",
             "default": []
         },
+        "topologySpreadConstraints": {
+            "type": "array",
+            "description": "Specifies the topology spread to control how the pods are spread across your cluster. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/.",
+            "default": []
+        },
         "serviceAccount": {
             "type": "object",
             "properties": {
