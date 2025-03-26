@@ -293,7 +293,15 @@
                         "string",
                         "null"
                     ],
-                    "description": "the secret name where to get the datastore URI, it expects a key named uri to exist in the secret"
+                    "description": "the secret name where to get the datastore URI, it expects the key in `uriSecretKey` to exist in the secret"
+                },
+                "uriSecretKey": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "default": "uri",
+                    "description": "the key in the secret where to get the datastore URI, defaults to uri"
                 },
                 "maxCacheSize": {
                     "type": [
