@@ -28,7 +28,7 @@ jobs:
 
       - name: Add Helm Repositories
         run: |
-          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add bitnami https://repo.broadcom.com/bitnami-files
           helm repo add openfga https://openfga.github.io/helm-charts
           helm repo update
 
