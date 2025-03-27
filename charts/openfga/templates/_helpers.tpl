@@ -87,34 +87,34 @@ Return true if a secret object should be created
 - name: OPENFGA_DATASTORE_ENGINE
   value: "{{ .Values.datastore.engine }}"
 {{- end }}
-{{- if .Values.datastore.uri }}
-- name: OPENFGA_DATASTORE_URI
-  value: "{{ .Values.datastore.uri}}"
-{{- else if .Values.datastore.uriSecret }}
+{{- if .Values.datastore.externalSecret.uriSecretKey }}
 - name: OPENFGA_DATASTORE_URI
   valueFrom:
     secretKeyRef:
-      name: "{{ .Values.datastore.uriSecret }}"
-      key: "uri"
+      name: "{{ .Values.datastore.externalSecret.name }}"
+      key: "{{ .Values.datastore.externalSecret.uriSecretKey }}"
+{{- else if .Values.datastore.uri }}
+- name: OPENFGA_DATASTORE_URI
+  value: "{{ .Values.datastore.uri }}"
 {{- end }}
-{{- if .Values.datastore.password }}
-- name: OPENFGA_DATASTORE_PASSWORD
-  value: "{{ .Values.datastore.password }}"
-{{- else if .Values.datastore.passwordSecret }}
-- name: OPENFGA_DATASTORE_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: "{{ .Values.datastore.passwordSecret }}"
-      key: "password"
-{{- end -}}
-{{- if .Values.datastore.username }}
-- name: OPENFGA_DATASTORE_USER
-  value: "{{ .Values.datastore.username }}"
-{{- else if .Values.datastore.usernameSecret }}
+{{- if .Values.datastore.externalSecret.usernameSecretKey }}
 - name: OPENFGA_DATASTORE_USERNAME
   valueFrom:
     secretKeyRef:
-      name: "{{ .Values.datastore.usernameSecret }}"
-      key: "username"
+      name: "{{ .Values.datastore.externalSecret.name }}"
+      key: "{{ .Values.datastore.externalSecret.usernameSecretKey }}"
+{{- else if .Values.datastore.username }}
+- name: OPENFGA_DATASTORE_USERNAME
+  value: "{{ .Values.datastore.username }}"
+{{- end }}
+{{- if .Values.datastore.externalSecret.passwordSecretKey }}
+- name: OPENFGA_DATASTORE_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.externalSecret.name }}"
+      key: "{{ .Values.datastore.externalSecret.passwordSecretKey }}"
+{{- else if .Values.datastore.password }}
+- name: OPENFGA_DATASTORE_PASSWORD
+  value: "{{ .Values.datastore.password }}"
 {{- end }}
 {{- end -}}

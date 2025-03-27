@@ -199,9 +199,11 @@ datastore:
   uri:
   username:
   password:
-  uriSecret:
-  usernameSecret:
-  passwordSecret:
+  externalSecret:
+    name: ""
+    uriSecretKey: ""
+    usernameSecretKey: ""
+    passwordSecretKey: ""
   maxCacheSize:
   maxOpenConns:
   maxIdleConns:
