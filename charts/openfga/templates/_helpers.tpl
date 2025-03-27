@@ -81,12 +81,16 @@ Return true if a secret object should be created
 {{- end -}}
 {{- end -}}
 
+{{- define "openfga.datastore.secretName" -}}
+{{ include "openfga.fullname" . }}-datastore-secret
+{{- end -}}
 
 {{- define "openfga.datastore.envConfig" -}}
-{{- if .Values.datastore.engine }}
+{{- if .Values.datastore.engine -}}
 - name: OPENFGA_DATASTORE_ENGINE
   value: "{{ .Values.datastore.engine }}"
-{{- end }}
+{{- end -}}
+
 {{- if .Values.datastore.uriSecret }}
 - name: OPENFGA_DATASTORE_URI
   valueFrom:
@@ -101,8 +105,12 @@ Return true if a secret object should be created
       key: "{{ .Values.datastore.secretKeys.uriKey }}"
 {{- else if .Values.datastore.uri }}
 - name: OPENFGA_DATASTORE_URI
-  value: "{{ .Values.datastore.uri }}"
-{{- end }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openfga.datastore.secretName" . | quote }}
+      key: "uri"
+{{- end -}}
+
 {{- if and (.Values.datastore.existingSecret) (.Values.datastore.secretKeys.usernameKey) }}
 - name: OPENFGA_DATASTORE_USERNAME
   valueFrom:
@@ -111,8 +119,12 @@ Return true if a secret object should be created
       key: "{{ .Values.datastore.secretKeys.usernameKey }}"
 {{- else if .Values.datastore.username }}
 - name: OPENFGA_DATASTORE_USERNAME
-  value: "{{ .Values.datastore.username }}"
-{{- end }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openfga.datastore.secretName" . | quote }}
+      key: "username"
+{{- end -}}
+
 {{- if and (.Values.datastore.existingSecret) (.Values.datastore.secretKeys.passwordKey) }}
 - name: OPENFGA_DATASTORE_PASSWORD
   valueFrom:
@@ -121,6 +133,9 @@ Return true if a secret object should be created
       key: "{{ .Values.datastore.secretKeys.passwordKey }}"
 {{- else if .Values.datastore.password }}
 - name: OPENFGA_DATASTORE_PASSWORD
-  value: "{{ .Values.datastore.password }}"
-{{- end }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openfga.datastore.secretName" . | quote }}
+      key: "password"
+{{- end -}}
 {{- end -}}

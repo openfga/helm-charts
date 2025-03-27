@@ -200,11 +200,11 @@ datastore:
   uriSecret:
   username:
   password:
-  existingSecret: ""
+  existingSecret:
   secretKeys:
-    uriKey: ""
-    usernameKey: ""
-    passwordKey: ""
+    uriKey:
+    usernameKey:
+    passwordKey:
   maxCacheSize:
   maxOpenConns:
   maxIdleConns:
