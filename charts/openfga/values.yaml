@@ -197,11 +197,11 @@ telemetry:
 datastore:
   engine: memory
   uri:
-  host:
-  port:
-  user:
+  username:
   password:
   uriSecret:
+  usernameSecret:
+  passwordSecret:
   maxCacheSize:
   maxOpenConns:
   maxIdleConns:

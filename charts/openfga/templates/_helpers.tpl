@@ -80,15 +80,3 @@ Return true if a secret object should be created
     {{- true -}}
 {{- end -}}
 {{- end -}}
-
-{{- define "openfga.datastore.uri" -}}
-{{- if not .Values.datastore.uri -}}
-    {{- if eq datastore.engine "postgresql" }}
-        {{- printf "postgres://%s:%s@%s:%s/%s?sslmode=disable" .Values.datastore.user .Values.datastore.password .Values.datastore.host .Values.datastore.port .Values.datastore.database | quote }}
-    {{- else if eq datastore.engine "mysql" }}
-        {{- printf "%s:%s@tcp(%s:%s)/%s?parseTime=true" .Values.datastore.user .Values.datastore.password .Values.datastore.host .Values.datastore.port .Values.datastore.database | quote }}
-    {{- end -}}
-{{- else -}}
-    {{- .Values.datastore.uri | quote -}}
-{{- end }}
-{{- end }}
