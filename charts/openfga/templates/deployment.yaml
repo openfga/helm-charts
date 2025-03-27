@@ -131,7 +131,7 @@ spec:
 
             {{- if .Values.datastore.uri }}
             - name: OPENFGA_DATASTORE_URI
-              value: "{{ .Values.datastore.uri }}"
+              value: {{ include "openfga.datastore.uri" . }}
             {{- else if .Values.datastore.uriSecret }}
             - name: OPENFGA_DATASTORE_URI
               valueFrom:

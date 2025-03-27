@@ -286,7 +286,36 @@
                     "type": [
                         "string",
                         "null"
-                    ]
+                    ],
+                    "description": "the URI of the datastore including credentials and database (e.g. postgres://user:password@host:port/dbname)"
+                },
+                "host": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the host address of the datastore"
+                },
+                "port": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "description": "the port of the datastore"
+                },
+                "user": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the username to authenticate with the datastore"
+                },
+                "password": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the password to authenticate with the datastore"
                 },
                 "uriSecret": {
                     "type": [
