@@ -80,3 +80,41 @@ Return true if a secret object should be created
     {{- true -}}
 {{- end -}}
 {{- end -}}
+
+
+{{- define "openfga.datastore.envConfig" -}}
+{{- if .Values.datastore.engine }}
+- name: OPENFGA_DATASTORE_ENGINE
+  value: "{{ .Values.datastore.engine }}"
+{{- end }}
+{{- if .Values.datastore.uri }}
+- name: OPENFGA_DATASTORE_URI
+  value: "{{ .Values.datastore.uri}}"
+{{- else if .Values.datastore.uriSecret }}
+- name: OPENFGA_DATASTORE_URI
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.uriSecret }}"
+      key: "uri"
+{{- end }}
+{{- if .Values.datastore.password }}
+- name: OPENFGA_DATASTORE_PASSWORD
+  value: "{{ .Values.datastore.password }}"
+{{- else if .Values.datastore.passwordSecret }}
+- name: OPENFGA_DATASTORE_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.passwordSecret }}"
+      key: "password"
+{{- end -}}
+{{- if .Values.datastore.username }}
+- name: OPENFGA_DATASTORE_USER
+  value: "{{ .Values.datastore.username }}"
+{{- else if .Values.datastore.usernameSecret }}
+- name: OPENFGA_DATASTORE_USERNAME
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.usernameSecret }}"
+      key: "username"
+{{- end }}
+{{- end -}}
