@@ -87,32 +87,38 @@ Return true if a secret object should be created
 - name: OPENFGA_DATASTORE_ENGINE
   value: "{{ .Values.datastore.engine }}"
 {{- end }}
-{{- if .Values.datastore.externalSecret.uriSecretKey }}
+{{- if .Values.datastore.uriSecret }}
 - name: OPENFGA_DATASTORE_URI
   valueFrom:
     secretKeyRef:
-      name: "{{ .Values.datastore.externalSecret.name }}"
-      key: "{{ .Values.datastore.externalSecret.uriSecretKey }}"
+      name: "{{ .Values.datastore.uriSecret }}"
+      key: uri
+{{- else if and (.Values.datastore.existingSecret) (.Values.datastore.secretKeys.uriKey) }}
+- name: OPENFGA_DATASTORE_URI
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.existingSecret }}"
+      key: "{{ .Values.datastore.secretKeys.uriKey }}"
 {{- else if .Values.datastore.uri }}
 - name: OPENFGA_DATASTORE_URI
   value: "{{ .Values.datastore.uri }}"
 {{- end }}
-{{- if .Values.datastore.externalSecret.usernameSecretKey }}
+{{- if and (.Values.datastore.existingSecret) (.Values.datastore.secretKeys.usernameKey) }}
 - name: OPENFGA_DATASTORE_USERNAME
   valueFrom:
     secretKeyRef:
-      name: "{{ .Values.datastore.externalSecret.name }}"
-      key: "{{ .Values.datastore.externalSecret.usernameSecretKey }}"
+      name: "{{ .Values.datastore.existingSecret }}"
+      key: "{{ .Values.datastore.secretKeys.usernameKey }}"
 {{- else if .Values.datastore.username }}
 - name: OPENFGA_DATASTORE_USERNAME
   value: "{{ .Values.datastore.username }}"
 {{- end }}
-{{- if .Values.datastore.externalSecret.passwordSecretKey }}
+{{- if and (.Values.datastore.existingSecret) (.Values.datastore.secretKeys.passwordKey) }}
 - name: OPENFGA_DATASTORE_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: "{{ .Values.datastore.externalSecret.name }}"
-      key: "{{ .Values.datastore.externalSecret.passwordSecretKey }}"
+      name: "{{ .Values.datastore.existingSecret }}"
+      key: "{{ .Values.datastore.secretKeys.passwordKey }}"
 {{- else if .Values.datastore.password }}
 - name: OPENFGA_DATASTORE_PASSWORD
   value: "{{ .Values.datastore.password }}"

@@ -197,13 +197,14 @@ telemetry:
 datastore:
   engine: memory
   uri:
+  uriSecret:
   username:
   password:
-  externalSecret:
-    name: ""
-    uriSecretKey: ""
-    usernameSecretKey: ""
-    passwordSecretKey: ""
+  existingSecret: ""
+  secretKeys:
+    uriKey: ""
+    usernameKey: ""
+    passwordKey: ""
   maxCacheSize:
   maxOpenConns:
   maxIdleConns:
