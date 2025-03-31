@@ -45,16 +45,7 @@ spec:
               value: "{{ .Values.datastore.engine }}"
             {{- end }}
 
-            {{- if .Values.datastore.uri }}
-            - name: OPENFGA_DATASTORE_URI
-              value: "{{ .Values.datastore.uri }}"
-            {{- else if .Values.datastore.uriSecret }}
-            - name: OPENFGA_DATASTORE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Values.datastore.uriSecret }}"
-                  key: "uri"
-            {{- end }}
+            {{- include "openfga.datastoreURIEnvVar" . | nindent 12 }}
 
             {{- if .Values.migrate.timeout }}
             - name: OPENFGA_TIMEOUT

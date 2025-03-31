@@ -198,6 +198,7 @@ datastore:
   engine: memory
   uri:
   uriSecret:
+  uriSecretKey:
   maxCacheSize:
   maxOpenConns:
   maxIdleConns:
