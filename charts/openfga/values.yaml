@@ -227,6 +227,7 @@ grpc:
     enabled: false
     cert:
     key:
+    ca:
 
 http:
   enabled: true
