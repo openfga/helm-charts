@@ -16,4 +16,10 @@ spec:
       image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
       imagePullPolicy: {{ .Values.image.pullPolicy }}
       command: ["grpc_health_probe", '-addr={{ include "openfga.fullname" . }}:{{ (split ":" .Values.grpc.addr)._1 }}']
+      {{- with .Values.testContainerSpec }}
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
   restartPolicy: Never
+  {{- with .Values.testPodSpec }}
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
