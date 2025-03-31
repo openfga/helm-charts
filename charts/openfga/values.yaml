@@ -227,6 +227,7 @@ grpc:
     enabled: false
     cert:
     key:
+    ca:
 
 http:
   enabled: true
@@ -317,6 +318,8 @@ nodeSelector: {}
 
 tolerations: []
 
+topologySpreadConstraints: []
+
 affinity: {}
 
 # @param sidecars Add additional sidecar containers to the pods
@@ -340,6 +343,9 @@ migrate:
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
   timeout:
+
+testPodSpec: {}
+testContainerSpec: {}
 
 # -- Array of extra K8s manifests to deploy
 ## Note: Supports use of custom Helm templates
