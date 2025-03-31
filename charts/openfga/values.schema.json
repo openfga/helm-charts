@@ -977,6 +977,14 @@
                     "description": "add additional volumeMounts to the migration job",
                     "default": []
                 },
+                "extraInitContainers": {
+                    "type": "array",
+                    "description": "List of additional initContainers to add to the migration job",
+                    "items": {
+                        "type": "object"
+                    },
+                    "default": []
+                },
                 "annotations": {
                     "type": "object",
                     "description": "Map of annotations to add to the migration job's manifest",

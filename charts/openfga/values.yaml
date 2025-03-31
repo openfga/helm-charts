@@ -335,6 +335,7 @@ sidecars: []
 migrate:
   extraVolumes: []
   extraVolumeMounts: []
+  extraInitContainers: []
   sidecars: []
   annotations:
     helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
