@@ -286,7 +286,22 @@
                     "type": [
                         "string",
                         "null"
-                    ]
+                    ],
+                    "description": "the URI of the datastore, including database protocol and optional credentials (e.g. postgres://user:password@host:port/dbname)"
+                },
+                "username": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the username to authenticate with the datastore (overwrites any username provided in the connection uri)"
+                },
+                "password": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the password to authenticate with the datastore (overwrites any password provided in the connection uri)"
                 },
                 "uriSecret": {
                     "type": [
@@ -294,6 +309,39 @@
                         "null"
                     ],
                     "description": "the secret name where to get the datastore URI, it expects a key named uri to exist in the secret"
+                },
+                "existingSecret": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "description": "the name of an existing secret that contains the datastore uri and credentials"
+                },
+                "secretKeys": {
+                    "type": "object",
+                    "properties": {
+                        "uriKey": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the key in the existing secret mapping to the datastore uri"
+                        },
+                        "usernameKey": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the key in the existing secret mapping to the datastore username"
+                        },
+                        "passwordKey": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the key in the existing secret mapping to the datastore password"
+                        }
+                    }
                 },
                 "maxCacheSize": {
                     "type": [

@@ -9,7 +9,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not  .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
   {{- end }}
   selector:
@@ -62,20 +62,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           args: [ "migrate" ]
           env:
-            {{- if .Values.datastore.engine }}
-            - name: OPENFGA_DATASTORE_ENGINE
-              value: "{{ .Values.datastore.engine }}"
-            {{- end }}
-            {{- if .Values.datastore.uri }}
-            - name: OPENFGA_DATASTORE_URI
-              value: "{{ .Values.datastore.uri }}"
-            {{- else if .Values.datastore.uriSecret }}
-            - name: OPENFGA_DATASTORE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Values.datastore.uriSecret }}"
-                  key: "uri"
-            {{- end }}
+            {{- include "openfga.datastore.envConfig" . | nindent 12 }}
             {{- if .Values.migrate.timeout }}
             - name: OPENFGA_TIMEOUT
               value: "{{ .Values.migrate.timeout }}"
@@ -127,22 +114,7 @@ spec:
             {{- end }}
 
           env:
-            {{- if .Values.datastore.engine }}
-            - name: OPENFGA_DATASTORE_ENGINE
-              value: "{{ .Values.datastore.engine }}"
-            {{- end }}
-
-            {{- if .Values.datastore.uri }}
-            - name: OPENFGA_DATASTORE_URI
-              value: "{{ .Values.datastore.uri }}"
-            {{- else if .Values.datastore.uriSecret }}
-            - name: OPENFGA_DATASTORE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Values.datastore.uriSecret }}"
-                  key: "uri"
-            {{- end }}
-
+            {{- include "openfga.datastore.envConfig" . | nindent 12 }}
             {{- if .Values.datastore.maxCacheSize }}
             - name: OPENFGA_DATASTORE_MAX_CACHE_SIZE
               value: "{{ .Values.datastore.maxCacheSize }}"
