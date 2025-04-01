@@ -287,21 +287,21 @@
                         "string",
                         "null"
                     ],
-                    "description": "the URI of the datastore including credentials and database (e.g. postgres://user:password@host:port/dbname)"
+                    "description": "the URI of the datastore, including database protocol and optional credentials (e.g. postgres://user:password@host:port/dbname)"
                 },
                 "username": {
                     "type": [
                         "string",
                         "null"
                     ],
-                    "description": "the username to authenticate with the datastore"
+                    "description": "the username to authenticate with the datastore (overwrites any username provided in the connection uri)"
                 },
                 "password": {
                     "type": [
                         "string",
                         "null"
                     ],
-                    "description": "the password to authenticate with the datastore"
+                    "description": "the password to authenticate with the datastore (overwrites any password provided in the connection uri)"
                 },
                 "uriSecret": {
                     "type": [
