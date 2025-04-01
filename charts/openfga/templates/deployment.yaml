@@ -53,6 +53,9 @@ spec:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
         {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) (eq .Values.datastore.migrationType "initContainer") }}
+        {{- with .Values.migrate.extraInitContainers }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         - name: migrate-database
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -374,24 +377,57 @@ spec:
           readinessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customReadinessProbe "context" $) | nindent 12 }}
           {{- else if .Values.readinessProbe.enabled }}
           readinessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.readinessProbe "enabled") "context" $) | nindent 12 }}
+          {{- if .Values.grpc.tls.enabled }}
             exec:
-              command: ["grpc_health_probe", "-addr={{ .Values.grpc.addr }}"]
+              command:
+              - grpc_health_probe
+              - -addr={{ .Values.grpc.addr }}
+              - -tls
+              - -tls-ca-cert={{ .Values.grpc.tls.ca }}
+              - -tls-client-cert={{ .Values.grpc.tls.cert }}
+              - -client-tls-key={{ .Values.grpc.tls.key }}
+          {{- else }}
+            grpc:
+              port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
           {{- end }}
 
           {{- if .Values.customLivenessProbe }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customLivenessProbe "context" $) | nindent 12 }}
           {{- else if .Values.livenessProbe.enabled }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.livenessProbe "enabled") "context" $) | nindent 12 }}
+          {{- if .Values.grpc.tls.enabled }}
+            exec:
+              command:
+              - grpc_health_probe
+              - -addr={{ .Values.grpc.addr }}
+              - -tls
+              - -tls-ca-cert={{ .Values.grpc.tls.ca }}
+              - -tls-client-cert={{ .Values.grpc.tls.cert }}
+              - -tls-client-key={{ .Values.grpc.tls.key }}
+          {{- else }}
             grpc:
               port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
           {{- end }}
 
           {{- if .Values.customStartupProbe }}
           startupProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customStartupProbe "context" $) | nindent 12 }}
           {{- else if .Values.startupProbe.enabled }}
           startupProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.startupProbe "enabled") "context" $) | nindent 12 }}
+          {{- if .Values.grpc.tls.enabled }}
+            exec:
+              command:
+              - grpc_health_probe
+              - -addr={{ .Values.grpc.addr }}
+              - -tls
+              - -tls-ca-cert={{ .Values.grpc.tls.ca }}
+              - -tls-client-cert={{ .Values.grpc.tls.cert }}
+              - -tls-client-key={{ .Values.grpc.tls.key }}
+          {{- else }}
             grpc:
               port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
           {{- end }}
 
           resources:

@@ -450,6 +450,13 @@
                             "description": "enables or disables transport layer security (TLS)",
                             "default": false
                         },
+                        "ca": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the (absolute) file path of the CA certificate to use for the TLS connection"
+                        },
                         "cert": {
                             "type": [
                                 "string",
@@ -1018,6 +1025,14 @@
                     "description": "add additional volumeMounts to the migration job",
                     "default": []
                 },
+                "extraInitContainers": {
+                    "type": "array",
+                    "description": "List of additional initContainers to add to the migration job",
+                    "items": {
+                        "type": "object"
+                    },
+                    "default": []
+                },
                 "annotations": {
                     "type": "object",
                     "description": "Map of annotations to add to the migration job's manifest",
@@ -1089,6 +1104,14 @@
                     "default": "IfNotPresent"
                 }
             }
+        },
+        "testPodSpec": {
+            "type": "object",
+            "description": "Extra spec for the test pod to match cluster policy"
+        },
+        "testContainerSpec": {
+            "type": "object",
+            "description": "Extra spec for the test container to match cluster policy"
         },
         "common": {},
         "extraObjects": {
