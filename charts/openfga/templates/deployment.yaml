@@ -385,7 +385,7 @@ spec:
               - -tls
               - -tls-ca-cert={{ .Values.grpc.tls.ca }}
               - -tls-client-cert={{ .Values.grpc.tls.cert }}
-              - -client-tls-key={{ .Values.grpc.tls.key }}
+              - -tls-client-key={{ .Values.grpc.tls.key }}
           {{- else }}
             grpc:
               port: {{ (split ":" .Values.grpc.addr)._1 }}
