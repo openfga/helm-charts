@@ -9,7 +9,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not  .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
   {{- end }}
   selector:
@@ -53,26 +53,16 @@ spec:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
         {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) (eq .Values.datastore.migrationType "initContainer") }}
+        {{- with .Values.migrate.extraInitContainers }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         - name: migrate-database
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           args: [ "migrate" ]
           env:
-            {{- if .Values.datastore.engine }}
-            - name: OPENFGA_DATASTORE_ENGINE
-              value: "{{ .Values.datastore.engine }}"
-            {{- end }}
-            {{- if .Values.datastore.uri }}
-            - name: OPENFGA_DATASTORE_URI
-              value: "{{ .Values.datastore.uri }}"
-            {{- else if .Values.datastore.uriSecret }}
-            - name: OPENFGA_DATASTORE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Values.datastore.uriSecret }}"
-                  key: "uri"
-            {{- end }}
+            {{- include "openfga.datastore.envConfig" . | nindent 12 }}
             {{- if .Values.migrate.timeout }}
             - name: OPENFGA_TIMEOUT
               value: "{{ .Values.migrate.timeout }}"
@@ -124,22 +114,7 @@ spec:
             {{- end }}
 
           env:
-            {{- if .Values.datastore.engine }}
-            - name: OPENFGA_DATASTORE_ENGINE
-              value: "{{ .Values.datastore.engine }}"
-            {{- end }}
-
-            {{- if .Values.datastore.uri }}
-            - name: OPENFGA_DATASTORE_URI
-              value: "{{ .Values.datastore.uri }}"
-            {{- else if .Values.datastore.uriSecret }}
-            - name: OPENFGA_DATASTORE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Values.datastore.uriSecret }}"
-                  key: "uri"
-            {{- end }}
-
+            {{- include "openfga.datastore.envConfig" . | nindent 12 }}
             {{- if .Values.datastore.maxCacheSize }}
             - name: OPENFGA_DATASTORE_MAX_CACHE_SIZE
               value: "{{ .Values.datastore.maxCacheSize }}"
@@ -201,10 +176,8 @@ spec:
               value: {{ .Values.grpc.tls.key }}
             {{- end }}
 
-            {{- if .Values.http.enabled }}
             - name: OPENFGA_HTTP_ENABLED
               value: "{{ .Values.http.enabled }}"
-            {{- end }}
 
             {{- if .Values.http.addr }}
             - name: OPENFGA_HTTP_ADDR
@@ -229,7 +202,8 @@ spec:
 
             {{- if .Values.http.corsAllowedOrigins }}
             - name: OPENFGA_HTTP_CORS_ALLOWED_ORIGINS
-              value: "{{ join "," .Values.http.corsAllowedOrigins }}"
+              value: "{{ include "common.tplvalues.render" ( dict "value" (join "," .Values.http.corsAllowedOrigins) "context" $ ) }}"
+
             {{- end }}
 
             {{- if .Values.http.corsAllowedHeaders }}
@@ -262,7 +236,7 @@ spec:
 
             {{- if .Values.authn.oidc.issuer }}
             - name: OPENFGA_AUTHN_OIDC_ISSUER
-              value: "{{ .Values.authn.oidc.issuer }}"
+              value: "{{ include "common.tplvalues.render" ( dict "value" .Values.authn.oidc.issuer "context" $ ) }}"
             {{- end }}
 
             - name: OPENFGA_PLAYGROUND_ENABLED
@@ -370,10 +344,8 @@ spec:
               value: "{{ .Values.allowEvaluating1_0Models }}"
             {{- end }}
 
-            {{- if .Values.telemetry.metrics.enabled }}
             - name: OPENFGA_METRICS_ENABLED
               value: "{{ .Values.telemetry.metrics.enabled }}"
-            {{- end }}
 
             {{- if .Values.telemetry.metrics.addr }}
             - name: OPENFGA_METRICS_ADDR
@@ -413,24 +385,57 @@ spec:
           readinessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customReadinessProbe "context" $) | nindent 12 }}
           {{- else if .Values.readinessProbe.enabled }}
           readinessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.readinessProbe "enabled") "context" $) | nindent 12 }}
+          {{- if .Values.grpc.tls.enabled }}
             exec:
-              command: ["grpc_health_probe", "-addr={{ .Values.grpc.addr }}"]
+              command:
+              - grpc_health_probe
+              - -addr={{ .Values.grpc.addr }}
+              - -tls
+              - -tls-ca-cert={{ .Values.grpc.tls.ca }}
+              - -tls-client-cert={{ .Values.grpc.tls.cert }}
+              - -tls-client-key={{ .Values.grpc.tls.key }}
+          {{- else }}
+            grpc:
+              port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
           {{- end }}
 
           {{- if .Values.customLivenessProbe }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customLivenessProbe "context" $) | nindent 12 }}
           {{- else if .Values.livenessProbe.enabled }}
           livenessProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.livenessProbe "enabled") "context" $) | nindent 12 }}
+          {{- if .Values.grpc.tls.enabled }}
+            exec:
+              command:
+              - grpc_health_probe
+              - -addr={{ .Values.grpc.addr }}
+              - -tls
+              - -tls-ca-cert={{ .Values.grpc.tls.ca }}
+              - -tls-client-cert={{ .Values.grpc.tls.cert }}
+              - -tls-client-key={{ .Values.grpc.tls.key }}
+          {{- else }}
             grpc:
               port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
           {{- end }}
 
           {{- if .Values.customStartupProbe }}
           startupProbe: {{- include "common.tplvalues.render" (dict "value" .Values.customStartupProbe "context" $) | nindent 12 }}
           {{- else if .Values.startupProbe.enabled }}
           startupProbe: {{- include "common.tplvalues.render" (dict "value" (omit .Values.startupProbe "enabled") "context" $) | nindent 12 }}
+          {{- if .Values.grpc.tls.enabled }}
+            exec:
+              command:
+              - grpc_health_probe
+              - -addr={{ .Values.grpc.addr }}
+              - -tls
+              - -tls-ca-cert={{ .Values.grpc.tls.ca }}
+              - -tls-client-cert={{ .Values.grpc.tls.cert }}
+              - -tls-client-key={{ .Values.grpc.tls.key }}
+          {{- else }}
             grpc:
               port: {{ (split ":" .Values.grpc.addr)._1 }}
+          {{- end }}
           {{- end }}
 
           resources:
@@ -440,6 +445,11 @@ spec:
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end}}
 
         {{- if .Values.sidecars }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.sidecars "context" $) | nindent 8 }}
@@ -460,4 +470,10 @@ spec:
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if (semverCompare ">=1.18.0" .Capabilities.KubeVersion.Version) }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
