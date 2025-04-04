@@ -805,6 +805,19 @@
             ],
             "description": "the maximum results to return in ListUsers responses"
         },
+        "requestTimeout": {
+          "type": [
+              "string",
+              "null"
+          ],
+          "description": "The timeout duration for a request.",
+          "format": "duration",
+          "examples": [
+              "3s",
+              "1m",
+              "200ms"
+          ]
+        },
         "requestDurationDatastoreQueryCountBuckets": {
             "description": "datastore query count buckets used to label the histogram metric for measuring request duration.",
             "type": "array",

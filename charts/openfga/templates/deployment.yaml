@@ -306,6 +306,11 @@ spec:
               value: "{{ .Values.listUsersMaxResults }}"
             {{- end }}
 
+            {{- if .Values.requestTimeout }}
+            - name: OPENFGA_REQUEST_TIMEOUT
+              value: "{{ .Values.requestTimeout }}"
+            {{- end}}
+
             {{- if .Values.checkQueryCache.enabled }}
             - name: OPENFGA_CHECK_QUERY_CACHE_ENABLED
               value: "{{ .Values.checkQueryCache.enabled }}"
