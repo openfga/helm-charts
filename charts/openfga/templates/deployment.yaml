@@ -216,7 +216,13 @@ spec:
               value: {{ .Values.authn.method }}
             {{- end }}
 
-            {{- if .Values.authn.preshared.keys }}
+            {{- if .Values.authn.preshared.keysSecret }}
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.authn.preshared.keysSecret | quote }}
+                  key: keys
+            {{- else if .Values.authn.preshared.keys }}
             - name: OPENFGA_AUTHN_PRESHARED_KEYS
               value: "{{ join "," .Values.authn.preshared.keys }}"
             {{- end }}
