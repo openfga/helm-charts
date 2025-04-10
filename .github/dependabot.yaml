@@ -8,3 +8,11 @@ updates:
      dependencies:
         patterns:
           - "*"
+  - package-ecosystem: "helm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+     dependencies:
+        patterns:
+          - "*"
