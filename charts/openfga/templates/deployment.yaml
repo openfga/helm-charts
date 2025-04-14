@@ -217,7 +217,7 @@ spec:
             {{- end }}
 
             {{- if .Values.authn.preshared.keysSecret }}
-            - name: OPENFGA_AUTHN_PRESHARED_KEYS_SECRET
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.authn.preshared.keysSecret | quote }}
