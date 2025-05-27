@@ -8,3 +8,19 @@ updates:
      dependencies:
         patterns:
           - "*"
+  - package-ecosystem: "helm"
+    directory: "/charts/benchmark"
+    schedule:
+      interval: "weekly"
+    groups:
+     dependencies:
+        patterns:
+          - "*"
+  - package-ecosystem: "helm"
+    directory: "/charts/openfga"
+    schedule:
+      interval: "weekly"
+    groups:
+     dependencies:
+        patterns:
+          - "*"
