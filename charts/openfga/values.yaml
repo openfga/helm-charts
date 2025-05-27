@@ -251,6 +251,7 @@ authn:
   method:
   preshared:
     keys: []
+    keysSecret:
   oidc:
     audience:
     issuer:
