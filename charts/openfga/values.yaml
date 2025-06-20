@@ -198,6 +198,13 @@ datastore:
   engine: memory
   uri:
   uriSecret:
+  username:
+  password:
+  existingSecret:
+  secretKeys:
+    uriKey:
+    usernameKey:
+    passwordKey:
   maxCacheSize:
   maxOpenConns:
   maxIdleConns:
@@ -227,6 +234,7 @@ grpc:
     enabled: false
     cert:
     key:
+    ca:
 
 http:
   enabled: true
@@ -243,6 +251,7 @@ authn:
   method:
   preshared:
     keys: []
+    keysSecret:
   oidc:
     audience:
     issuer:
@@ -280,6 +289,7 @@ listObjectsDeadline:
 listObjectsMaxResults:
 listUsersDeadline:
 listUsersMaxResults:
+requestTimeout:
 requestDurationDatastoreQueryCountBuckets: [50, 200]
 allowWriting1_0Models:
 allowEvaluating1_0Models:
@@ -304,6 +314,8 @@ ingress:
 
 resources: {}
 
+lifecycle: {}
+
 autoscaling:
   enabled: false
   minReplicas: 1
@@ -314,6 +326,8 @@ autoscaling:
 nodeSelector: {}
 
 tolerations: []
+
+topologySpreadConstraints: []
 
 affinity: {}
 
@@ -330,6 +344,7 @@ sidecars: []
 migrate:
   extraVolumes: []
   extraVolumeMounts: []
+  extraInitContainers: []
   sidecars: []
   annotations:
     helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
@@ -337,6 +352,9 @@ migrate:
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
   timeout:
+
+testPodSpec: {}
+testContainerSpec: {}
 
 # -- Array of extra K8s manifests to deploy
 ## Note: Supports use of custom Helm templates
