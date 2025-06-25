@@ -19,10 +19,11 @@ spec:
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.migrate.labels }}
       labels:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- include "openfga.labels" . | nindent 8 }}
+      {{- with .Values.migrate.labels }}
+        {{- toYaml . | nindent 8}}
+      {{- end}}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
