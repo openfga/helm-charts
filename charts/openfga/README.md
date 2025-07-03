@@ -98,9 +98,9 @@ datastore:
   engine: postgres
   existingSecret: my-postgres-secret
   secretKeys:
-    uri: uri
-    username: username
-    password: password
+    uriKey: uri
+    usernameKey: username
+    passwordKey: password
 ```
 
 You can also mix and match both static config and secret references. When the secret key is defined, the static config will be ignored. The following example shows how to reference the secret for username and password, but provide the URI statically:
@@ -111,8 +111,8 @@ datastore:
   uri: "postgres://postgres.postgres:5432/postgres?sslmode=disable"
   existingSecret: my-postgres-secret
   secretKeys:
-    username: username
-    password: password
+    usernameKey: username
+    passwordKey: password
 ```
 
 ## Uninstalling the Chart
