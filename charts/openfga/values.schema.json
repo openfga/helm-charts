@@ -1140,12 +1140,12 @@
                 "type": "object"
             },
             "default": []
+        },
+        "enabled": {
+            "type": "boolean",
+            "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
+            "default": false
         }
-    },
-    "enabled": {
-        "type": "boolean",
-        "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
-        "default": false
     },
     "additionalProperties": false
 }
