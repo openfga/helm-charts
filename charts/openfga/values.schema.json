@@ -699,10 +699,10 @@
             "type": "array",
             "description": "a list of experimental features to enable",
             "default": [],
-            "examples": ["enable-check-optimizations","enable-access-control"],
+            "examples": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations"],
             "items": {
                 "type": "string",
-                "enum": ["enable-check-optimizations","enable-access-control"]
+                "enum": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations"]
             }
         },
         "maxTuplesPerWrite": {
