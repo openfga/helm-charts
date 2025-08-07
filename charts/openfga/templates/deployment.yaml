@@ -70,6 +70,9 @@ spec:
             {{- with .Values.extraEnvVars }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- tpl . $ | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
           {{- with .Values.migrate.extraVolumeMounts }}
@@ -382,6 +385,10 @@ spec:
 
             {{- with .Values.extraEnvVars }}
               {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+            {{- with .Values.extraEnv }}
+            {{- tpl . $ | nindent 12 }}
             {{- end }}
 
           {{- if .Values.customReadinessProbe }}
