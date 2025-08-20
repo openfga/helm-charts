@@ -118,6 +118,9 @@ service:
   type: ClusterIP
   port: 8080
 
+command: ["/openfga"]
+args: ["run"]
+
 telemetry:
   trace:
     enabled: false
@@ -215,6 +218,8 @@ datastore:
   migrationType: job
   migrations:
     resources: {}
+    command: ["/openfga"]
+    args: ["migrate"]
     image:
       repository: groundnuty/k8s-wait-for
       pullPolicy: Always
