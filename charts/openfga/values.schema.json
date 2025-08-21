@@ -1150,7 +1150,7 @@
             "type": "array",
             "description": "Command for starting the main container",
             "items": {
-                "type": "object"
+                "type": "string"
             },
             "default": ["/openfga"]
         },
@@ -1158,7 +1158,7 @@
             "type": "array",
             "description": "Arguments for starting the main container",
             "items": {
-                "type": "object"
+                "type": "string"
             },
             "default": ["run"]
         }

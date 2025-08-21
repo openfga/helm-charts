@@ -39,8 +39,8 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          command: {{ .Values.migrations.command }}
-          args: {{ .Values.migrations.args }}
+          command: {{ .Values.datastore.migrations.command }}
+          args: {{ .Values.datastore.migrations.args }}
           env:
             {{- include "openfga.datastore.envConfig" . | nindent 12 }}
 
