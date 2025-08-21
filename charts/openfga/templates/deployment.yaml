@@ -60,8 +60,10 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          command: {{ .Values.datastore.migrations.command }}
-          args: {{ .Values.datastore.migrations.args }}
+          command:
+            {{- toYaml .Values.datastore.migrations.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.datastore.migrations.args | nindent 12 }}
           env:
             {{- include "openfga.datastore.envConfig" . | nindent 12 }}
             {{- if .Values.migrate.timeout }}
@@ -91,8 +93,10 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: {{ .Values.command }}
-          args: {{ .Values.args }}
+          command:
+            {{- toYaml .Values.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.args | nindent 12 }}
           ports:
             - name: grpc
               containerPort: {{ (split ":" .Values.grpc.addr)._1 }}
