@@ -1,26 +1,30 @@
+# yaml-language-server: $schema=https://json.schemastore.org/dependabot-2.0.json
 version: 2
+
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     groups:
-     dependencies:
+      dependencies:
         patterns:
           - "*"
+
   - package-ecosystem: "helm"
     directory: "/charts/benchmark"
     schedule:
       interval: "weekly"
     groups:
-     dependencies:
+      dependencies:
         patterns:
           - "*"
+
   - package-ecosystem: "helm"
     directory: "/charts/openfga"
     schedule:
       interval: "weekly"
     groups:
-     dependencies:
+      dependencies:
         patterns:
           - "*"
