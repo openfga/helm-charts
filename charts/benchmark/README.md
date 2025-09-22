@@ -1,4 +1,4 @@
-# OpenFGA Benchmark Chart
+# DEPRECATED: OpenFGA Benchmark Chart
 A Kubernetes Helm chart to deploy OpenFGA+Postgres and run the standard benchmark suite against it.
 
 ## Pre-requisites
