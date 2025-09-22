@@ -1,6 +1,9 @@
 # DEPRECATED: OpenFGA Benchmark Chart
 A Kubernetes Helm chart to deploy OpenFGA+Postgres and run the standard benchmark suite against it.
 
+> Warning
+> This chart is deprecated and will be removed after the deprecation period. Avoid new installs. See issue #245 for details.
+
 ## Pre-requisites
 * k6 Cloud project - if you want to upload the benchmark results to [k6 Cloud](https://k6.io/cloud/) you'll need an account (it's free) and you'll need to set the `k6.projectID` value when installing the chart.
 
