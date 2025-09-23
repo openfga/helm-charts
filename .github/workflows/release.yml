@@ -34,7 +34,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
-          version: v3.5.0
+          version: v3.19.0
 
       - name: Add Helm Repositories
         run: |
