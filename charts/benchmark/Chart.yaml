@@ -1,10 +1,10 @@
 apiVersion: v2
 name: benchmark
 description: A Kubernetes Helm chart to deploy OpenFGA and run the standard benchmark suite against it.
-deprecated: true
+# deprecated: true
 
 type: application
-version: 0.0.13
+version: 0.0.12
 appVersion: "v1.10.1"
 
 home: "https://openfga.github.io/helm-charts/charts/benchmark"
