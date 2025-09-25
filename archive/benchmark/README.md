@@ -21,4 +21,3 @@ $ helm install openfga-benchmark openfga/benchmark \
   --set openfga.postgresql.primary.resources.requests.cpu=1.0
 ```
 This will deploy a single replica instance of OpenFGA (with 1vCPU and 1Gi memory) and a Postgres database (with 1vCPU and 2Gi memory) and then proceed to run the OpenFGA benchmark suite against it.
-
