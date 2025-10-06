@@ -9,7 +9,7 @@ helm repo add openfga https://openfga.github.io/helm-charts
 helm install openfga openfga/openfga
 ```
 
-## Installing the Chart
+## Installing the Chart via Helm Repository
 
 To install the chart with the release name `openfga`:
 
@@ -21,6 +21,15 @@ helm install openfga openfga/openfga
 This will deploy a 3-replica deployment of OpenFGA on the Kubernetes cluster using the default configurations for OpenFGA. For more information on the default values, please see the official [OpenFGA documentation](https://openfga.dev/docs/getting-started/setup-openfga/docker#configuring-the-server). The [Chart Parameters](#chart-parameters) section below lists the parameters that can be configured during installation.
 
 > **Tip**: List all releases using `helm list`
+
+## Installing the chart via OCI Image
+
+This chart is also available for installation from the GitHub OCI registry. It requires helm 3.8+.
+To pull from the GitHub OCI registry, run:
+
+```sh
+helm install openfga -f values.yaml oci://ghcr.io/openfga/helm-charts
+```
 
 ## Customization
 
@@ -37,8 +46,8 @@ helm install openfga openfga/openfga \
 
 ```yaml
 commonLabels:
-    app.example.com/system: permissions
-    app.example.com/domain: example
+  app.example.com/system: permissions
+  app.example.com/domain: example
 ```
 
 ### Installing with Postgres
