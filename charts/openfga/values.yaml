@@ -116,6 +116,7 @@ customStartupProbe: {}
 service:
   annotations: {}
   type: ClusterIP
+  clusterIP: None
   port: 8080
 
 telemetry:
