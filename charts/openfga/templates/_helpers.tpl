@@ -141,3 +141,23 @@ Return true if a secret object should be created
       key: "password"
 {{- end -}}
 {{- end -}}
+
+{{- define "openfga.pullSecrets" -}}
+{{- include "common.images.renderPullSecrets" (dict "images" (list .Values.image .Values.initContainer) "context" $) -}}
+{{- end }}
+
+{{/*
+Job does not use the initContainer image, so by the least-priviledge principle, we do not need to include its pull
+secrets.
+*/}}
+{{- define "openfga.jobPullSecrets" -}}
+{{- include "common.images.renderPullSecrets" (dict "images" (list .Values.image) "context" $) -}}
+{{- end }}
+
+{{- define "openfga.image" -}}
+{{- include "common.images.image" (dict "imageRoot" .Values.image "global" .Values.global "chart" .Chart) -}}
+{{- end }}
+
+{{- define "openfga.initContainer.image" -}}
+{{- include "common.images.image" (dict "imageRoot" .Values.initContainer "global" .Values.global) -}}
+{{- end }}

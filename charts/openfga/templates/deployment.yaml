@@ -30,10 +30,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "openfga.pullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -43,7 +40,7 @@ spec:
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.initContainer.repository }}:{{ .Values.initContainer.tag }}"
+          image: {{- include "openfga.initContainer.image" . }}
           imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
           args: ["job-wr", '{{ include "openfga.fullname" . }}-migrate']
           resources:
@@ -56,7 +53,7 @@ spec:
         - name: migrate-database
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "openfga.image" . }}
           args: [ "migrate" ]
           env:
             {{- include "openfga.datastore.envConfig" . | nindent 12 }}
@@ -85,7 +82,7 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "openfga.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["run"]
           ports:
