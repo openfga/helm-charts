@@ -137,6 +137,9 @@ spec:
               value: "{{ .Values.datastore.connMaxLifetime }}"
             {{- end }}
 
+            - name: OPENFGA_DATASTORE_METRICS_ENABLED
+              value: "{{ .Values.datastore.metrics.enabled }}"
+
             {{- if .Values.maxConcurrentReadsForCheck }}
             - name: OPENFGA_MAX_CONCURRENT_READS_FOR_CHECK
               value: "{{ .Values.maxConcurrentReadsForCheck }}"
