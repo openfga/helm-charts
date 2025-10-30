@@ -4,6 +4,7 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authorization-controller
   {{- with .Values.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -46,3 +47,4 @@ spec:
 
   selector:
     {{- include "openfga.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: authorization-controller
