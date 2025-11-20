@@ -10,6 +10,7 @@ metadata:
 {{- end }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authorization-controller
   {{- if .Values.telemetry.metrics.serviceMonitor.additionalLabels }}
     {{- toYaml .Values.telemetry.metrics.serviceMonitor.additionalLabels | nindent 4 }}
   {{- end }}
@@ -49,4 +50,5 @@ spec:
   selector:
     matchLabels:
       {{- include "openfga.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: authorization-controller
 {{- end }}

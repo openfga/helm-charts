@@ -4,6 +4,7 @@ metadata:
   name: "{{ include "openfga.fullname" . }}-test-connection"
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: connection-test
   annotations:
     "helm.sh/hook": test
 spec:

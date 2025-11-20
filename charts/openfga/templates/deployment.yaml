@@ -4,6 +4,7 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authorization-controller
   {{- with .Values.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -15,6 +16,7 @@ spec:
   selector:
     matchLabels:
       {{- include "openfga.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: authorization-controller
   template:
     metadata:
       annotations:
@@ -26,6 +28,7 @@ spec:
         prometheus.io/port: "{{ (split ":" .Values.telemetry.metrics.addr)._1 }}"
       labels:
         {{- include "openfga.labels" . | nindent 8 }}
+        app.kubernetes.io/component: authorization-controller
         {{- with .Values.podExtraLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

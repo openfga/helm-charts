@@ -5,6 +5,7 @@ metadata:
   name: {{ include "openfga.fullname" . }}-job-status-reader
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authorization-controller
 rules:
 - apiGroups:
   - batch
@@ -20,6 +21,7 @@ metadata:
   name: {{ include "openfga.fullname" . }}-job-status-reader
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authorization-controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
