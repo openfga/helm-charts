@@ -3,11 +3,26 @@
     "type": "object",
     "properties": {
         "global": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "imageRegistry": {
+                    "type": "string",
+                    "description": "The container image registry to pull images from. It is prepended to individual components repositories. For example, if global.imageRegistry is set to 'ghcr.io' and image.repository is set to 'openfga/openfga', the final image repository will be 'ghcr.io/openfga/openfga'."
+                },
+                "imagePullSecrets": {
+                    "type": "array",
+                    "description": "An optional list of references to secrets in the same namespace to use for pulling any of the images used by the pod spec. If specified, these secrets will be passed to individual puller implementations for them to use. For more information see https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod."
+                }
+            },
+            "additionalProperties": true
         },
         "image": {
             "type": "object",
             "properties": {
+                "registry": {
+                    "type": "string",
+                    "description": "The container image registry to pull the main OpenFGA image from. It is prepended to the image.repository. For example, if image.registry is set to 'ghcr.io' and image.repository is set to 'openfga/openfga', the final image repository will be 'ghcr.io/openfga/openfga'."
+                },
                 "repository": {
                     "type": "string",
                     "description": "The container repository to pull the main OpenFGA image from",
@@ -17,10 +32,18 @@
                     "type": "string",
                     "description": "Overrides the image tag of the main OpenFGA image whose default is the chart appVersion"
                 },
+                "digest": {
+                    "type": "string",
+                    "description": "Overrides the image digest of the main OpenFGA image. Takes precedence over tag."
+                },
                 "pullPolicy": {
                     "type": "string",
                     "description": "The image pull policy",
                     "default": "Always"
+                },
+                "pullSecrets": {
+                    "type": "array",
+                    "description": "An optional list of references to secrets in the same namespace to use for pulling the main OpenFGA image. If specified, these secrets will be passed to individual puller implementations for them to use. For more information see https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod."
                 }
             },
             "additionalProperties": false
@@ -85,10 +108,6 @@
             "type": "object",
             "description": "Defines the pod security context for the OpenFGA pods. For more information see https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod.",
             "default": {}
-        },
-        "imagePullSecrets": {
-            "type": "array",
-            "description": "An optional list of references to secrets in the same namespace to use for pulling any of the images used by the pod spec. If specified, these secrets will be passed to individual puller implementations for them to use. For more information see https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod."
         },
         "nodeSelector": {
             "type": "object",
@@ -1108,6 +1127,10 @@
             "type": "object",
             "description": "",
             "properties": {
+                "registry": {
+                    "type": "string",
+                    "description": "The container image registry to pull the initContainer from. It is prepended to the initContainer image repository. For example, if initContainer.registry is set to 'ghcr.io' and initContainer.repository is set to 'groundnuty/k8s-wait-for', the final image repository will be 'ghcr.io/groundnuty/k8s-wait-for'."
+                },
                 "repository": {
                     "type": "string",
                     "description": "The container image repository to pull the initContainer from",
@@ -1118,10 +1141,18 @@
                     "description": "The specific initContainer image tag to pull",
                     "default": "v1.6"
                 },
+                "digest": {
+                    "type": "string",
+                    "description": "The specific initContainer image digest to pull. Takes precedence over tag."
+                },
                 "pullPolicy": {
                     "type": "string",
                     "description": "The image pull policy to apply to the initContainer",
                     "default": "IfNotPresent"
+                },
+                "pullSecrets": {
+                    "type": "array",
+                    "description": "An optional list of references to secrets in the same namespace to use for pulling the initContainer image. If specified, these secrets will be passed to individual puller implementations for them to use. For more information see https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod."
                 }
             }
         },
