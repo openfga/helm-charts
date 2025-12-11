@@ -282,6 +282,8 @@ maxAuthorizationModelSizeInBytes:
 maxConcurrentReadsForCheck:
 maxConcurrentReadsForListObjects:
 maxConcurrentReadsForListUsers:
+maxChecksPerBatchCheck:
+maxConcurrentChecksPerBatchCheck:
 changelogHorizonOffset:
 resolveNodeLimit:
 resolveNodeBreadthLimit:
