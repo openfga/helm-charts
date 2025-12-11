@@ -152,6 +152,16 @@ spec:
               value: "{{ .Values.maxConcurrentReadsForListUsers }}"
             {{- end }}
 
+            {{- if .Values.maxChecksPerBatchCheck }}
+            - name: OPENFGA_MAX_CHECKS_PER_BATCH_CHECK
+              value: "{{ .Values.maxChecksPerBatchCheck }}"
+            {{- end }}
+
+            {{- if .Values.maxConcurrentChecksPerBatchCheck }}
+            - name: OPENFGA_MAX_CONCURRENT_CHECKS_PER_BATCH_CHECK
+              value: "{{ .Values.maxConcurrentChecksPerBatchCheck }}"
+            {{- end }}
+
             {{- if .Values.experimentals }}
             - name: OPENFGA_EXPERIMENTALS
               value: "{{ join "," .Values.experimentals }}"
