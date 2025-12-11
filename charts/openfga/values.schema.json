@@ -273,6 +273,16 @@
         "datastore": {
             "type": "object",
             "properties": {
+                "metrics": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "enable/disable datastore metrics",
+                            "default": false
+                        }
+                    }
+                },
                 "engine": {
                     "type": "string",
                     "enum": [
