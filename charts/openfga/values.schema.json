@@ -709,10 +709,10 @@
             "type": "array",
             "description": "a list of experimental features to enable",
             "default": [],
-            "examples": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations"],
+            "examples": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations", "pipeline_list_objects"],
             "items": {
                 "type": "string",
-                "enum": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations"]
+                "enum": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations", "pipeline_list_objects"]
             }
         },
         "maxTuplesPerWrite": {
