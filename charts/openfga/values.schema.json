@@ -194,66 +194,66 @@
                             "description": "enable/disable prometheus metrics on the '/metrics' endpoint",
                             "default": true
                         },
-			"serviceMonitor": {
-		            "type": "object",
-			    "properties": {
-			        "enabled": {
+                        "serviceMonitor": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
                                     "type": "boolean",
                                     "description": "enable/disable installation of serviceMonitor custom resource",
                                     "default": false
-			        },
-			        "additionalLabels": {
-			            "type": "object",
-			            "description": "additional labels to be added to the serivceMonitor resource",
-			            "default": {}
-			        },
-			        "annotations": {
-		                    "type": "object",
-			            "description": "annotations to be added to the serviceMonitor resource",
-			            "default": {}
-			        },
-			        "jobLabel": {
-			            "type": "string",
-			            "description": "the label to use to retrieve the job name from",
-			            "default": "app.kubernetes.io/name"
-			        },
-			        "namespace": {
-		                    "type": "string",
-			            "description": "namespace where the serviceMonitor resource should be installed to",
-			            "default": ""
-			        },
-			        "namespaceSelector": {
-			            "type": "object",
-			            "description": "which namespaces should be scraped",
-			            "default": {}
-			        },
-			        "scrapeInterval": {
-			            "type": "string",
-			            "description": "prometheus scrape interval",
-			            "default": "30s"
-			        },
-			        "scrapeTimeout": {
-			            "type": "string",
-			            "description": "prometheus scrape timeout",
-			            "default": "10s"
-			        },
-			        "targetLabels": {
-			            "type": "array",
-			            "description": "additional target labels to scrape",
-			            "default": []
-			        },
-			        "relabelings": {
-			            "type": "array",
-			            "description": "add job relabelings",
-			            "default": []
-			        },
-			        "metricRelabelings": {
-			            "type": "array",
-			            "description": "add metric relabelings",
-			            "default": []
-			        }
-			    }
-			},
+                                },
+                                "additionalLabels": {
+                                    "type": "object",
+                                    "description": "additional labels to be added to the serivceMonitor resource",
+                                    "default": {}
+                                },
+                                "annotations": {
+                                    "type": "object",
+                                    "description": "annotations to be added to the serviceMonitor resource",
+                                    "default": {}
+                                },
+                                "jobLabel": {
+                                    "type": "string",
+                                    "description": "the label to use to retrieve the job name from",
+                                    "default": "app.kubernetes.io/name"
+                                },
+                                "namespace": {
+                                    "type": "string",
+                                    "description": "namespace where the serviceMonitor resource should be installed to",
+                                    "default": ""
+                                },
+                                "namespaceSelector": {
+                                    "type": "object",
+                                    "description": "which namespaces should be scraped",
+                                    "default": {}
+                                },
+                                "scrapeInterval": {
+                                    "type": "string",
+                                    "description": "prometheus scrape interval",
+                                    "default": "30s"
+                                },
+                                "scrapeTimeout": {
+                                    "type": "string",
+                                    "description": "prometheus scrape timeout",
+                                    "default": "10s"
+                                },
+                                "targetLabels": {
+                                    "type": "array",
+                                    "description": "additional target labels to scrape",
+                                    "default": []
+                                },
+                                "relabelings": {
+                                    "type": "array",
+                                    "description": "add job relabelings",
+                                    "default": []
+                                },
+                                "metricRelabelings": {
+                                    "type": "array",
+                                    "description": "add metric relabelings",
+                                    "default": []
+                                }
+                            }
+                        },
                         "addr": {
                             "type": "string",
                             "description": "the host:port address to serve the prometheus metrics server on",
@@ -709,10 +709,20 @@
             "type": "array",
             "description": "a list of experimental features to enable",
             "default": [],
-            "examples": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations", "pipeline_list_objects"],
+            "examples": [
+                "enable-check-optimizations",
+                "enable-access-control",
+                "enable-list-objects-optimizations",
+                "pipeline_list_objects"
+            ],
             "items": {
                 "type": "string",
-                "enum": ["enable-check-optimizations","enable-access-control", "enable-list-objects-optimizations", "pipeline_list_objects"]
+                "enum": [
+                    "enable-check-optimizations",
+                    "enable-access-control",
+                    "enable-list-objects-optimizations",
+                    "pipeline_list_objects"
+                ]
             }
         },
         "maxTuplesPerWrite": {
@@ -837,17 +847,17 @@
             "description": "the maximum results to return in ListUsers responses"
         },
         "requestTimeout": {
-          "type": [
-              "string",
-              "null"
-          ],
-          "description": "The timeout duration for a request.",
-          "format": "duration",
-          "examples": [
-              "3s",
-              "1m",
-              "200ms"
-          ]
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "The timeout duration for a request.",
+            "format": "duration",
+            "examples": [
+                "3s",
+                "1m",
+                "200ms"
+            ]
         },
         "requestDurationDatastoreQueryCountBuckets": {
             "description": "datastore query count buckets used to label the histogram metric for measuring request duration.",
@@ -1093,6 +1103,14 @@
                     "description": "A timeout for the time it takes the migrate process to connect to the database",
                     "format": "duration",
                     "default": "1m"
+                },
+                "ttlSecondsAfterFinished": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Automatically delete migration Job pods after completion (in seconds). Prevents completed pods from interfering with HPA metric calculations.",
+                    "default": 300
                 }
             }
         },
