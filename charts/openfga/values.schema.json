@@ -1093,6 +1093,14 @@
                     "description": "A timeout for the time it takes the migrate process to connect to the database",
                     "format": "duration",
                     "default": "1m"
+                },
+                "ttlSecondsAfterFinished": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "description": "Automatically delete migration Job pods after completion (in seconds). Prevents completed pods from interfering with HPA metric calculations.",
+                    "default": 300
                 }
             }
         },
