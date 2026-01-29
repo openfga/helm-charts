@@ -10,7 +10,7 @@ metadata:
   {{- end }}
 spec:
   {{- if not  .Values.autoscaling.enabled }}
-  replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
+  replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}
   {{- end }}
   selector:
     matchLabels:
@@ -325,7 +325,7 @@ spec:
             {{- if .Values.requestTimeout }}
             - name: OPENFGA_REQUEST_TIMEOUT
               value: "{{ .Values.requestTimeout }}"
-            {{- end}}
+            {{- end }}
 
             {{- if .Values.checkQueryCache.enabled }}
             - name: OPENFGA_CHECK_QUERY_CACHE_ENABLED
@@ -462,7 +462,7 @@ spec:
           {{- with .Values.lifecycle }}
           lifecycle:
             {{- toYaml . | nindent 12 }}
-          {{- end}}
+          {{- end }}
 
         {{- if .Values.sidecars }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.sidecars "context" $) | nindent 8 }}
