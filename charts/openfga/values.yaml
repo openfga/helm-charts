@@ -372,3 +372,22 @@ extraObjects: []
 #     instances: 3
 #     storage:
 #       size: 10Gi
+
+# additional environment variables to be passed to the OpenFGA
+extraEnv: ""
+## Example: add some extra environment variables from different places
+#extraEnv: |
+# - name: OPENFGA_DATASTORE_USERNAME
+#   valueFrom:
+#     configMapKeyRef:
+#       name: {{ .Release.Name }}-openfga
+#       key: username
+# - name: OPENFGA_DATASTORE_PASSWORD
+#   valueFrom:
+#     secretKeyRef:
+#       name: {{ .Release.Name }}-openfga
+#       key: password
+# - name: OPENFGA_DATASTORE_URI
+#   value: "postgresql://{{ .Release.Name }}-openfga-postgresql:5432/openfga?sslmode=disable"
+# - name: OPENFGA_LOG_LEVEL
+#   value: "debug"

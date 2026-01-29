@@ -1169,6 +1169,11 @@
             "type": "boolean",
             "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
             "default": false
+        },
+        "extraEnv": {
+            "type": "string",
+            "description": "Extra environment variables to add to the deployment's main container (interpreted as a template with helm 'tpl' syntax)",
+            "default": ""
         }
     },
     "additionalProperties": false
