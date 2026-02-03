@@ -71,7 +71,7 @@ spec:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
           {{- with .Values.migrate.extraVolumeMounts }}
           volumeMounts:
-            {{- toYaml . | nindent 12 }}
+            {{- include "common.tplvalues.render" ( dict "value" . "context" $) | nindent 12 }}
           {{- end }}
           {{- if .Values.migrate.sidecars }}
           {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
@@ -456,7 +456,7 @@ spec:
 
           {{- with .Values.extraVolumeMounts }}
           volumeMounts:
-            {{- toYaml . | nindent 12 }}
+            {{- include "common.tplvalues.render" ( dict "value" . "context" $) | nindent 12 }}
           {{- end }}
 
           {{- with .Values.lifecycle }}
@@ -470,7 +470,7 @@ spec:
 
       {{- with .Values.extraVolumes }}
       volumes:
-        {{- toYaml . | nindent 8 }}
+        {{- include "common.tplvalues.render" ( dict "value" . "context" $) | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
