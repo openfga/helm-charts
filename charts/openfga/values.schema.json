@@ -1169,6 +1169,22 @@
             "type": "boolean",
             "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
             "default": false
+        },
+        "command": {
+            "type": "array",
+            "description": "Command for starting the main container",
+            "items": {
+                "type": "string"
+            },
+            "default": ["/openfga"]
+        },
+        "args": {
+            "type": "array",
+            "description": "Arguments for starting the main container",
+            "items": {
+                "type": "string"
+            },
+            "default": ["run"]
         }
     },
     "additionalProperties": false
