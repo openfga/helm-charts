@@ -237,6 +237,14 @@ spec:
               value: "{{ join "," .Values.authn.preshared.keys }}"
             {{- end }}
 
+            {{- if .Values.authn.preshared.keysSecret }}
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.authn.preshared.keysSecret }}"
+                  key: "presharedKeys"
+            {{- end }}
+
             {{- if .Values.authn.oidc.audience }}
             - name: OPENFGA_AUTHN_OIDC_AUDIENCE
               value: "{{ .Values.authn.oidc.audience }}"
