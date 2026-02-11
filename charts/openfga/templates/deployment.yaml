@@ -484,7 +484,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if (semverCompare ">=1.18.0" .Capabilities.KubeVersion.Version) }}
+      {{- if (semverCompare ">=1.18.0" (.Capabilities.KubeVersion.Version | splitList "-" | first)) }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
