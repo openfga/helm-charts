@@ -7,13 +7,10 @@ metadata:
   annotations:
     "helm.sh/hook": test
 spec:
-  {{- with .Values.imagePullSecrets }}
-  imagePullSecrets:
-    {{- toYaml . | nindent 8 }}
-  {{- end }}
+  {{- include "openfga.pullSecrets" . | nindent 2 }}
   containers:
     - name: grpc-health-probe
-      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      image: {{ include "openfga.image" . }}
       imagePullPolicy: {{ .Values.image.pullPolicy }}
       command: ["grpc_health_probe", '-addr={{ include "openfga.fullname" . }}:{{ (split ":" .Values.grpc.addr)._1 }}']
       {{- with .Values.testContainerSpec }}

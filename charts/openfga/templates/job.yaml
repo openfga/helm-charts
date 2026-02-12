@@ -25,10 +25,7 @@ spec:
         {{- toYaml . | nindent 8}}
       {{- end}}
     spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "openfga.jobPullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       {{- with .Values.migrate.extraInitContainers }}
       initContainers:
@@ -38,7 +35,7 @@ spec:
         - name: migrate-database
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "openfga.image" . }}
           args: ["migrate"]
           env:
             {{- include "openfga.datastore.envConfig" . | nindent 12 }}
