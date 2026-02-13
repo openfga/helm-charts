@@ -141,3 +141,61 @@ Return true if a secret object should be created
       key: "password"
 {{- end -}}
 {{- end -}}
+
+{{- define "openfga.datastore.secondary.secretName" -}}
+{{ include "openfga.fullname" . }}-secondary-datastore-secret
+{{- end -}}
+
+{{- define "openfga.datastore.secondary.envConfig" -}}
+{{- if .Values.datastore.secondary.enabled -}}
+
+{{- if .Values.datastore.secondary.uriSecret }}
+- name: OPENFGA_DATASTORE_SECONDARY_URI
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.secondary.uriSecret }}"
+      key: uri
+{{- else if and (.Values.datastore.secondary.existingSecret) (.Values.datastore.secondary.secretKeys.uriKey) }}
+- name: OPENFGA_DATASTORE_SECONDARY_URI
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.secondary.existingSecret }}"
+      key: "{{ .Values.datastore.secondary.secretKeys.uriKey }}"
+{{- else if .Values.datastore.secondary.uri }}
+- name: OPENFGA_DATASTORE_SECONDARY_URI
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openfga.datastore.secondary.secretName" . | quote }}
+      key: "uri"
+{{- end -}}
+
+{{- if and (.Values.datastore.secondary.existingSecret) (.Values.datastore.secondary.secretKeys.usernameKey) }}
+- name: OPENFGA_DATASTORE_SECONDARY_USERNAME
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.secondary.existingSecret }}"
+      key: "{{ .Values.datastore.secondary.secretKeys.usernameKey }}"
+{{- else if .Values.datastore.secondary.username }}
+- name: OPENFGA_DATASTORE_SECONDARY_USERNAME
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openfga.datastore.secondary.secretName" . | quote }}
+      key: "username"
+{{- end -}}
+
+{{- if and (.Values.datastore.secondary.existingSecret) (.Values.datastore.secondary.secretKeys.passwordKey) }}
+- name: OPENFGA_DATASTORE_SECONDARY_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: "{{ .Values.datastore.secondary.existingSecret }}"
+      key: "{{ .Values.datastore.secondary.secretKeys.passwordKey }}"
+{{- else if .Values.datastore.secondary.password }}
+- name: OPENFGA_DATASTORE_SECONDARY_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openfga.datastore.secondary.secretName" . | quote }}
+      key: "password"
+{{- end -}}
+
+{{- end -}}
+{{- end -}}
