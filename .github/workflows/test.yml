@@ -44,7 +44,7 @@ jobs:
       - name: Add Helm Repositories
         if: steps.list-changed.outputs.changed == 'true'
         run: |
-          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add bitnami-legacy https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
           helm repo add openfga https://openfga.github.io/helm-charts
           helm repo update
 

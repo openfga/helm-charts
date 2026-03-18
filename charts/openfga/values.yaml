@@ -233,13 +233,24 @@ datastore:
       pullPolicy: Always
       tag: "v2.0"
 
+## DEPRECATED: The bundled PostgreSQL and MySQL sub-charts use the Bitnami legacy
+## archive repository which is no longer actively maintained or receiving security updates.
+## They are provided for backwards compatibility only and will be removed in subsequent releases.
 postgresql:
-  ## @param postgresql.enabled enable the bitnami/postgresql subchart and deploy Postgres
+  ## @param postgresql.enabled enable the bitnami/postgresql subchart (DEPRECATED - uses unsupported legacy archive)
   enabled: false
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: 15.4.0-debian-11-r45
 
 mysql:
-  ## @param mysql.enabled enable the bitnami/mysql subchart and deploy MySQL
+  ## @param mysql.enabled enable the bitnami/mysql subchart (DEPRECATED - uses unsupported legacy archive)
   enabled: false
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/mysql
+    tag: 8.0.32-debian-11-r14
 
 grpc:
   addr: 0.0.0.0:8081
@@ -374,12 +385,110 @@ testContainerSpec: {}
 # -- Array of extra K8s manifests to deploy
 ## Note: Supports use of custom Helm templates
 extraObjects: []
-## Example: Deploying a CloudnativePG Postgres cluster for use with OpenFGA:
-# - apiVersion: postgresql.cnpg.io/v1
-#   kind: Cluster
+## Example: Deploy a PostgreSQL instance for dev/test using official Docker images.
+## For production, use a managed database service or an operator like CloudnativePG.
+## Configure the chart to use the secret:
+##   datastore:
+##     engine: postgres
+##     uriSecret: openfga-postgres-credentials   # (PostgreSQL example)
+##     # or
+##     uriSecret: openfga-mysql-credentials      # (MySQL example)
+#
+## PostgreSQL dev/test example:
+# - apiVersion: v1
+#   kind: Secret
 #   metadata:
-#     name: openfga
+#     name: openfga-postgres-credentials
+#   stringData:
+#     POSTGRES_USER: openfga
+#     POSTGRES_PASSWORD: changeme
+#     POSTGRES_DB: openfga
+#     uri: "postgres://openfga:changeme@openfga-postgres:5432/openfga?sslmode=disable"
+# - apiVersion: apps/v1
+#   kind: Deployment
+#   metadata:
+#     name: openfga-postgres
 #   spec:
-#     instances: 3
-#     storage:
-#       size: 10Gi
+#     replicas: 1
+#     selector:
+#       matchLabels:
+#         app: openfga-postgres
+#     template:
+#       metadata:
+#         labels:
+#           app: openfga-postgres
+#       spec:
+#         containers:
+#           - name: postgres
+#             image: postgres:17
+#             ports:
+#               - containerPort: 5432
+#             envFrom:
+#               - secretRef:
+#                   name: openfga-postgres-credentials
+#             volumeMounts:
+#               - name: data
+#                 mountPath: /var/lib/postgresql/data
+#         volumes:
+#           - name: data
+#             emptyDir: {}
+# - apiVersion: v1
+#   kind: Service
+#   metadata:
+#     name: openfga-postgres
+#   spec:
+#     selector:
+#       app: openfga-postgres
+#     ports:
+#       - port: 5432
+#         targetPort: 5432
+#
+## MySQL dev/test example:
+# - apiVersion: v1
+#   kind: Secret
+#   metadata:
+#     name: openfga-mysql-credentials
+#   stringData:
+#     MYSQL_ROOT_PASSWORD: changeme
+#     MYSQL_USER: openfga
+#     MYSQL_PASSWORD: changeme
+#     MYSQL_DATABASE: openfga
+#     uri: "openfga:changeme@tcp(openfga-mysql:3306)/openfga?parseTime=true"
+# - apiVersion: apps/v1
+#   kind: Deployment
+#   metadata:
+#     name: openfga-mysql
+#   spec:
+#     replicas: 1
+#     selector:
+#       matchLabels:
+#         app: openfga-mysql
+#     template:
+#       metadata:
+#         labels:
+#           app: openfga-mysql
+#       spec:
+#         containers:
+#           - name: mysql
+#             image: mysql:8.4
+#             ports:
+#               - containerPort: 3306
+#             envFrom:
+#               - secretRef:
+#                   name: openfga-mysql-credentials
+#             volumeMounts:
+#               - name: data
+#                 mountPath: /var/lib/mysql
+#         volumes:
+#           - name: data
+#             emptyDir: {}
+# - apiVersion: v1
+#   kind: Service
+#   metadata:
+#     name: openfga-mysql
+#   spec:
+#     selector:
+#       app: openfga-mysql
+#     ports:
+#       - port: 3306
+#         targetPort: 3306
