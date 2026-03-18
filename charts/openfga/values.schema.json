@@ -504,20 +504,22 @@
         },
         "postgresql": {
             "type": "object",
+            "description": "DEPRECATED: The bundled Bitnami PostgreSQL sub-chart uses the legacy archive repository which is no longer actively maintained or receiving security updates. Provided for backwards compatibility only. Will be removed in a future release.",
             "properties": {
                 "enabled": {
                     "type": "boolean",
-                    "description": "enable the bitnami/postgresql subchart and deploy Postgres",
+                    "description": "DEPRECATED: enable the bitnami/postgresql subchart (uses unsupported legacy archive)",
                     "default": false
                 }
             }
         },
         "mysql": {
             "type": "object",
+            "description": "DEPRECATED: The bundled Bitnami MySQL sub-chart uses the legacy archive repository which is no longer actively maintained or receiving security updates. Provided for backwards compatibility only. Will be removed in a future release.",
             "properties": {
                 "enabled": {
                     "type": "boolean",
-                    "description": "enable the bitnami/mysql subchart and deploy MySQL",
+                    "description": "DEPRECATED: enable the bitnami/mysql subchart (uses unsupported legacy archive)",
                     "default": false
                 }
             }

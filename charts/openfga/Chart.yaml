@@ -3,7 +3,7 @@ name: openfga
 description: A Kubernetes Helm chart for the OpenFGA project.
 
 type: application
-version: 0.2.61
+version: 0.2.62
 appVersion: "v1.13.1"
 
 home: "https://openfga.github.io/helm-charts"
@@ -16,13 +16,17 @@ annotations:
     url: https://openfga.github.io/helm-charts/pgp-public-key.asc
 
 dependencies:
+  # DEPRECATED: These database sub-charts use the Bitnami legacy archive repo which
+  # is no longer actively maintained or receiving security updates.
+  # They are provided for backwards compatibility only.
+  # For new deployments, use extraObjects with official Docker images (see values.yaml).
   - name: postgresql
     version: "12.12.10"
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
     condition: postgresql.enabled
   - name: mysql
     version: "9.6.0"
-    repository: https://charts.bitnami.com/bitnami
+    repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
     condition: mysql.enabled
   - name: common
     version: "2.13.3"
