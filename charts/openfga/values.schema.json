@@ -30,6 +30,21 @@
             "description": "The number of OpenFGA server replicas (pods) to deploy",
             "default": 3
         },
+        "updateStrategy": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Strategy type",
+                    "default": "RollingUpdate"
+                },
+                "rollingUpdate": {
+                    "type": "object",
+                    "description": "Rolling update configuration parameters",
+                    "default": {}
+                }
+            }
+        },
         "autoscaling": {
             "type": "object",
             "properties": {
