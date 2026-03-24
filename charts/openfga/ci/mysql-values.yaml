@@ -1,8 +1,6 @@
 datastore:
   engine: mysql
   uriSecret: openfga-mysql-credentials
-  secretKeys:
-    uriKey: OPENFGA_DATASTORE_URI
   waitForMigrations: false
 
 extraObjects:
@@ -15,7 +13,7 @@ extraObjects:
       MYSQL_USER: openfga
       MYSQL_PASSWORD: changeme
       MYSQL_DATABASE: openfga
-      OPENFGA_DATASTORE_URI: "openfga:changeme@tcp(openfga-mysql:3306)/openfga?parseTime=true"
+      uri: "openfga:changeme@tcp(openfga-mysql:3306)/openfga?parseTime=true"
   - apiVersion: apps/v1
     kind: Deployment
     metadata:
