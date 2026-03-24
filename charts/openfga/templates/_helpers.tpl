@@ -74,15 +74,6 @@ Create the name of the service account to use
 {{- end }}
 {{- end }}
 
-{{/*
-Return true if a secret object should be created
-*/}}
-{{- define "openfga.createSecret" -}}
-{{- if not (or .Values.global.postgresql.auth.existingSecret .Values.auth.existingSecret) -}}
-    {{- true -}}
-{{- end -}}
-{{- end -}}
-
 {{- define "openfga.datastore.secretName" -}}
 {{ include "openfga.fullname" . }}-datastore-secret
 {{- end -}}
