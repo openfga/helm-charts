@@ -1,0 +1,56 @@
+datastore:
+  engine: mysql
+  uriSecret: openfga-mysql-credentials
+  secretKeys:
+    uriKey: OPENFGA_DATASTORE_URI
+  waitForMigrations: false
+
+extraObjects:
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: openfga-mysql-credentials
+    stringData:
+      MYSQL_ROOT_PASSWORD: changeme
+      MYSQL_USER: openfga
+      MYSQL_PASSWORD: changeme
+      MYSQL_DATABASE: openfga
+      OPENFGA_DATASTORE_URI: "openfga:changeme@tcp(openfga-mysql:3306)/openfga?parseTime=true"
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: openfga-mysql
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: openfga-mysql
+      template:
+        metadata:
+          labels:
+            app: openfga-mysql
+        spec:
+          containers:
+            - name: mysql
+              image: mysql:8.4
+              ports:
+                - containerPort: 3306
+              envFrom:
+                - secretRef:
+                    name: openfga-mysql-credentials
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/mysql
+          volumes:
+            - name: data
+              emptyDir: {}
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: openfga-mysql
+    spec:
+      selector:
+        app: openfga-mysql
+      ports:
+        - port: 3306
+          targetPort: 3306

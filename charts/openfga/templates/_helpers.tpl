@@ -78,7 +78,7 @@ Create the name of the service account to use
 Return true if a secret object should be created
 */}}
 {{- define "openfga.createSecret" -}}
-{{- if not (or .Values.global.postgresql.auth.existingSecret .Values.auth.existingSecret) -}}
+{{- if not .Values.auth.existingSecret -}}
     {{- true -}}
 {{- end -}}
 {{- end -}}

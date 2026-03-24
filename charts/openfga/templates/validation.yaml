@@ -1,0 +1,48 @@
+{{/*
+Validate that removed sub-chart values are not still being used.
+This prevents silent failures when upgrading from v0.2.x to v0.3.0.
+*/}}
+
+{{- if .Values.postgresql }}
+{{- if .Values.postgresql.enabled }}
+{{- fail `
+===========================================================================
+  ERROR: postgresql.enabled is no longer supported as of chart v0.3.0.
+
+  The bundled Bitnami PostgreSQL sub-chart has been removed.
+
+  To migrate:
+    1. Note your current datastore URI (check your postgresql release values)
+    2. If using the sub-chart PVC, do NOT delete it - your data is there
+       (kubectl get pvc -l app.kubernetes.io/name=postgresql)
+    3. Deploy PostgreSQL separately (see extraObjects examples in values.yaml)
+       or use a managed database service
+    4. Set datastore.engine=postgres and datastore.uri or datastore.uriSecret
+       to point to your database
+    5. Remove postgresql.enabled from your values
+===========================================================================
+` -}}
+{{- end }}
+{{- end }}
+
+{{- if .Values.mysql }}
+{{- if .Values.mysql.enabled }}
+{{- fail `
+===========================================================================
+  ERROR: mysql.enabled is no longer supported as of chart v0.3.0.
+
+  The bundled Bitnami MySQL sub-chart has been removed.
+
+  To migrate:
+    1. Note your current datastore URI (check your mysql release values)
+    2. If using the sub-chart PVC, do NOT delete it - your data is there
+       (kubectl get pvc -l app.kubernetes.io/name=mysql)
+    3. Deploy MySQL separately (see extraObjects examples in values.yaml)
+       or use a managed database service
+    4. Set datastore.engine=mysql and datastore.uri or datastore.uriSecret
+       to point to your database
+    5. Remove mysql.enabled from your values
+===========================================================================
+` -}}
+{{- end }}
+{{- end }}
