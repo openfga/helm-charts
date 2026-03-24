@@ -362,6 +362,12 @@ testContainerSpec: {}
 extraObjects: []
 ## Example: Deploy a PostgreSQL instance for dev/test using official Docker images.
 ## For production, use a managed database service or an operator like CloudnativePG.
+## Configure the chart to use the secret:
+##   datastore:
+##     engine: postgres
+##     uriSecret: openfga-postgres-credentials   # (PostgreSQL example)
+##     # or
+##     uriSecret: openfga-mysql-credentials      # (MySQL example)
 #
 ## PostgreSQL dev/test example:
 # - apiVersion: v1
