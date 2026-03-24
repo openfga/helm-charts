@@ -1,7 +1,7 @@
 datastore:
   engine: postgres
   uriSecret: openfga-postgres-credentials
-  waitForMigrations: false
+  migrationType: initContainer
 
 extraObjects:
   - apiVersion: v1

@@ -1,7 +1,7 @@
 datastore:
   engine: mysql
   uriSecret: openfga-mysql-credentials
-  waitForMigrations: false
+  migrationType: initContainer
 
 extraObjects:
   - apiVersion: v1
