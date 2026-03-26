@@ -307,7 +307,7 @@ spec:
               value: "{{ .Values.listObjectsDeadline }}"
             {{- end }}
 
-            {{- if .Values.listObjectsMaxResults }}
+            {{- if ne .Values.listObjectsMaxResults nil }}
             - name: OPENFGA_LIST_OBJECTS_MAX_RESULTS
               value: "{{ .Values.listObjectsMaxResults }}"
             {{- end }}
@@ -317,7 +317,7 @@ spec:
               value: "{{ .Values.listUsersDeadline }}"
             {{- end }}
 
-            {{- if .Values.listUsersMaxResults }}
+            {{- if ne .Values.listUsersMaxResults nil }}
             - name: OPENFGA_LIST_USERS_MAX_RESULTS
               value: "{{ .Values.listUsersMaxResults }}"
             {{- end }}
