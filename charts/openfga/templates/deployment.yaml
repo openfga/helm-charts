@@ -137,6 +137,8 @@ spec:
               value: "{{ .Values.datastore.connMaxLifetime }}"
             {{- end }}
 
+            {{- include "openfga.datastore.secondary.envConfig" . | nindent 12 }}
+
             - name: OPENFGA_DATASTORE_METRICS_ENABLED
               value: "{{ .Values.datastore.metrics.enabled }}"
 
