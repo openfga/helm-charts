@@ -18,6 +18,13 @@ jobs:
         with:
           version: v3.12.1
 
+      - name: Run helm unit tests
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build charts/openfga
+          helm unittest charts/openfga
+
       - uses: actions/setup-python@v6
         with:
           python-version: '3.9'
