@@ -21,7 +21,7 @@ jobs:
       - name: Run helm unit tests
         run: |
           helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
-          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add bitnami-legacy https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
           helm dependency build charts/openfga
           helm unittest charts/openfga
 

@@ -37,6 +37,27 @@ helm install openfga -f values.yaml oci://ghcr.io/openfga/helm-charts
 >
 > Use the `extraObjects` pattern with official Docker images instead. See the [Postgres dev/test setup](#devtest-only-quick-postgres-setup) and [MySQL dev/test setup](#devtest-only-quick-mysql-setup) sections below for working examples.
 
+## Migrating Off Bundled Database Sub-Charts
+
+The bundled Bitnami PostgreSQL and MySQL sub-charts (`postgresql.enabled` / `mysql.enabled`) are deprecated and will be removed after July 2026. Migrate to a standalone database to continue receiving security updates.
+
+### Database Version Compatibility
+
+The bundled sub-charts ship with:
+- **PostgreSQL 15.4** (`bitnamilegacy/postgresql:15.4.0-debian-11-r45`)
+- **MySQL 8.0** (`bitnamilegacy/mysql:8.0.32-debian-11-r14`)
+
+When migrating, use a database version that is **equal to or newer** than the version above. OpenFGA supports PostgreSQL 14+ and MySQL 8.0+.
+
+### Migration Guides
+
+Step-by-step guides with complete values files, Bitnami compatibility notes, and verified migration paths:
+
+- **[Migrate PostgreSQL from Bitnami to Official Docker Image](docs/migrate-postgres-from-bitnami.md)** — covers the init container needed for Bitnami's non-standard config file layout
+- **[Migrate MySQL from Bitnami to Official Docker Image](docs/migrate-mysql-from-bitnami.md)** — covers the `--datadir` flag needed for Bitnami's non-standard data directory
+
+Both guides follow the same pattern: protect the PV, disable the sub-chart, deploy the official image via `extraObjects` reusing the existing PVC, and verify data integrity — all in a single `helm upgrade`.
+
 ## Customization
 
 If you wish to customize the OpenFGA deployment you may supply paremeters such as the ones listed in the [values.yaml](/charts/openfga/values.yaml).
