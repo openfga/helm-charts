@@ -1,0 +1,59 @@
+suite: deployment - zero value handling
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should render OPENFGA_LIST_OBJECTS_MAX_RESULTS when set to 0
+    set:
+      listObjectsMaxResults: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_LIST_OBJECTS_MAX_RESULTS
+            value: "0"
+
+  - it: should render OPENFGA_LIST_OBJECTS_MAX_RESULTS when set to a positive value
+    set:
+      listObjectsMaxResults: 100
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_LIST_OBJECTS_MAX_RESULTS
+            value: "100"
+
+  - it: should not render OPENFGA_LIST_OBJECTS_MAX_RESULTS when not set
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_LIST_OBJECTS_MAX_RESULTS
+          any: true
+
+  - it: should render OPENFGA_LIST_USERS_MAX_RESULTS when set to 0
+    set:
+      listUsersMaxResults: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_LIST_USERS_MAX_RESULTS
+            value: "0"
+
+  - it: should render OPENFGA_LIST_USERS_MAX_RESULTS when set to a positive value
+    set:
+      listUsersMaxResults: 100
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_LIST_USERS_MAX_RESULTS
+            value: "100"
+
+  - it: should not render OPENFGA_LIST_USERS_MAX_RESULTS when not set
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_LIST_USERS_MAX_RESULTS
+          any: true

@@ -212,6 +212,17 @@ datastore:
   maxIdleConns:
   connMaxIdleTime:
   connMaxLifetime:
+  secondary:
+    engine:
+    uri:
+    uriSecret:
+    username:
+    password:
+    existingSecret:
+    secretKeys:
+      uriKey:
+      usernameKey:
+      passwordKey:
   applyMigrations: true
   waitForMigrations: true
   migrationType: job
