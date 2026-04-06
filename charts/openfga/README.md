@@ -56,7 +56,7 @@ Step-by-step guides with complete values files, Bitnami compatibility notes, and
 - **[Migrate PostgreSQL from Bitnami to Official Docker Image](docs/migrate-postgres-from-bitnami.md)** — covers the init container needed for Bitnami's non-standard config file layout
 - **[Migrate MySQL from Bitnami to Official Docker Image](docs/migrate-mysql-from-bitnami.md)** — covers the `--datadir` flag needed for Bitnami's non-standard data directory
 
-Both guides follow the same pattern: protect the PV, disable the sub-chart, deploy the official image via `extraObjects` reusing the existing PVC, and verify data integrity — all in a single `helm upgrade`.
+Both guides follow the same pattern: protect the PV (a prerequisite `kubectl patch` step), disable the sub-chart, deploy the official image via `extraObjects` reusing the existing PVC, and verify data integrity — with a single `helm upgrade` after the PV is protected.
 
 ## Customization
 

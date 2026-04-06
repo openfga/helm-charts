@@ -113,7 +113,8 @@ extraObjects:
                   fi
                   if [ ! -f "$PGDATA/pg_hba.conf" ]; then
                     cat > "$PGDATA/pg_hba.conf" <<'HBA'
-                  local   all   all                 trust
+                  # WARNING: for production, replace 0.0.0.0/0 with your cluster's pod CIDR
+                  local   all   all                 scram-sha-256
                   host    all   all   127.0.0.1/32  scram-sha-256
                   host    all   all   ::1/128       scram-sha-256
                   host    all   all   0.0.0.0/0     scram-sha-256
@@ -212,4 +213,4 @@ This migration path has been validated end-to-end on a Kubernetes cluster:
 
 - **From:** Bitnami PostgreSQL sub-chart (`postgresql.enabled: true`, PostgreSQL 15.4)
 - **To:** Official `postgres:15` Docker image via `extraObjects`
-- **Result:** All stores, authorization models, and relationship tuples preserved. All permission checks passed. Zero data loss, single `helm upgrade` command.
+- **Result:** All stores, authorization models, and relationship tuples preserved. All permission checks passed. Zero data loss with a single `helm upgrade` (after protecting the PV in Step 1).

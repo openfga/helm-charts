@@ -510,6 +510,26 @@
                     "type": "boolean",
                     "description": "DEPRECATED: enable the bitnami/postgresql subchart (uses unsupported legacy archive)",
                     "default": false
+                },
+                "image": {
+                    "type": "object",
+                    "properties": {
+                        "registry": {
+                            "type": "string",
+                            "description": "PostgreSQL image registry",
+                            "default": "docker.io"
+                        },
+                        "repository": {
+                            "type": "string",
+                            "description": "PostgreSQL image repository",
+                            "default": "bitnamilegacy/postgresql"
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "PostgreSQL image tag",
+                            "default": "15.4.0-debian-11-r45"
+                        }
+                    }
                 }
             }
         },
@@ -521,6 +541,26 @@
                     "type": "boolean",
                     "description": "DEPRECATED: enable the bitnami/mysql subchart (uses unsupported legacy archive)",
                     "default": false
+                },
+                "image": {
+                    "type": "object",
+                    "properties": {
+                        "registry": {
+                            "type": "string",
+                            "description": "MySQL image registry",
+                            "default": "docker.io"
+                        },
+                        "repository": {
+                            "type": "string",
+                            "description": "MySQL image repository",
+                            "default": "bitnamilegacy/mysql"
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "MySQL image tag",
+                            "default": "8.0.32-debian-11-r14"
+                        }
+                    }
                 }
             }
         },
