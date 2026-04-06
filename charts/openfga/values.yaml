@@ -1,11 +1,17 @@
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
 replicaCount: 3
 
 image:
+  registry: ""
   repository: openfga/openfga
   pullPolicy: Always
   tag: ""
+  digest: ""
+  pullSecrets: []
 
-imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
@@ -49,9 +55,12 @@ securityContext:
   # runAsUser: 1000
 
 initContainer:
+  registry: ""
   repository: groundnuty/k8s-wait-for
   tag: "v2.0"
+  digest: ""
   pullPolicy: IfNotPresent
+  pullSecrets: []
 
 ## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes

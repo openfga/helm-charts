@@ -25,7 +25,7 @@ dependencies:
     repository: https://charts.bitnami.com/bitnami
     condition: mysql.enabled
   - name: common
-    version: "2.13.3"
+    version: "2.31.4"
     repository: oci://registry-1.docker.io/bitnamicharts
     tags:
       - bitnami-common
