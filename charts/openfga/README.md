@@ -39,7 +39,7 @@ helm install openfga -f values.yaml oci://ghcr.io/openfga/helm-charts
 
 ## Migrating Off Bundled Database Sub-Charts
 
-The bundled Bitnami PostgreSQL and MySQL sub-charts (`postgresql.enabled` / `mysql.enabled`) are deprecated and will be removed after July 2026. Migrate to a standalone database to continue receiving security updates.
+The bundled Bitnami PostgreSQL and MySQL sub-charts (`postgresql.enabled` / `mysql.enabled`) are deprecated and will be removed soon. Migrate to a standalone database to continue receiving security updates.
 
 ### Database Version Compatibility
 
