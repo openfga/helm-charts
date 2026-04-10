@@ -1,0 +1,100 @@
+name: Operator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "operator/**"
+  pull_request:
+    paths:
+      - "operator/**"
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: "Push the operator image to GHCR"
+        type: boolean
+        default: true
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/openfga-operator
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+
+      - name: Run tests
+        working-directory: operator
+        run: go test ./... -v
+
+      - name: Run vet
+        working-directory: operator
+        run: go vet ./...
+
+  build-and-push:
+    needs: test
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.push_image)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Extract version from Chart.yaml
+        id: version
+        run: |
+          version=$(grep '^appVersion:' charts/openfga-operator/Chart.yaml | awk '{print $2}' | tr -d '"')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          short_sha="${GITHUB_SHA::7}"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "Operator version: ${version} (sha: ${short_sha})"
+
+      - name: Determine image tags
+        id: tags
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "tags=${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }},${{ env.IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
+          else
+            # Dev build — tag with version-sha to avoid clobbering release tags
+            echo "tags=${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}-${{ steps.version.outputs.short_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: operator
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.title=openfga-operator
+            org.opencontainers.image.description=OpenFGA Kubernetes operator for migration orchestration

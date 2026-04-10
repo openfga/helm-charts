@@ -4,12 +4,21 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
-  {{- with .Values.annotations }}
   annotations:
+    {{- if .Values.operator.enabled }}
+    openfga.dev/desired-replicas: "{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}"
+    openfga.dev/migration-service-account: "{{ include "openfga.migrationServiceAccountName" . }}"
+    {{- end }}
+    {{- with .Values.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
-  {{- if not  .Values.autoscaling.enabled }}
+  {{- if .Values.operator.enabled }}
+  {{- if .Values.autoscaling.enabled }}
+  {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
+  {{- end }}
+  replicas: 0
+  {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
   {{- end }}
   selector:
@@ -37,7 +46,7 @@ spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{ if or (and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers }}
+      {{ if and (not .Values.operator.enabled) (or (and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers) }}
       initContainers:
         {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
         - name: wait-for-migration
