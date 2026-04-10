@@ -1289,6 +1289,75 @@
             "type": "boolean",
             "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
             "default": false
+        },
+        "operator": {
+            "type": "object",
+            "description": "Controls the openfga-operator subchart. When enabled, migration is managed by the operator instead of the Helm job hook.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable the openfga-operator subchart for operator-managed migrations",
+                    "default": false
+                }
+            }
+        },
+        "openfga-operator": {
+            "type": "object",
+            "description": "Values passed through to the openfga-operator subchart"
+        },
+        "migration": {
+            "type": "object",
+            "description": "Controls operator-driven migration behavior. Only used when operator.enabled is true.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable operator-managed database migrations",
+                    "default": true
+                },
+                "timeout": {
+                    "type": ["string", "null"],
+                    "description": "Timeout passed to the migration Job as activeDeadlineSeconds",
+                    "default": ""
+                },
+                "backoffLimit": {
+                    "type": "integer",
+                    "description": "Number of retries before marking the migration as failed",
+                    "default": 3
+                },
+                "ttlSecondsAfterFinished": {
+                    "type": "integer",
+                    "description": "Seconds to keep completed/failed migration Jobs before cleanup",
+                    "default": 600
+                },
+                "serviceAccount": {
+                    "type": "object",
+                    "properties": {
+                        "create": {
+                            "type": "boolean",
+                            "description": "Create a dedicated service account for migration Jobs",
+                            "default": true
+                        },
+                        "annotations": {
+                            "type": "object",
+                            "description": "Annotations to add to the migration service account",
+                            "additionalProperties": {
+                                "type": "string"
+                            },
+                            "default": {}
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The name of the migration service account. Defaults to {fullname}-migration.",
+                            "default": ""
+                        }
+                    }
+                },
+                "resources": {
+                    "type": "object",
+                    "description": "Resource requests/limits for migration Job pods",
+                    "default": {}
+                }
+            }
         }
     },
     "additionalProperties": false

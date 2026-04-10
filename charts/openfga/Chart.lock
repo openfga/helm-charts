@@ -8,5 +8,8 @@ dependencies:
 - name: common
   repository: oci://registry-1.docker.io/bitnamicharts
   version: 2.13.3
-digest: sha256:4bbfb25821b0dfb6c70aabb5caf4c5ec7e6526261f93a8f531f507f1d4c43e3e
-generated: "2026-03-18T11:41:40.1785546-04:00"
+- name: openfga-operator
+  repository: file://../openfga-operator
+  version: 0.1.0
+digest: sha256:d502dc105790995a4368a049c0f593820d08f2f82dc9c9a70480a343c7affe8b
+generated: "2026-04-10T11:45:16.638975-04:00"
