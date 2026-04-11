@@ -67,7 +67,8 @@ func newTestDeployment(name, namespace, image string, replicas int32) *appsv1.De
 
 func newReconciler(objects ...runtime.Object) *MigrationReconciler {
 	scheme := newScheme()
-	clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
+	clientBuilder := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&appsv1.Deployment{})
 	for _, obj := range objects {
 		clientBuilder = clientBuilder.WithRuntimeObjects(obj)
 	}
@@ -77,6 +78,15 @@ func newReconciler(objects ...runtime.Object) *MigrationReconciler {
 		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
 		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
 	}
+}
+
+func findCondition(conditions []appsv1.DeploymentCondition, condType string) *appsv1.DeploymentCondition {
+	for i := range conditions {
+		if string(conditions[i].Type) == condType {
+			return &conditions[i]
+		}
+	}
+	return nil
 }
 
 func TestReconcile_FirstInstall_CreatesJob(t *testing.T) {
@@ -113,10 +123,14 @@ func TestReconcile_FirstInstall_CreatesJob(t *testing.T) {
 		t.Errorf("expected job args [migrate], got %v", job.Spec.Template.Spec.Containers[0].Args)
 	}
 
-	// Verify only datastore env vars were passed.
+	// Verify all env vars from the main container were passed.
+	jobEnvNames := make(map[string]bool)
 	for _, env := range job.Spec.Template.Spec.Containers[0].Env {
-		if env.Name == "OPENFGA_LOG_LEVEL" {
-			t.Error("non-datastore env var OPENFGA_LOG_LEVEL should not be passed to migration job")
+		jobEnvNames[env.Name] = true
+	}
+	for _, expected := range []string{"OPENFGA_DATASTORE_ENGINE", "OPENFGA_DATASTORE_URI", "OPENFGA_LOG_LEVEL"} {
+		if !jobEnvNames[expected] {
+			t.Errorf("expected env var %s to be passed to migration job", expected)
 		}
 	}
 }
@@ -166,9 +180,18 @@ func TestReconcile_VersionMatch_ScalesUp(t *testing.T) {
 }
 
 func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
-	// Given: a Deployment at 0 replicas, no ConfigMap, and a succeeded migration Job.
+	// Given: a Deployment at 0 replicas, no ConfigMap, a succeeded migration Job,
+	// and a pre-existing MigrationFailed condition from a prior attempt.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
 	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	dep.Status.Conditions = []appsv1.DeploymentCondition{
+		{
+			Type:    "MigrationFailed",
+			Status:  corev1.ConditionTrue,
+			Reason:  "MigrationJobFailed",
+			Message: "Database migration failed for version v1.13.0.",
+		},
+	}
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -229,6 +252,18 @@ func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
 	}
 	if *updated.Spec.Replicas != 3 {
 		t.Errorf("expected 3 replicas, got %d", *updated.Spec.Replicas)
+	}
+
+	// Verify MigrationFailed condition was cleared.
+	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
+	if cond == nil {
+		t.Fatal("expected MigrationFailed condition to exist")
+	}
+	if cond.Status != corev1.ConditionFalse {
+		t.Errorf("expected MigrationFailed status False after success, got %s", cond.Status)
+	}
+	if cond.Reason != "MigrationSucceeded" {
+		t.Errorf("expected reason MigrationSucceeded, got %s", cond.Reason)
 	}
 }
 
@@ -301,6 +336,18 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 	// Verify retry-after annotation was set on the Deployment.
 	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
 		t.Error("expected retry-after annotation to be set on Deployment")
+	}
+
+	// Verify MigrationFailed condition was set.
+	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
+	if cond == nil {
+		t.Fatal("expected MigrationFailed condition to be set")
+	}
+	if cond.Status != corev1.ConditionTrue {
+		t.Errorf("expected MigrationFailed status True, got %s", cond.Status)
+	}
+	if cond.Reason != "MigrationJobFailed" {
+		t.Errorf("expected reason MigrationJobFailed, got %s", cond.Reason)
 	}
 }
 

@@ -100,14 +100,6 @@ func buildMigrationJob(
 		migrationSA = deployment.Spec.Template.Spec.ServiceAccountName
 	}
 
-	// Filter env vars — only pass datastore-related vars to the migration Job.
-	var datastoreEnvVars []corev1.EnvVar
-	for _, env := range mainContainer.Env {
-		if strings.HasPrefix(env.Name, "OPENFGA_DATASTORE_") {
-			datastoreEnvVars = append(datastoreEnvVars, env)
-		}
-	}
-
 	// Sanitize version for use as a label value (must match [a-zA-Z0-9._-], max 63 chars).
 	// The full version is stored in an annotation for accurate comparison.
 	labelVersion := strings.ReplaceAll(desiredVersion, ":", "_")
@@ -160,7 +152,8 @@ func buildMigrationJob(
 							Name:            "migrate-database",
 							Image:           mainContainer.Image,
 							Args:            []string{"migrate"},
-							Env:             datastoreEnvVars,
+							Env:             mainContainer.Env,
+							EnvFrom:         mainContainer.EnvFrom,
 							VolumeMounts:    mainContainer.VolumeMounts,
 							SecurityContext: mainContainer.SecurityContext,
 						},

@@ -131,3 +131,4 @@ The operator reads these annotations from the OpenFGA Deployment:
 ## Limitations
 
 - **Mutable image tags:** The operator detects version changes by comparing the container image tag (or digest). If you deploy with a mutable tag like `latest` or reuse the same tag for different builds, the operator will not detect changes and will skip the migration. Use immutable tags (e.g., `v1.14.0`) or pin images by digest for reliable migration triggering.
+- **Migration-specific volumes:** The legacy Helm chart values `migrate.extraVolumes` and `migrate.extraVolumeMounts` have no effect in operator mode. The operator inherits volumes and mounts from the main Deployment pod spec. If you need additional volumes for migrations (e.g., CA bundles or TLS certs), add them to the top-level `extraVolumes` and `extraVolumeMounts` values instead.
