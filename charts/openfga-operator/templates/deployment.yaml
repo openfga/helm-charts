@@ -43,6 +43,9 @@ spec:
             {{- if .Values.watchNamespace }}
             - --watch-namespace={{ .Values.watchNamespace }}
             {{- end }}
+            - --backoff-limit={{ .Values.migrationJob.backoffLimit }}
+            - --active-deadline-seconds={{ .Values.migrationJob.activeDeadlineSeconds }}
+            - --ttl-seconds-after-finished={{ .Values.migrationJob.ttlSecondsAfterFinished }}
           env:
             - name: POD_NAMESPACE
               valueFrom:

@@ -42,6 +42,14 @@ leaderElection:
   # -- Enable leader election for controller manager.
   enabled: true
 
+migrationJob:
+  # -- Number of pod failures before a migration Job is considered failed.
+  backoffLimit: 3
+  # -- Maximum wall-clock seconds a migration Job can run before being terminated.
+  activeDeadlineSeconds: 300
+  # -- Seconds to keep completed/failed Job pods for log inspection before garbage collection.
+  ttlSecondsAfterFinished: 300
+
 resources: {}
   # requests:
   #   cpu: 10m
