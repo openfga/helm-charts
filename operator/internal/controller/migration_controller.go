@@ -98,12 +98,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	logger.Info("migration needed", "currentVersion", currentVersion, "desiredVersion", desiredVersion)
 
-	// 6. Ensure the Deployment is scaled to zero before migrating.
-	if err := scaleDeploymentToZero(ctx, r.Client, deployment); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// 7. Check retry-after annotation to honor backoff cooldown.
+	// 6. Check retry-after annotation to honor backoff cooldown.
 	if retryAfter, ok := deployment.Annotations[AnnotationRetryAfter]; ok {
 		retryTime, parseErr := time.Parse(time.RFC3339, retryAfter)
 		if parseErr == nil && time.Now().Before(retryTime) {
@@ -113,7 +108,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	// 8. Check if a migration Job already exists.
+	// 7. Check if a migration Job already exists.
 	jobName := migrationJobName(req.Name)
 	job := &batchv1.Job{}
 	err = r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: req.Namespace}, job)
@@ -150,7 +145,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
 	}
 
-	// 8b. If the existing Job is for a different version, delete it and recreate.
+	// 8. If the existing Job is for a different version, delete it and recreate.
 	// Check annotation first (supports digests > 63 chars), fall back to label.
 	jobVersion := job.Annotations["openfga.dev/desired-version"]
 	versionMatch := jobVersion == desiredVersion

@@ -264,33 +264,3 @@ func ensureDeploymentScaled(ctx context.Context, c client.Client, deployment *ap
 	return false, nil
 }
 
-// scaleDeploymentToZero scales the Deployment to 0 replicas, storing the current
-// desired count in an annotation so it can be restored later.
-func scaleDeploymentToZero(ctx context.Context, c client.Client, deployment *appsv1.Deployment) error {
-	if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == 0 {
-		return nil // Already at zero.
-	}
-
-	patch := client.MergeFrom(deployment.DeepCopy())
-
-	// Store the current desired replica count before zeroing.
-	currentReplicas := int32(1)
-	if deployment.Spec.Replicas != nil {
-		currentReplicas = *deployment.Spec.Replicas
-	}
-
-	// Only store if not already stored (avoid overwriting with 0 on re-reconciliation).
-	if _, ok := deployment.Annotations[AnnotationDesiredReplicas]; !ok {
-		if deployment.Annotations == nil {
-			deployment.Annotations = make(map[string]string)
-		}
-		deployment.Annotations[AnnotationDesiredReplicas] = strconv.FormatInt(int64(currentReplicas), 10)
-	}
-
-	deployment.Spec.Replicas = ptr.To(int32(0))
-
-	if err := c.Patch(ctx, deployment, patch); err != nil {
-		return fmt.Errorf("scaling deployment to 0: %w", err)
-	}
-	return nil
-}

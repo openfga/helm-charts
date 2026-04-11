@@ -64,7 +64,10 @@ tests:
           path: metadata.annotations["openfga.dev/migration-service-account"]
 
   # --- Replica count ---
-  - it: should set replicas to 0 when operator is enabled with database datastore
+  # When no live cluster is available (helm template / test), lookup returns empty,
+  # so the template falls back to replicas: 0 (fresh install behavior).
+  # On a real cluster, lookup preserves the existing replica count for zero-downtime upgrades.
+  - it: should set replicas to 0 on fresh install when operator is enabled with database datastore
     set:
       operator.enabled: true
       migration.enabled: true
