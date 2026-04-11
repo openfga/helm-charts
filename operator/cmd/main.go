@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"math"
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,6 +45,22 @@ func main() {
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// Validate flag values.
+	for _, v := range []struct {
+		name  string
+		value int
+		max   int
+	}{
+		{"backoff-limit", backoffLimit, math.MaxInt32},
+		{"active-deadline-seconds", activeDeadline, math.MaxInt32},
+		{"ttl-seconds-after-finished", ttlAfterFinished, math.MaxInt32},
+	} {
+		if v.value < 0 || v.value > v.max {
+			fmt.Fprintf(os.Stderr, "invalid value for --%s: must be between 0 and %d\n", v.name, v.max)
+			os.Exit(1)
+		}
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	logger := ctrl.Log.WithName("setup")
