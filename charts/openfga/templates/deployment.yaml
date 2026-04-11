@@ -9,9 +9,9 @@ metadata:
   annotations:
     {{- if $hasOperatorAnnotations }}
     openfga.dev/migration-enabled: "true"
-    openfga.dev/desired-replicas: "{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}"
+    openfga.dev/desired-replicas: '{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}'
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
-    openfga.dev/migration-service-account: "{{ include "openfga.migrationServiceAccountName" . }}"
+    openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
     {{- end }}
     {{- end }}
     {{- with .Values.annotations }}
