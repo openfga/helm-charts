@@ -34,12 +34,9 @@ securityContext:
   runAsNonRoot: true
   runAsUser: 65532
 
-# -- Constrain the operator to watch a single namespace.
+# -- Namespace to watch for OpenFGA Deployments.
 # Leave empty to default to the release namespace.
 watchNamespace: ""
-
-# -- Watch all namespaces. Overrides watchNamespace.
-watchAllNamespaces: false
 
 leaderElection:
   # -- Enable leader election for controller manager.
