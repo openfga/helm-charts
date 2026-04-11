@@ -9,6 +9,9 @@ image:
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
+# -- Override the namespace for all operator resources.
+# Useful when the parent chart deploys subcharts into a different namespace.
+namespaceOverride: ""
 
 serviceAccount:
   # -- Specifies whether a service account should be created.
