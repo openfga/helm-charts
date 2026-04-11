@@ -23,7 +23,27 @@ spec:
   {{- if .Values.autoscaling.enabled }}
   {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
   {{- end }}
+  {{- /* On upgrade, preserve live replica count so existing pods keep serving (zero-downtime).
+         On fresh install, lookup returns empty — fall back to 0 so no pods start before migration.
+         See ADR-002 for rationale. */ -}}
+  {{- $existing := (lookup "apps/v1" "Deployment" (include "openfga.namespace" .) (include "openfga.fullname" .)) }}
+  {{- $desiredImage := printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
+  {{- $currentImage := "" }}
+  {{- range (($existing).spec).template.spec.containers }}
+    {{- if eq .name "openfga" }}
+      {{- $currentImage = .image }}
+    {{- end }}
+  {{- end }}
+  {{- if and $existing (eq $currentImage $desiredImage) }}
+  replicas: {{ $existing.spec.replicas }}
+  {{- else if $existing }}
+  {{- /* Image changed — preserve replicas; OpenFGA's built-in schema version check
+         (MinimumSupportedDatastoreSchemaRevision) causes readiness to fail until
+         migration completes, so old pods keep serving while new pods wait. */ -}}
+  replicas: {{ $existing.spec.replicas }}
+  {{- else }}
   replicas: {{ ternary 1 0 (eq .Values.datastore.engine "memory") }}
+  {{- end }}
   {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
   {{- end }}
