@@ -4,8 +4,10 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
+  {{- $hasOperatorAnnotations := and .Values.operator.enabled .Values.migration.enabled }}
+  {{- if or $hasOperatorAnnotations .Values.annotations }}
   annotations:
-    {{- if and .Values.operator.enabled .Values.migration.enabled }}
+    {{- if $hasOperatorAnnotations }}
     openfga.dev/migration-enabled: "true"
     openfga.dev/desired-replicas: "{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}"
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
@@ -15,6 +17,7 @@ metadata:
     {{- with .Values.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+  {{- end }}
 spec:
   {{- if and .Values.operator.enabled .Values.migration.enabled }}
   {{- if .Values.autoscaling.enabled }}
