@@ -3,6 +3,7 @@ IMG ?= openfga/openfga-operator:dev
 .PHONY: build test vet fmt lint docker-build docker-push clean
 
 build:
+	mkdir -p bin
 	go build -o bin/operator ./cmd/
 
 test:
