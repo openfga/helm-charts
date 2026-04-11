@@ -108,8 +108,9 @@ func buildMigrationJob(
 		}
 	}
 
-	// Truncate version for label (max 63 chars); store full version in annotation.
-	labelVersion := desiredVersion
+	// Sanitize version for use as a label value (must match [a-zA-Z0-9._-], max 63 chars).
+	// The full version is stored in an annotation for accurate comparison.
+	labelVersion := strings.ReplaceAll(desiredVersion, ":", "_")
 	if len(labelVersion) > 63 {
 		labelVersion = labelVersion[:63]
 	}
