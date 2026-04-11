@@ -326,7 +326,7 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 		t.Errorf("expected 60s requeue, got %v", result.RequeueAfter)
 	}
 
-	// Verify Deployment was NOT scaled up — still at 0.
+	// Verify Deployment replicas unchanged (still at 0 from fresh install).
 	updated := &appsv1.Deployment{}
 	if getErr := r.Get(context.Background(), types.NamespacedName{
 		Name: "openfga", Namespace: "default",
@@ -760,18 +760,19 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 	}
 }
 
-func TestReconcile_ScaleToZero_StoresDesiredReplicas(t *testing.T) {
-	// Given: a Deployment with replicas > 0 and no desired-replicas annotation yet.
-	// scaleDeploymentToZero should store the current replica count before zeroing.
+func TestReconcile_MigrationNeeded_DoesNotScaleToZero(t *testing.T) {
+	// Given: a Deployment with replicas > 0 and no migration-status ConfigMap.
+	// The operator should create the migration Job WITHOUT scaling to zero,
+	// relying on OpenFGA's built-in schema version check to gate readiness.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 3)
 	dep.Annotations = map[string]string{
 		AnnotationMigrationEnabled: "true",
+		AnnotationDesiredReplicas:  "3",
 	}
 
 	r := newReconciler(dep)
 
-	// When: reconciling — this will call scaleDeploymentToZero which must handle
-	// the case where AnnotationDesiredReplicas is not yet set.
+	// When: reconciling.
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
 	})
@@ -784,18 +785,15 @@ func TestReconcile_ScaleToZero_StoresDesiredReplicas(t *testing.T) {
 		t.Error("expected requeue after creating job")
 	}
 
-	// Verify Deployment was scaled to 0 and desired-replicas annotation was preserved.
+	// Verify Deployment replicas were NOT changed — pods keep running during migration.
 	updated := &appsv1.Deployment{}
 	if getErr := r.Get(context.Background(), types.NamespacedName{
 		Name: "openfga", Namespace: "default",
 	}, updated); getErr != nil {
 		t.Fatalf("getting deployment: %v", getErr)
 	}
-	if *updated.Spec.Replicas != 0 {
-		t.Errorf("expected 0 replicas, got %d", *updated.Spec.Replicas)
-	}
-	if updated.Annotations[AnnotationDesiredReplicas] != "3" {
-		t.Errorf("expected desired-replicas=3, got %s", updated.Annotations[AnnotationDesiredReplicas])
+	if *updated.Spec.Replicas != 3 {
+		t.Errorf("expected replicas to remain at 3, got %d", *updated.Spec.Replicas)
 	}
 }
 
