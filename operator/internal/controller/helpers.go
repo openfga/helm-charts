@@ -151,7 +151,6 @@ func buildMigrationJob(
 							Image:           mainContainer.Image,
 							Args:            []string{"migrate"},
 							Env:             datastoreEnvVars,
-							EnvFrom:         mainContainer.EnvFrom,
 							VolumeMounts:    mainContainer.VolumeMounts,
 							SecurityContext: mainContainer.SecurityContext,
 						},
