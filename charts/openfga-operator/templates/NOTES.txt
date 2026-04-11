@@ -8,3 +8,9 @@ To check operator status:
 
 To view operator logs:
   kubectl logs --namespace {{ include "openfga-operator.namespace" . }} -l "app.kubernetes.io/name={{ include "openfga-operator.name" . }}"
+
+To check migration status:
+  kubectl get configmap -n {{ include "openfga-operator.namespace" . }} -l app.kubernetes.io/managed-by=openfga-operator
+
+To inspect migration jobs:
+  kubectl get jobs -n {{ include "openfga-operator.namespace" . }} -l app.kubernetes.io/part-of=openfga,app.kubernetes.io/component=migration
