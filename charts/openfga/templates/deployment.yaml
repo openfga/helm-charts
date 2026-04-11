@@ -52,8 +52,7 @@ spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- $operatorMigration := and .Values.operator.enabled .Values.migration.enabled }}
-      {{- $needsMigrationInit := and (not $operatorMigration) (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations }}
+      {{- $needsMigrationInit := and (not .Values.operator.enabled) (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations }}
       {{- if or $needsMigrationInit .Values.extraInitContainers }}
       initContainers:
         {{- if $needsMigrationInit }}
