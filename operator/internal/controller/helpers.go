@@ -219,9 +219,11 @@ func updateMigrationStatus(
 		return nil
 	}
 
-	// Update existing ConfigMap.
+	// Update existing ConfigMap (including OwnerReferences in case the Deployment
+	// was deleted and recreated with a new UID).
 	existing.Data = cm.Data
 	existing.Labels = cm.Labels
+	existing.OwnerReferences = cm.OwnerReferences
 	if updateErr := c.Update(ctx, existing); updateErr != nil {
 		return fmt.Errorf("updating migration status ConfigMap: %w", updateErr)
 	}
