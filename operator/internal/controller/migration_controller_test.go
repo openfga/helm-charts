@@ -760,12 +760,10 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 	}
 }
 
-func TestReconcile_ScaleToZero_NilAnnotationsMap(t *testing.T) {
-	// Given: a Deployment with nil Annotations map and replicas > 0.
+func TestReconcile_ScaleToZero_StoresDesiredReplicas(t *testing.T) {
+	// Given: a Deployment with replicas > 0 and no desired-replicas annotation yet.
+	// scaleDeploymentToZero should store the current replica count before zeroing.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 3)
-	dep.Annotations = nil
-	// Re-add the required annotation via a fresh map — but test that scaleDeploymentToZero
-	// handles nil gracefully by setting it only via the migration-enabled annotation.
 	dep.Annotations = map[string]string{
 		AnnotationMigrationEnabled: "true",
 	}
