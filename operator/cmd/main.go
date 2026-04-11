@@ -23,19 +23,17 @@ func init() {
 
 func main() {
 	var (
-		leaderElect        bool
-		watchNamespace     string
-		watchAllNamespaces bool
-		metricsAddr        string
-		healthProbeAddr    string
-		backoffLimit       int
-		activeDeadline     int
-		ttlAfterFinished   int
+		leaderElect     bool
+		watchNamespace  string
+		metricsAddr     string
+		healthProbeAddr string
+		backoffLimit    int
+		activeDeadline  int
+		ttlAfterFinished int
 	)
 
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election for the controller manager.")
 	flag.StringVar(&watchNamespace, "watch-namespace", "", "Namespace to watch. Defaults to the operator pod namespace.")
-	flag.BoolVar(&watchAllNamespaces, "watch-all-namespaces", false, "Watch all namespaces.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&healthProbeAddr, "health-probe-bind-address", ":8081", "The address the health probe endpoint binds to.")
 	flag.IntVar(&backoffLimit, "backoff-limit", int(controller.DefaultBackoffLimit), "BackoffLimit for migration Jobs.")
@@ -50,7 +48,7 @@ func main() {
 	logger := ctrl.Log.WithName("setup")
 
 	// Fall back to the pod's namespace when no explicit scope is set.
-	if !watchAllNamespaces && watchNamespace == "" {
+	if watchNamespace == "" {
 		if podNS, ok := os.LookupEnv("POD_NAMESPACE"); ok && podNS != "" {
 			watchNamespace = podNS
 			logger.Info("defaulting watch scope to pod namespace", "namespace", podNS)
@@ -59,7 +57,7 @@ func main() {
 
 	// Configure cache namespace restrictions.
 	var cacheOpts cache.Options
-	if watchNamespace != "" && !watchAllNamespaces {
+	if watchNamespace != "" {
 		cacheOpts.DefaultNamespaces = map[string]cache.Config{
 			watchNamespace: {},
 		}

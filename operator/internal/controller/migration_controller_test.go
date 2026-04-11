@@ -33,7 +33,9 @@ func newTestDeployment(name, namespace, image string, replicas int32) *appsv1.De
 				LabelPartOf:    LabelPartOfValue,
 				LabelComponent: LabelComponentValue,
 			},
-			Annotations: map[string]string{},
+			Annotations: map[string]string{
+				AnnotationMigrationEnabled: "true",
+			},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: ptr.To(replicas),
@@ -435,6 +437,46 @@ func TestReconcile_FindContainerByName(t *testing.T) {
 
 	if job.Spec.Template.Spec.Containers[0].Image != "openfga/openfga:v1.14.0" {
 		t.Errorf("expected job image openfga/openfga:v1.14.0, got %s", job.Spec.Template.Spec.Containers[0].Image)
+	}
+}
+
+func TestReconcile_MigrationNotEnabled_Skips(t *testing.T) {
+	// Given: a Deployment without the migration-enabled annotation.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 3)
+	delete(dep.Annotations, AnnotationMigrationEnabled)
+
+	r := newReconciler(dep)
+
+	// When: reconciling.
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+
+	// Then: no error, no requeue, no Job created, replicas unchanged.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Error("expected no requeue when migration is not enabled")
+	}
+
+	// Verify no Job was created.
+	job := &batchv1.Job{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, job); getErr == nil {
+		t.Error("expected no migration job when migration is not enabled")
+	}
+
+	// Verify replicas unchanged.
+	updated := &appsv1.Deployment{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga", Namespace: "default",
+	}, updated); getErr != nil {
+		t.Fatalf("getting deployment: %v", getErr)
+	}
+	if *updated.Spec.Replicas != 3 {
+		t.Errorf("expected 3 replicas unchanged, got %d", *updated.Spec.Replicas)
 	}
 }
 
