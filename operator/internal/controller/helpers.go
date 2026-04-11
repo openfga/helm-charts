@@ -88,6 +88,7 @@ func findOpenFGAContainer(deployment *appsv1.Deployment) *corev1.Container {
 func buildMigrationJob(
 	deployment *appsv1.Deployment,
 	mainContainer *corev1.Container,
+	desiredVersion string,
 	backoffLimit int32,
 	activeDeadlineSeconds int64,
 	ttlSecondsAfterFinished int32,
@@ -114,6 +115,7 @@ func buildMigrationJob(
 				LabelPartOf:    LabelPartOfValue,
 				LabelComponent: "migration",
 				"app.kubernetes.io/managed-by": "openfga-operator",
+				"app.kubernetes.io/version":    desiredVersion,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{

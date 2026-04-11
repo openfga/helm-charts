@@ -79,8 +79,9 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// 5. If versions match, ensure Deployment is scaled up and return.
 	if currentVersion == desiredVersion {
 		logger.V(1).Info("migration up to date", "version", desiredVersion)
+		statusPatch := client.MergeFrom(deployment.DeepCopy())
 		clearMigrationFailedCondition(deployment)
-		if patchErr := r.Status().Update(ctx, deployment); patchErr != nil {
+		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
 			logger.Error(patchErr, "failed to clear MigrationFailed condition")
 		}
 		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
@@ -116,6 +117,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		job = buildMigrationJob(
 			deployment,
 			mainContainer,
+			desiredVersion,
 			r.BackoffLimit,
 			r.ActiveDeadlineSeconds,
 			r.TTLSecondsAfterFinished,
@@ -137,13 +139,26 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
 	}
 
+	// 8b. If the existing Job is for a different version, delete it and recreate.
+	if jobVersion := job.Labels["app.kubernetes.io/version"]; jobVersion != "" && jobVersion != desiredVersion {
+		logger.Info("existing migration job is for a different version, deleting", "jobVersion", jobVersion, "desiredVersion", desiredVersion)
+		propagation := metav1.DeletePropagationBackground
+		if delErr := r.Delete(ctx, job, &client.DeleteOptions{
+			PropagationPolicy: &propagation,
+		}); delErr != nil && !apierrors.IsNotFound(delErr) {
+			return ctrl.Result{}, fmt.Errorf("deleting stale migration job: %w", delErr)
+		}
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
 	// 9. Check Job status.
 	if job.Status.Succeeded >= 1 {
 		logger.Info("migration succeeded", "version", desiredVersion)
 
 		// Clear MigrationFailed condition.
+		statusPatch := client.MergeFrom(deployment.DeepCopy())
 		clearMigrationFailedCondition(deployment)
-		if patchErr := r.Status().Update(ctx, deployment); patchErr != nil {
+		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
 			logger.Error(patchErr, "failed to clear MigrationFailed condition")
 		}
 
@@ -166,11 +181,12 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if job.Status.Failed >= backoffLimit {
-		logger.Error(nil, "migration job failed, will delete and retry", "job", jobName, "version", desiredVersion)
+		logger.Info("migration job failed, will delete and retry", "job", jobName, "version", desiredVersion)
 
 		// Set condition so kubectl describe shows the failure.
+		statusPatch := client.MergeFrom(deployment.DeepCopy())
 		setMigrationFailedCondition(deployment, desiredVersion)
-		if patchErr := r.Status().Update(ctx, deployment); patchErr != nil {
+		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
 			logger.Error(patchErr, "failed to set MigrationFailed condition")
 		}
 
