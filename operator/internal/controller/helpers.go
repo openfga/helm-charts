@@ -24,6 +24,7 @@ const (
 	LabelComponentValue = "authorization-controller"
 
 	// Annotations set on the Deployment by the Helm chart / operator.
+	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
 	AnnotationDesiredReplicas         = "openfga.dev/desired-replicas"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
 	AnnotationRetryAfter              = "openfga.dev/migration-retry-after"
@@ -150,10 +151,13 @@ func buildMigrationJob(
 							Image:           mainContainer.Image,
 							Args:            []string{"migrate"},
 							Env:             datastoreEnvVars,
+							EnvFrom:         mainContainer.EnvFrom,
+							VolumeMounts:    mainContainer.VolumeMounts,
 							SecurityContext: mainContainer.SecurityContext,
 						},
 					},
-					// Inherit scheduling constraints from the parent Deployment.
+					// Inherit volumes and scheduling constraints from the parent Deployment.
+					Volumes:      deployment.Spec.Template.Spec.Volumes,
 					NodeSelector: deployment.Spec.Template.Spec.NodeSelector,
 					Tolerations:  deployment.Spec.Template.Spec.Tolerations,
 					Affinity:     deployment.Spec.Template.Spec.Affinity,

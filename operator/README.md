@@ -6,7 +6,7 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 
 ## How It Works
 
-1. The operator watches Deployments labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
+1. The operator watches Deployments **in its own namespace** labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
 2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
    - Keeps the Deployment at 0 replicas
    - Creates a migration Job running `openfga migrate`
@@ -17,7 +17,7 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 
 ## Prerequisites
 
-- Go 1.25+
+- Go 1.26.2+
 - Docker
 - Helm 3.6+
 - A Kubernetes cluster (Rancher Desktop, kind, etc.)
@@ -109,8 +109,7 @@ The operator accepts the following flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--leader-elect` | `false` | Enable leader election so only one replica actively reconciles at a time. Required when running multiple operator replicas for high availability; standby pods wait for the leader's Lease to expire before taking over. Not needed for single-replica deployments. |
-| `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). Set explicitly for multi-namespace setups. |
-| `--watch-all-namespaces` | `false` | Watch all namespaces for OpenFGA Deployments, making the operator cluster-wide. Overrides `--watch-namespace`. |
+| `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). Each operator instance manages only its own namespace, so multiple independent OpenFGA installations can coexist safely. |
 | `--metrics-bind-address` | `:8080` | Address the Prometheus metrics endpoint binds to. Change only if the default port conflicts with other containers in the pod. |
 | `--health-probe-bind-address` | `:8081` | Address the Kubernetes liveness and readiness probe endpoints bind to. Change only if the default port conflicts. |
 | `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. After hitting this limit the operator deletes the Job, sets a `MigrationFailed` condition on the Deployment, and retries after a 60-second cooldown. |
@@ -125,6 +124,7 @@ The operator reads these annotations from the OpenFGA Deployment:
 
 | Annotation | Description |
 |------------|-------------|
+| `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `operator.enabled` and `migration.enabled` are both true. |
 | `openfga.dev/desired-replicas` | The replica count to restore after migration succeeds. Set by the Helm chart. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
 

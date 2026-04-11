@@ -40,9 +40,7 @@ spec:
             {{- if .Values.leaderElection.enabled }}
             - --leader-elect
             {{- end }}
-            {{- if .Values.watchAllNamespaces }}
-            - --watch-all-namespaces
-            {{- else if .Values.watchNamespace }}
+            {{- if .Values.watchNamespace }}
             - --watch-namespace={{ .Values.watchNamespace }}
             {{- end }}
           env:

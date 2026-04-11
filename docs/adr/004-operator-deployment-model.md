@@ -96,9 +96,13 @@ helm-charts/
 dependencies:
   - name: openfga-operator
     version: "0.1.x"
-    repository: "oci://ghcr.io/openfga/helm-charts"
+    repository: "file://../openfga-operator"
     condition: operator.enabled
 ```
+
+> **Note:** The `file://` reference is used because the operator subchart lives in the same
+> monorepo. When the charts are published, consumers pulling from a registry will resolve the
+> dependency automatically via the chart's packaging.
 
 ### CRD Handling
 
@@ -130,19 +134,12 @@ kubectl apply -f https://github.com/openfga/helm-charts/releases/download/v0.2.0
 
 ### Multi-Instance Considerations
 
-When multiple OpenFGA installations exist in the same cluster:
-
-- **All-in-one mode:** Each installation gets its own operator instance. The operator only watches resources in its own namespace. This is simple but wasteful.
-- **Standalone mode:** One operator installation watches all namespaces (or a configured set). Individual OpenFGA installations set `operator.enabled=false`. This is more efficient for large clusters.
-
-The operator will support both modes via a `watchNamespace` configuration:
+When multiple OpenFGA installations exist in the same cluster, each installation gets its own operator instance. The operator is **namespace-scoped** — it only watches resources in its own namespace (or the namespace specified via `--watch-namespace`). This ensures independent OpenFGA installations never interfere with each other.
 
 ```yaml
 # Operator values
 operator:
-  watchNamespace: ""          # empty = watch own namespace only (all-in-one mode)
-  # watchNamespace: ""        # or set to a specific namespace
-  # watchAllNamespaces: true  # watch all namespaces (standalone mode)
+  watchNamespace: ""          # empty = watch own namespace only (default)
 ```
 
 ## Consequences
@@ -153,7 +150,7 @@ operator:
 - **Opt-out available** — `operator.enabled: false` for users who manage it separately or don't need it
 - **Independent versioning** — operator chart has its own version; can be released on a different cadence than the main chart
 - **Clean code separation** — operator code and templates are in their own chart directory
-- **Standalone installation supported** — cluster admins can install one operator for multiple OpenFGA instances
+- **Namespace isolation** — each operator instance is scoped to its own namespace, so multiple OpenFGA installations coexist safely
 - **Consistent with ecosystem** — this is the same pattern used by charts that depend on Bitnami PostgreSQL, Redis, etc.
 
 ### Negative

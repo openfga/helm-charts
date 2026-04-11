@@ -47,7 +47,13 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// 2. Find the OpenFGA container and extract the desired version.
+	// 2. Skip if migration is not opted-in via annotation.
+	if deployment.Annotations[AnnotationMigrationEnabled] != "true" {
+		logger.V(1).Info("migration not enabled for this deployment, skipping")
+		return ctrl.Result{}, nil
+	}
+
+	// 3. Find the OpenFGA container and extract the desired version.
 	mainContainer := findOpenFGAContainer(deployment)
 	if mainContainer == nil {
 		logger.Info("deployment has no containers, skipping")
