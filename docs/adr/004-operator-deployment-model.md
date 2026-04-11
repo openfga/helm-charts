@@ -66,7 +66,7 @@ The operator will be distributed as a **conditional Helm subchart dependency** o
 
 ### Chart Structure
 
-```
+```text
 helm-charts/
 ├── charts/
 │   ├── openfga/                    # Main chart (existing)
@@ -81,8 +81,8 @@ helm-charts/
 │       ├── templates/
 │       │   ├── deployment.yaml
 │       │   ├── serviceaccount.yaml
-│       │   ├── clusterrole.yaml
-│       │   └── clusterrolebinding.yaml
+│       │   ├── role.yaml
+│       │   └── rolebinding.yaml
 │       └── crds/                   # CRDs added in Stages 2-4
 │           ├── fgastore.yaml
 │           ├── fgamodel.yaml
