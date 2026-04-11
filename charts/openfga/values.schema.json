@@ -1314,21 +1314,6 @@
                     "description": "Enable operator-managed database migrations",
                     "default": true
                 },
-                "timeout": {
-                    "type": ["string", "null"],
-                    "description": "Timeout passed to the migration Job as activeDeadlineSeconds",
-                    "default": ""
-                },
-                "backoffLimit": {
-                    "type": "integer",
-                    "description": "Number of retries before marking the migration as failed",
-                    "default": 3
-                },
-                "ttlSecondsAfterFinished": {
-                    "type": "integer",
-                    "description": "Seconds to keep completed/failed migration Jobs before cleanup",
-                    "default": 600
-                },
                 "serviceAccount": {
                     "type": "object",
                     "properties": {
@@ -1351,11 +1336,6 @@
                             "default": ""
                         }
                     }
-                },
-                "resources": {
-                    "type": "object",
-                    "description": "Resource requests/limits for migration Job pods",
-                    "default": {}
                 }
             }
         }
