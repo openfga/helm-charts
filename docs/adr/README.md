@@ -30,7 +30,7 @@ ADRs are **immutable once accepted** — if a decision changes, you write a new 
 
 ## ADR Lifecycle
 
-```
+```text
 Proposed → Accepted → (optionally) Superseded or Deprecated
               ↑
               │ feedback loop

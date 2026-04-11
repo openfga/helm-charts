@@ -121,7 +121,7 @@ The Job created by the operator has no Helm hook annotations. It is a standard K
 | Job fails | Operator sets `MigrationFailed` condition on Deployment. Does NOT scale up. User inspects Job logs. |
 | Job hangs | `activeDeadlineSeconds` (default 300s) kills it. Operator sees failure. |
 | Operator crashes | On restart, re-reads ConfigMap and Job status. Resumes from where it left off. |
-| Database unreachable | Job fails to connect. Operator retries on next reconciliation (exponential backoff). |
+| Database unreachable | Job fails to connect. After exhausting `backoffLimit`, operator deletes the failed Job, sets a `retry-after` annotation, and recreates a fresh Job after a fixed 60-second cooldown. Cycle repeats until the database becomes available. |
 
 ### Sequence Comparison
 
