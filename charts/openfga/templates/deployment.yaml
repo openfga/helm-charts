@@ -6,6 +6,7 @@ metadata:
     {{- include "openfga.labels" . | nindent 4 }}
   annotations:
     {{- if and .Values.operator.enabled .Values.migration.enabled }}
+    openfga.dev/migration-enabled: "true"
     openfga.dev/desired-replicas: "{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}"
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
     openfga.dev/migration-service-account: "{{ include "openfga.migrationServiceAccountName" . }}"
