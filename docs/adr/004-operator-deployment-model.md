@@ -35,7 +35,7 @@ The operator Deployment, RBAC, and CRDs are templates in the main OpenFGA chart.
 
 **C. Operator as a conditional subchart dependency (selected)**
 
-The operator is a separate Helm chart (`openfga-operator`) that the main chart declares as a conditional dependency. Enabled by default, but users can disable it.
+The operator is a separate Helm chart (`openfga-operator`) that the main chart declares as a conditional dependency. Disabled by default for backward compatibility; users opt in with `operator.enabled: true`.
 
 *Example:*
 ```bash
@@ -71,7 +71,7 @@ helm-charts/
 ├── charts/
 │   ├── openfga/                    # Main chart (existing)
 │   │   ├── Chart.yaml              # Declares openfga-operator as dependency
-│   │   ├── values.yaml             # operator.enabled: true
+│   │   ├── values.yaml             # operator.enabled: false (opt-in)
 │   │   ├── templates/
 │   │   └── crds/                   # Empty in Stage 1
 │   │
@@ -124,8 +124,8 @@ kubectl apply -f https://github.com/openfga/helm-charts/releases/download/v0.2.0
 
 | Mode | Command | Use case |
 |------|---------|----------|
-| **All-in-one** (default) | `helm install openfga openfga/openfga` | Most users. Single install, operator included. |
-| **Operator disabled** | `helm install openfga openfga/openfga --set operator.enabled=false` | Operator managed separately or not needed (memory datastore). |
+| **Default** (no operator) | `helm install openfga openfga/openfga` | Backward compatible. Uses Helm hooks for migration. |
+| **All-in-one** | `helm install openfga openfga/openfga --set operator.enabled=true` | Single install with operator-managed migrations. |
 | **Operator standalone** | `helm install op openfga/openfga-operator -n openfga-system` | Cluster-wide operator serving multiple OpenFGA instances. |
 
 ### Multi-Instance Considerations

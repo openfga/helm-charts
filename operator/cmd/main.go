@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/runtime/serializer"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -20,8 +19,6 @@ var scheme = runtime.NewScheme()
 
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
-	// Suppress unused import.
-	_ = utilruntime.CodecFactory{}
 }
 
 func main() {
@@ -37,7 +34,7 @@ func main() {
 	)
 
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election for the controller manager.")
-	flag.StringVar(&watchNamespace, "watch-namespace", "", "Namespace to watch. Defaults to the release namespace.")
+	flag.StringVar(&watchNamespace, "watch-namespace", "", "Namespace to watch. Defaults to the operator pod namespace.")
 	flag.BoolVar(&watchAllNamespaces, "watch-all-namespaces", false, "Watch all namespaces.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&healthProbeAddr, "health-probe-bind-address", ":8081", "The address the health probe endpoint binds to.")
@@ -51,6 +48,14 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	logger := ctrl.Log.WithName("setup")
+
+	// Fall back to the pod's namespace when no explicit scope is set.
+	if !watchAllNamespaces && watchNamespace == "" {
+		if podNS, ok := os.LookupEnv("POD_NAMESPACE"); ok && podNS != "" {
+			watchNamespace = podNS
+			logger.Info("defaulting watch scope to pod namespace", "namespace", podNS)
+		}
+	}
 
 	// Configure cache namespace restrictions.
 	var cacheOpts cache.Options

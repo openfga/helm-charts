@@ -394,13 +394,8 @@ operator:
 # -- migration controls operator-driven migration behavior.
 # Only used when operator.enabled is true.
 migration:
+  # -- Enable operator-managed migrations. Set to false if you manage migrations externally.
   enabled: true
-  # -- Timeout passed to the migration Job as activeDeadlineSeconds.
-  timeout: ""
-  # -- Number of retries before marking the migration as failed.
-  backoffLimit: 3
-  # -- Seconds to keep completed/failed migration Jobs before cleanup.
-  ttlSecondsAfterFinished: 600
   serviceAccount:
     # -- Create a dedicated service account for migration Jobs.
     create: true
@@ -409,8 +404,6 @@ migration:
     # -- The name of the migration service account.
     # If not set and create is true, defaults to {fullname}-migration.
     name: ""
-  # -- Resource requests/limits for migration Job pods.
-  resources: {}
 ## Example: Deploy a PostgreSQL instance for dev/test using official Docker images.
 ## For production, use a managed database service or an operator like CloudnativePG.
 ## Configure the chart to use the secret:

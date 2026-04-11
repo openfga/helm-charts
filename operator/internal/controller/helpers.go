@@ -26,6 +26,7 @@ const (
 	// Annotations set on the Deployment by the Helm chart / operator.
 	AnnotationDesiredReplicas         = "openfga.dev/desired-replicas"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
+	AnnotationRetryAfter              = "openfga.dev/migration-retry-after"
 
 	// Defaults for migration Job configuration.
 	DefaultBackoffLimit            int32 = 3
@@ -68,17 +69,29 @@ func migrationJobName(deploymentName string) string {
 	return deploymentName + "-migrate"
 }
 
-// buildMigrationJob constructs a migration Job for the given Deployment and version.
+// findOpenFGAContainer finds the OpenFGA container in the Deployment's pod spec.
+// It looks for a container named "openfga" first, then falls back to the first container.
+func findOpenFGAContainer(deployment *appsv1.Deployment) *corev1.Container {
+	for i := range deployment.Spec.Template.Spec.Containers {
+		if deployment.Spec.Template.Spec.Containers[i].Name == "openfga" {
+			return &deployment.Spec.Template.Spec.Containers[i]
+		}
+	}
+	// Fallback: use the first container (for charts that don't name it "openfga").
+	if len(deployment.Spec.Template.Spec.Containers) > 0 {
+		return &deployment.Spec.Template.Spec.Containers[0]
+	}
+	return nil
+}
+
+// buildMigrationJob constructs a migration Job for the given Deployment.
 func buildMigrationJob(
 	deployment *appsv1.Deployment,
-	desiredVersion string,
+	mainContainer *corev1.Container,
 	backoffLimit int32,
 	activeDeadlineSeconds int64,
 	ttlSecondsAfterFinished int32,
 ) *batchv1.Job {
-	// Extract the main container's image and datastore env vars.
-	mainContainer := deployment.Spec.Template.Spec.Containers[0]
-
 	// Determine the migration service account.
 	migrationSA := deployment.Annotations[AnnotationMigrationServiceAccount]
 	if migrationSA == "" {
@@ -127,12 +140,15 @@ func buildMigrationJob(
 				Spec: corev1.PodSpec{
 					ServiceAccountName: migrationSA,
 					RestartPolicy:      corev1.RestartPolicyNever,
+					ImagePullSecrets:   deployment.Spec.Template.Spec.ImagePullSecrets,
+					SecurityContext:    deployment.Spec.Template.Spec.SecurityContext,
 					Containers: []corev1.Container{
 						{
-							Name:  "migrate-database",
-							Image: mainContainer.Image,
-							Args:  []string{"migrate"},
-							Env:   datastoreEnvVars,
+							Name:            "migrate-database",
+							Image:           mainContainer.Image,
+							Args:            []string{"migrate"},
+							Env:             datastoreEnvVars,
+							SecurityContext: mainContainer.SecurityContext,
 						},
 					},
 					// Inherit scheduling constraints from the parent Deployment.

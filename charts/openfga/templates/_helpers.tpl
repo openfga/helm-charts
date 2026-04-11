@@ -78,10 +78,10 @@ Create the name of the service account to use
 Create the name of the migration service account to use (operator mode only)
 */}}
 {{- define "openfga.migrationServiceAccountName" -}}
-{{- if .Values.migration.serviceAccount.name }}
-{{- .Values.migration.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- if .Values.migration.serviceAccount.create }}
+{{- default (printf "%s-migration" (include "openfga.fullname" .)) .Values.migration.serviceAccount.name | trunc 63 | trimSuffix "-" }}
 {{- else }}
-{{- printf "%s-migration" (include "openfga.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- required "migration.serviceAccount.name must be set when migration.serviceAccount.create=false" .Values.migration.serviceAccount.name | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
 

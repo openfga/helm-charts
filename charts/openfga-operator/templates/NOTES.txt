@@ -1,11 +1,10 @@
 The openfga-operator has been deployed.
 
-NOTE: The operator container image ({{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }})
-does not exist yet. The operator pod will remain in ImagePullBackOff until
-the Go binary is built and pushed.
+NOTE: Ensure the operator image ({{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}) is available in your registry.
+If unavailable, the operator pod may remain in ImagePullBackOff until the image is pushed.
 
 To check operator status:
   kubectl get deployment --namespace {{ include "openfga-operator.namespace" . }} {{ include "openfga-operator.fullname" . }}
 
-To view operator logs (once the image is available):
+To view operator logs:
   kubectl logs --namespace {{ include "openfga-operator.namespace" . }} -l "app.kubernetes.io/name={{ include "openfga-operator.name" . }}"

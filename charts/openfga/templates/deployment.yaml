@@ -5,15 +5,17 @@ metadata:
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
   annotations:
-    {{- if .Values.operator.enabled }}
+    {{- if and .Values.operator.enabled .Values.migration.enabled }}
     openfga.dev/desired-replicas: "{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}"
+    {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
     openfga.dev/migration-service-account: "{{ include "openfga.migrationServiceAccountName" . }}"
+    {{- end }}
     {{- end }}
     {{- with .Values.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
-  {{- if .Values.operator.enabled }}
+  {{- if and .Values.operator.enabled .Values.migration.enabled }}
   {{- if .Values.autoscaling.enabled }}
   {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
   {{- end }}
@@ -46,8 +48,10 @@ spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{ if and (not .Values.operator.enabled) (or (and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers) }}
+      {{- $operatorMigration := and .Values.operator.enabled .Values.migration.enabled }}
+      {{ if or (and (not $operatorMigration) (or (and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations))) .Values.extraInitContainers }}
       initContainers:
+        {{- if not $operatorMigration }}
         {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
         - name: wait-for-migration
           securityContext:
@@ -85,6 +89,7 @@ spec:
           {{- if .Values.migrate.sidecars }}
           {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
           {{- end }}
+        {{- end }}
         {{- end }}
         {{- with .Values.extraInitContainers }}
           {{- toYaml . | nindent 8 }}

@@ -6,9 +6,13 @@ on:
       - main
     paths:
       - "operator/**"
+      - "charts/openfga-operator/**"
+      - ".github/workflows/operator.yml"
   pull_request:
     paths:
       - "operator/**"
+      - "charts/openfga-operator/**"
+      - ".github/workflows/operator.yml"
   workflow_dispatch:
     inputs:
       push_image:

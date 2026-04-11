@@ -230,7 +230,7 @@ func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
 	}
 }
 
-func TestReconcile_JobFailed_DeletesJobAndRequeues(t *testing.T) {
+func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 	// Given: a Deployment at 0 replicas and a failed migration Job.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
 	dep.Annotations[AnnotationDesiredReplicas] = "3"
@@ -295,6 +295,87 @@ func TestReconcile_JobFailed_DeletesJobAndRequeues(t *testing.T) {
 	}, deletedJob); getErr == nil {
 		t.Error("expected failed migration job to be deleted")
 	}
+
+	// Verify retry-after annotation was set on the Deployment.
+	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
+		t.Error("expected retry-after annotation to be set on Deployment")
+	}
+}
+
+func TestReconcile_RetryAfterCooldown_SkipsJobCreation(t *testing.T) {
+	// Given: a Deployment with a retry-after annotation in the future.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	dep.Annotations[AnnotationRetryAfter] = time.Now().Add(30 * time.Second).UTC().Format(time.RFC3339)
+
+	r := newReconciler(dep)
+
+	// When: reconciling.
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+
+	// Then: no error, requeue with remaining cooldown time.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected requeue during cooldown")
+	}
+	if result.RequeueAfter > 30*time.Second {
+		t.Errorf("expected requeue within 30s, got %v", result.RequeueAfter)
+	}
+
+	// Verify no Job was created.
+	job := &batchv1.Job{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, job); getErr == nil {
+		t.Error("expected no migration job during cooldown")
+	}
+}
+
+func TestReconcile_MemoryDatastore_SkipsMigration(t *testing.T) {
+	// Given: a Deployment using the memory datastore.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "1"
+	dep.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
+		{Name: "OPENFGA_DATASTORE_ENGINE", Value: "memory"},
+	}
+
+	r := newReconciler(dep)
+
+	// When: reconciling.
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+
+	// Then: no error, no requeue.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Error("expected no requeue for memory datastore")
+	}
+
+	// Verify Deployment was scaled up (no migration needed).
+	updated := &appsv1.Deployment{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga", Namespace: "default",
+	}, updated); getErr != nil {
+		t.Fatalf("getting deployment: %v", getErr)
+	}
+	if *updated.Spec.Replicas != 1 {
+		t.Errorf("expected 1 replica, got %d", *updated.Spec.Replicas)
+	}
+
+	// Verify no Job was created.
+	job := &batchv1.Job{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, job); getErr == nil {
+		t.Error("expected no migration job for memory datastore")
+	}
 }
 
 func TestReconcile_DeploymentNotFound_NoError(t *testing.T) {
@@ -309,6 +390,51 @@ func TestReconcile_DeploymentNotFound_NoError(t *testing.T) {
 	}
 	if result.RequeueAfter != 0 {
 		t.Error("expected no requeue for missing deployment")
+	}
+}
+
+func TestReconcile_FindContainerByName(t *testing.T) {
+	// Given: a Deployment with a sidecar before the openfga container.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Spec.Template.Spec.Containers = []corev1.Container{
+		{
+			Name:  "sidecar",
+			Image: "envoyproxy/envoy:v1.30",
+		},
+		{
+			Name:  "openfga",
+			Image: "openfga/openfga:v1.14.0",
+			Env: []corev1.EnvVar{
+				{Name: "OPENFGA_DATASTORE_ENGINE", Value: "postgres"},
+				{Name: "OPENFGA_DATASTORE_URI", Value: "postgres://localhost/openfga"},
+			},
+		},
+	}
+
+	r := newReconciler(dep)
+
+	// When: reconciling.
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+
+	// Then: Job should use the openfga container's image, not the sidecar's.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected requeue, got none")
+	}
+
+	job := &batchv1.Job{}
+	if err := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, job); err != nil {
+		t.Fatalf("expected migration job to be created: %v", err)
+	}
+
+	if job.Spec.Template.Spec.Containers[0].Image != "openfga/openfga:v1.14.0" {
+		t.Errorf("expected job image openfga/openfga:v1.14.0, got %s", job.Spec.Template.Spec.Containers[0].Image)
 	}
 }
 
