@@ -49,6 +49,16 @@ resources: {}
   # limits:
   #   memory: 128Mi
 
+podDisruptionBudget:
+  # -- Enable a PodDisruptionBudget for the operator.
+  enabled: false
+  # -- Minimum number of pods that must be available during disruption.
+  # Cannot be set together with maxUnavailable.
+  minAvailable: ""
+  # -- Maximum number of pods that can be unavailable during disruption.
+  # Defaults to 1 when enabled and minAvailable is not set.
+  maxUnavailable: 1
+
 nodeSelector: {}
 
 tolerations: []
