@@ -108,6 +108,12 @@ func buildMigrationJob(
 		}
 	}
 
+	// Truncate version for label (max 63 chars); store full version in annotation.
+	labelVersion := desiredVersion
+	if len(labelVersion) > 63 {
+		labelVersion = labelVersion[:63]
+	}
+
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      migrationJobName(deployment.Name),
@@ -116,7 +122,10 @@ func buildMigrationJob(
 				LabelPartOf:    LabelPartOfValue,
 				LabelComponent: "migration",
 				"app.kubernetes.io/managed-by": "openfga-operator",
-				"app.kubernetes.io/version":    desiredVersion,
+				"app.kubernetes.io/version":    labelVersion,
+			},
+			Annotations: map[string]string{
+				"openfga.dev/desired-version": desiredVersion,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
