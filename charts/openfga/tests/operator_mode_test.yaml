@@ -1,0 +1,134 @@
+suite: operator mode
+templates:
+  - templates/deployment.yaml
+tests:
+  # --- Deployment annotations ---
+  - it: should set operator annotations when operator and migration are enabled
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      replicaCount: 3
+      datastore.engine: postgres
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+          value: "true"
+      - equal:
+          path: metadata.annotations["openfga.dev/desired-replicas"]
+          value: "3"
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+          value: RELEASE-NAME-openfga-migration
+
+  - it: should not set operator annotations when operator is disabled
+    set:
+      operator.enabled: false
+      annotations:
+        custom: value
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+      - isNull:
+          path: metadata.annotations["openfga.dev/desired-replicas"]
+
+  - it: should set desired-replicas to 1 for memory datastore
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      replicaCount: 5
+      datastore.engine: memory
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/desired-replicas"]
+          value: "1"
+
+  - it: should use custom migration service account name when set
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      datastore.engine: postgres
+      migration.serviceAccount.name: my-custom-sa
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+          value: my-custom-sa
+
+  - it: should not set migration-service-account annotation when SA creation is disabled and no name set
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      datastore.engine: postgres
+      migration.serviceAccount.create: false
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+
+  # --- Replica count ---
+  - it: should set replicas to 0 when operator is enabled with database datastore
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      replicaCount: 3
+      datastore.engine: postgres
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 0
+
+  - it: should set replicas to 1 when operator is enabled with memory datastore
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      replicaCount: 5
+      datastore.engine: memory
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: should set replicas to replicaCount when operator is disabled
+    set:
+      operator.enabled: false
+      replicaCount: 5
+      datastore.engine: postgres
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 5
+
+  # --- Autoscaling conflict ---
+  - it: should fail when operator and autoscaling are both enabled
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      autoscaling.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - failedTemplate:
+          errorMessage: "operator.enabled and autoscaling.enabled cannot both be true"
+
+  # --- initContainers gating ---
+  - it: should not render migration initContainers when operator is enabled
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.waitForMigrations: true
+      datastore.migrationType: job
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  - it: should render migration initContainers when operator is disabled
+    set:
+      operator.enabled: false
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.waitForMigrations: true
+      datastore.migrationType: job
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.initContainers
