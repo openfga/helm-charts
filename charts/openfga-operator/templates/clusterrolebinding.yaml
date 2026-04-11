@@ -1,12 +1,23 @@
 apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.watchAllNamespaces }}
 kind: ClusterRoleBinding
+{{- else }}
+kind: RoleBinding
+{{- end }}
 metadata:
   name: {{ include "openfga-operator.fullname" . }}
+  {{- if not .Values.watchAllNamespaces }}
+  namespace: {{ include "openfga-operator.namespace" . }}
+  {{- end }}
   labels:
     {{- include "openfga-operator.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
+  {{- if .Values.watchAllNamespaces }}
   kind: ClusterRole
+  {{- else }}
+  kind: Role
+  {{- end }}
   name: {{ include "openfga-operator.fullname" . }}
 subjects:
   - kind: ServiceAccount
