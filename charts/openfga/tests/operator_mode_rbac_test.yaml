@@ -1,0 +1,25 @@
+suite: operator mode - RBAC
+templates:
+  - templates/rbac.yaml
+tests:
+  - it: should not render legacy RBAC when operator is enabled
+    set:
+      operator.enabled: true
+      serviceAccount.create: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render legacy RBAC when operator is disabled
+    set:
+      operator.enabled: false
+      serviceAccount.create: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: Role
+        documentIndex: 0
+      - isKind:
+          of: RoleBinding
+        documentIndex: 1

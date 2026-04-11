@@ -1,0 +1,28 @@
+suite: operator mode - job template
+templates:
+  - templates/job.yaml
+tests:
+  - it: should not render migration job when operator is enabled
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.migrationType: job
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render migration job when operator is disabled
+    set:
+      operator.enabled: false
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.migrationType: job
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Job
