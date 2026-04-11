@@ -74,30 +74,37 @@ Replace the Helm hook migration Job and `k8s-wait-for` init container with **ope
 The operator runs a **migration controller** that reconciles the OpenFGA Deployment:
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                  Operator Reconciliation                │
-│                                                        │
-│  1. Read Deployment → extract image tag (e.g. v1.14.0) │
-│  2. Read ConfigMap/openfga-migration-status             │
-│     └── "Last migrated version: v1.13.0"               │
-│  3. Versions differ → migration needed                  │
-│  4. Create Job/openfga-migrate                          │
-│     ├── ServiceAccount: openfga-migrator (DDL perms)   │
-│     ├── Image: openfga/openfga:v1.14.0                 │
-│     ├── Args: ["migrate"]                              │
-│     └── ttlSecondsAfterFinished: 300                   │
-│  5. Watch Job until succeeded                           │
-│  6. Update ConfigMap → "version: v1.14.0"              │
-│  7. Scale Deployment replicas: 0 → 3                   │
-│  8. OpenFGA pods start, serve requests                  │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                  Operator Reconciliation                  │
+│                                                          │
+│  1. Read Deployment → extract image tag (e.g. v1.14.0)   │
+│  2. Read ConfigMap/openfga-migration-status               │
+│     └── "Last migrated version: v1.13.0"                 │
+│  3. Versions differ → migration needed                    │
+│  4. Create Job/openfga-migrate                            │
+│     ├── ServiceAccount: openfga-migrator (DDL perms)     │
+│     ├── Image: openfga/openfga:v1.14.0                   │
+│     ├── Args: ["migrate"]                                │
+│     └── ttlSecondsAfterFinished: 300                     │
+│  5. Watch Job until succeeded                             │
+│  6. Update ConfigMap → "version: v1.14.0"                │
+│  7. Ensure Deployment at desired replicas                 │
+│     (fresh install: 0 → N; upgrade: already running)     │
+│  8. New pods pass readiness, serve requests               │
+└──────────────────────────────────────────────────────────┘
 ```
 
 **Key design decisions within this approach:**
 
-#### Deployment starts at replicas: 0
+#### Zero-downtime upgrades via lookup and readiness gating
 
-The Helm chart renders the Deployment with `replicas: 0` when `operator.enabled: true`. The operator scales it up only after migration succeeds. This is simpler than readiness gates or admission webhooks, and ensures no pods run against an unmigrated schema.
+On **fresh install**, the Helm chart renders the Deployment with `replicas: 0` (no existing Deployment found via `lookup`). The operator runs the migration Job and scales the Deployment to the desired replica count afterward.
+
+On **upgrade**, the chart uses Helm's `lookup` function to read the current replica count from the live Deployment and preserves it. Kubernetes starts a rolling update with the new image. OpenFGA has a **built-in schema version gate**: on startup, each instance calls `IsReady()` which checks the database schema revision against `MinimumSupportedDatastoreSchemaRevision` (via goose). If the schema is behind, the gRPC health endpoint returns `NOT_SERVING`, the readiness probe fails, and Kubernetes does not route traffic to the pod. Old pods continue serving on the migrated schema (OpenFGA migrations are additive/backward-compatible — this is how the existing Helm hook flow has operated for years with rolling updates). Once the operator's migration Job completes, new pods pass readiness and the rolling update proceeds.
+
+This matches the existing zero-downtime behavior of the non-operator chart. The previous approach (always starting at `replicas: 0`) introduced a full outage on every `helm upgrade` — even for config-only changes — which was a regression from the existing rolling update model.
+
+**`lookup` caveat:** `helm template` and `--dry-run=client` cannot query the cluster, so `lookup` returns empty and the template falls back to `replicas: 0`. This is correct for CI rendering (no live cluster) and does not affect real installs/upgrades. `--dry-run=server` works correctly.
 
 #### Version tracking via ConfigMap
 
@@ -142,13 +149,13 @@ helm install
 
 Problems: ArgoCD skips step 4. FluxCD deletes Job in step 4. `--wait` deadlocks between steps 2 and 4.
 
-**After (operator-managed):**
+**After (operator-managed, fresh install):**
 
 ```
 helm install
   ├── Create ServiceAccount (runtime), ServiceAccount (migrator)
   ├── Create Secret, Service
-  ├── Create Deployment (replicas: 0, no init containers)
+  ├── Create Deployment (replicas: 0 via lookup fallback, no init containers)
   ├── Create Operator Deployment
   └── [Helm is done — all resources are regular, no hooks]
 
@@ -159,10 +166,30 @@ Operator starts:
   │     └── Uses openfga-migrator ServiceAccount
   │     └── Runs openfga migrate → succeeds
   ├── Creates ConfigMap with migrated version
-  └── Scales Deployment to 3 replicas → pods start
+  └── Scales Deployment 0 → 3 replicas → pods start
 ```
 
-No hooks. No init containers. No `k8s-wait-for`. All resources are regular Kubernetes objects.
+**After (operator-managed, upgrade with new image):**
+
+```
+helm upgrade
+  ├── lookup finds existing Deployment at 3 replicas → preserves replicas: 3
+  ├── Patches Deployment with new image tag
+  ├── Kubernetes starts rolling update
+  │     ├── New pods (v1.14) start → schema is behind →
+  │     │   readiness fails (gRPC NOT_SERVING) → no traffic routed
+  │     └── Old pods (v1.13) continue serving traffic
+  └── [Helm is done]
+
+Operator reconciles:
+  ├── Detects image version differs from ConfigMap
+  ├── Creates Job/openfga-migrate → runs migration
+  ├── Updates ConfigMap → "version: v1.14.0"
+  └── New pods pass readiness → rolling update completes
+      (operator does NOT scale to zero — zero downtime)
+```
+
+No hooks. No init containers. No `k8s-wait-for`. No downtime on upgrade. All resources are regular Kubernetes objects.
 
 ### What Changes in the Helm Chart
 
@@ -206,10 +233,10 @@ When `operator.enabled: false`, the chart falls back to the current behavior —
 ### Negative
 
 - **Operator is a new runtime dependency** — if the operator pod is unavailable, migrations don't run (but existing running pods are unaffected)
-- **Replica scaling model** — starting at `replicas: 0` means a brief period where the Deployment exists but has no pods; monitoring tools may flag this
+- **`lookup` limitation** — `helm template` and `--dry-run=client` cannot query the cluster; the template falls back to `replicas: 0` in these contexts. This does not affect real installs/upgrades.
 - **Two upgrade paths to document** — `operator.enabled: true` (new) vs `operator.enabled: false` (legacy)
 
 ### Risks
 
-- **Zero-downtime upgrades** — the initial implementation scales to 0 during migration, causing brief downtime. A future enhancement can support rolling upgrades where the new schema is backward-compatible, but this is explicitly out of scope for Stage 1.
+- **Readiness gate relies on OpenFGA's built-in schema check** — the zero-downtime upgrade model depends on `MinimumSupportedDatastoreSchemaRevision` in `pkg/storage/sqlcommon/sqlcommon.go` causing `NOT_SERVING` when the schema is behind. If a future OpenFGA release removes or weakens this check, new pods could serve traffic against an unmigrated schema. This coupling should be documented and monitored across OpenFGA releases.
 - **ConfigMap as state store** — if the ConfigMap is accidentally deleted, the operator re-runs migration (which is safe — `openfga migrate` is idempotent). This is a feature, not a bug, but should be documented.
