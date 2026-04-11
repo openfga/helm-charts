@@ -217,6 +217,12 @@ func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{
 			Succeeded: 1,
+			Conditions: []batchv1.JobCondition{
+				{
+					Type:   batchv1.JobComplete,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 	}
 
@@ -296,6 +302,12 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{
 			Failed: 3,
+			Conditions: []batchv1.JobCondition{
+				{
+					Type:   batchv1.JobFailed,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 	}
 
@@ -522,6 +534,12 @@ func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{
 			Succeeded: 1,
+			Conditions: []batchv1.JobCondition{
+				{
+					Type:   batchv1.JobComplete,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 	}
 
