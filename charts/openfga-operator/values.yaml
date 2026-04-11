@@ -30,6 +30,7 @@ podSecurityContext:
     type: RuntimeDefault
 
 securityContext:
+  allowPrivilegeEscalation: false
   capabilities:
     drop:
     - ALL
@@ -53,12 +54,12 @@ migrationJob:
   # -- Seconds to keep completed/failed Job pods for log inspection before garbage collection.
   ttlSecondsAfterFinished: 300
 
-resources: {}
-  # requests:
-  #   cpu: 10m
-  #   memory: 64Mi
-  # limits:
-  #   memory: 128Mi
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
 
 podDisruptionBudget:
   # -- Enable a PodDisruptionBudget for the operator.
