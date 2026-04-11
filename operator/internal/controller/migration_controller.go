@@ -210,7 +210,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		deployment.Annotations[AnnotationRetryAfter] = retryAfter
 		if patchErr := r.Patch(ctx, deployment, patch); patchErr != nil {
-			logger.Error(patchErr, "failed to set retry-after annotation")
+			return ctrl.Result{}, fmt.Errorf("persisting retry-after annotation: %w", patchErr)
 		}
 
 		// Delete the failed Job so a fresh one is created on the next reconcile.
