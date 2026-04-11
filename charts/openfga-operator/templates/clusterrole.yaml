@@ -1,7 +1,14 @@
 apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.watchAllNamespaces }}
 kind: ClusterRole
+{{- else }}
+kind: Role
+{{- end }}
 metadata:
   name: {{ include "openfga-operator.fullname" . }}
+  {{- if not .Values.watchAllNamespaces }}
+  namespace: {{ include "openfga-operator.namespace" . }}
+  {{- end }}
   labels:
     {{- include "openfga-operator.labels" . | nindent 4 }}
 rules:
@@ -10,7 +17,7 @@ rules:
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments/status"]
-    verbs: ["update"]
+    verbs: ["patch"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list", "watch", "create", "delete"]

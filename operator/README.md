@@ -6,7 +6,7 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 
 ## How It Works
 
-1. The operator watches Deployments labeled `app.kubernetes.io/part-of: openfga`
+1. The operator watches Deployments labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
 2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
    - Keeps the Deployment at 0 replicas
    - Creates a migration Job running `openfga migrate`
@@ -127,3 +127,7 @@ The operator reads these annotations from the OpenFGA Deployment:
 |------------|-------------|
 | `openfga.dev/desired-replicas` | The replica count to restore after migration succeeds. Set by the Helm chart. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
+
+## Limitations
+
+- **Mutable image tags:** The operator detects version changes by comparing the container image tag (or digest). If you deploy with a mutable tag like `latest` or reuse the same tag for different builds, the operator will not detect changes and will skip the migration. Use immutable tags (e.g., `v1.14.0`) or pin images by digest for reliable migration triggering.

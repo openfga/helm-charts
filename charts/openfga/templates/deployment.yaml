@@ -19,7 +19,7 @@ spec:
   {{- if .Values.autoscaling.enabled }}
   {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
   {{- end }}
-  replicas: 0
+  replicas: {{ ternary 1 0 (eq .Values.datastore.engine "memory") }}
   {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
   {{- end }}
@@ -49,10 +49,11 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- $operatorMigration := and .Values.operator.enabled .Values.migration.enabled }}
-      {{ if or (and (not $operatorMigration) (or (and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations))) .Values.extraInitContainers }}
+      {{- $needsMigrationInit := and (not $operatorMigration) (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations }}
+      {{- if or $needsMigrationInit .Values.extraInitContainers }}
       initContainers:
-        {{- if not $operatorMigration }}
-        {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
+        {{- if $needsMigrationInit }}
+        {{- if eq .Values.datastore.migrationType "job" }}
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -62,7 +63,7 @@ spec:
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
-        {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) (eq .Values.datastore.migrationType "initContainer") }}
+        {{- if eq .Values.datastore.migrationType "initContainer" }}
         {{- with .Values.migrate.extraInitContainers }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
