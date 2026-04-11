@@ -137,6 +137,11 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 		if createErr := r.Create(ctx, job); createErr != nil {
+			if apierrors.IsAlreadyExists(createErr) {
+				// A concurrent reconcile already created the Job; requeue to pick it up.
+				logger.V(1).Info("migration job already exists, will recheck", "job", jobName)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("creating migration job: %w", createErr)
 		}
 		logger.Info("created migration job", "job", jobName, "version", desiredVersion)
