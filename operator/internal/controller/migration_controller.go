@@ -148,10 +148,17 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// 8b. If the existing Job is for a different version, delete it and recreate.
 	// Check annotation first (supports digests > 63 chars), fall back to label.
 	jobVersion := job.Annotations["openfga.dev/desired-version"]
+	versionMatch := jobVersion == desiredVersion
 	if jobVersion == "" {
+		// Label values have ":" replaced with "_", so sanitize desiredVersion for comparison.
+		sanitized := strings.ReplaceAll(desiredVersion, ":", "_")
+		if len(sanitized) > 63 {
+			sanitized = sanitized[:63]
+		}
 		jobVersion = job.Labels["app.kubernetes.io/version"]
+		versionMatch = jobVersion == sanitized
 	}
-	if jobVersion != "" && jobVersion != desiredVersion {
+	if jobVersion != "" && !versionMatch {
 		logger.Info("existing migration job is for a different version, deleting", "jobVersion", jobVersion, "desiredVersion", desiredVersion)
 		propagation := metav1.DeletePropagationBackground
 		if delErr := r.Delete(ctx, job, &client.DeleteOptions{
