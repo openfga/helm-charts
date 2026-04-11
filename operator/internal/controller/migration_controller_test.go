@@ -440,6 +440,78 @@ func TestReconcile_FindContainerByName(t *testing.T) {
 	}
 }
 
+func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
+	// Given: a Deployment at v1.15.0 with an existing migration Job for v1.14.0.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+
+	staleJob := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migrate",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/version": "v1.14.0",
+			},
+			Annotations: map[string]string{
+				"openfga.dev/desired-version": "v1.14.0",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "openfga",
+					UID:        "test-uid-123",
+				},
+			},
+		},
+		Spec: batchv1.JobSpec{
+			BackoffLimit: ptr.To(int32(3)),
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers:    []corev1.Container{{Name: "migrate", Image: "openfga/openfga:v1.14.0"}},
+					RestartPolicy: corev1.RestartPolicyNever,
+				},
+			},
+		},
+		Status: batchv1.JobStatus{
+			Succeeded: 1,
+		},
+	}
+
+	r := newReconciler(dep, staleJob)
+
+	// When: reconciling.
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+
+	// Then: no error, requeue to recreate with correct version.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected requeue after deleting stale job")
+	}
+
+	// Verify the stale Job was deleted.
+	deletedJob := &batchv1.Job{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, deletedJob); getErr == nil {
+		t.Error("expected stale migration job to be deleted")
+	}
+
+	// Verify ConfigMap was NOT updated (migration didn't actually run for v1.15.0).
+	cm := &corev1.ConfigMap{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migration-status", Namespace: "default",
+	}, cm); getErr == nil {
+		if cm.Data["version"] == "v1.15.0" {
+			t.Error("ConfigMap should not be updated to v1.15.0 from a stale v1.14.0 job")
+		}
+	}
+}
+
 func TestReconcile_MigrationNotEnabled_Skips(t *testing.T) {
 	// Given: a Deployment without the migration-enabled annotation.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 3)
