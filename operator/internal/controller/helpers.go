@@ -154,6 +154,7 @@ func buildMigrationJob(
 							Args:            []string{"migrate"},
 							Env:             mainContainer.Env,
 							EnvFrom:         mainContainer.EnvFrom,
+							Resources:       mainContainer.Resources,
 							VolumeMounts:    mainContainer.VolumeMounts,
 							SecurityContext: mainContainer.SecurityContext,
 						},
