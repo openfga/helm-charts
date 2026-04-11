@@ -169,8 +169,8 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	// 9. Check Job status.
-	if job.Status.Succeeded >= 1 {
+	// 9. Check Job status using conditions for authoritative completion signals.
+	if isJobConditionTrue(job, batchv1.JobComplete) {
 		logger.Info("migration succeeded", "version", desiredVersion)
 
 		// Clear MigrationFailed condition.
@@ -193,12 +193,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	backoffLimit := r.BackoffLimit
-	if job.Spec.BackoffLimit != nil {
-		backoffLimit = *job.Spec.BackoffLimit
-	}
-
-	if job.Status.Failed >= backoffLimit {
+	if isJobConditionTrue(job, batchv1.JobFailed) {
 		logger.Info("migration job failed, will delete and retry", "job", jobName, "version", desiredVersion)
 
 		// Set condition so kubectl describe shows the failure.
@@ -236,6 +231,18 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// 10. Job still running — requeue.
 	logger.V(1).Info("migration job in progress", "job", jobName)
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+// isJobConditionTrue returns true if the Job has a condition of the given type
+// with status True. This is more reliable than comparing status counters because
+// the Job controller sets conditions atomically when it makes its final decision.
+func isJobConditionTrue(job *batchv1.Job, conditionType batchv1.JobConditionType) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == conditionType && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 // isMemoryDatastore checks if the Deployment is using the memory datastore
