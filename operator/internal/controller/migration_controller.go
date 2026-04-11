@@ -48,7 +48,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// 2. Skip if migration is not opted-in via annotation.
-	if deployment.Annotations[AnnotationMigrationEnabled] != "true" {
+	if len(deployment.Annotations) == 0 || deployment.Annotations[AnnotationMigrationEnabled] != "true" {
 		logger.V(1).Info("migration not enabled for this deployment, skipping")
 		return ctrl.Result{}, nil
 	}
@@ -61,7 +61,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	desiredVersion := extractImageTag(mainContainer.Image)
 
-	// 3. Skip migration for memory datastore — just ensure the Deployment is scaled up.
+	// 3b. Skip migration for memory datastore — just ensure the Deployment is scaled up.
 	if isMemoryDatastore(mainContainer) {
 		logger.V(1).Info("memory datastore detected, skipping migration")
 		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
@@ -252,6 +252,10 @@ func isJobConditionTrue(job *batchv1.Job, conditionType batchv1.JobConditionType
 
 // isMemoryDatastore checks if the Deployment is using the memory datastore
 // (no database migration needed).
+//
+// NOTE: This only inspects explicit env vars on the container spec. If
+// OPENFGA_DATASTORE_ENGINE is injected via envFrom (ConfigMap/Secret), it
+// will not be detected here and the operator will attempt a migration.
 func isMemoryDatastore(container *corev1.Container) bool {
 	for _, env := range container.Env {
 		if env.Name == "OPENFGA_DATASTORE_ENGINE" {
