@@ -54,10 +54,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// 3. Find the OpenFGA container and extract the desired version.
-	mainContainer := findOpenFGAContainer(deployment)
-	if mainContainer == nil {
-		logger.Info("deployment has no containers, skipping")
-		return ctrl.Result{}, nil
+	mainContainer, err := findOpenFGAContainer(deployment)
+	if err != nil {
+		logger.Error(err, "unable to find OpenFGA container")
+		return ctrl.Result{}, err
 	}
 	desiredVersion := extractImageTag(mainContainer.Image)
 
@@ -73,7 +73,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// 4. Check current migration status from ConfigMap.
 	configMap := &corev1.ConfigMap{}
 	cmName := migrationConfigMapName(req.Name)
-	err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: req.Namespace}, configMap)
+	err = r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: req.Namespace}, configMap)
 
 	currentVersion := ""
 	if err == nil {

@@ -25,6 +25,7 @@ const (
 
 	// Annotations set on the Deployment by the Helm chart / operator.
 	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
+	AnnotationContainerName           = "openfga.dev/container-name"
 	AnnotationDesiredReplicas         = "openfga.dev/desired-replicas"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
 	AnnotationRetryAfter              = "openfga.dev/migration-retry-after"
@@ -71,18 +72,25 @@ func migrationJobName(deploymentName string) string {
 }
 
 // findOpenFGAContainer finds the OpenFGA container in the Deployment's pod spec.
-// It looks for a container named "openfga" first, then falls back to the first container.
-func findOpenFGAContainer(deployment *appsv1.Deployment) *corev1.Container {
-	for i := range deployment.Spec.Template.Spec.Containers {
-		if deployment.Spec.Template.Spec.Containers[i].Name == "openfga" {
-			return &deployment.Spec.Template.Spec.Containers[i]
+// It checks the openfga.dev/container-name annotation first, then looks for a
+// container named "openfga". Returns an error if no containers exist or the
+// target container is not found.
+func findOpenFGAContainer(deployment *appsv1.Deployment) (*corev1.Container, error) {
+	containers := deployment.Spec.Template.Spec.Containers
+	if len(containers) == 0 {
+		return nil, fmt.Errorf("deployment %s/%s has no containers", deployment.Namespace, deployment.Name)
+	}
+
+	targetName := deployment.Annotations[AnnotationContainerName]
+	if targetName == "" {
+		targetName = "openfga"
+	}
+	for i := range containers {
+		if containers[i].Name == targetName {
+			return &containers[i], nil
 		}
 	}
-	// Fallback: use the first container (for charts that don't name it "openfga").
-	if len(deployment.Spec.Template.Spec.Containers) > 0 {
-		return &deployment.Spec.Template.Spec.Containers[0]
-	}
-	return nil
+	return nil, fmt.Errorf("container %q not found in deployment %s/%s", targetName, deployment.Namespace, deployment.Name)
 }
 
 // buildMigrationJob constructs a migration Job for the given Deployment.
