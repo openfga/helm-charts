@@ -9,6 +9,7 @@ metadata:
   annotations:
     {{- if $hasOperatorAnnotations }}
     openfga.dev/migration-enabled: "true"
+    openfga.dev/container-name: "{{ .Chart.Name }}"
     openfga.dev/desired-replicas: '{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}'
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
     openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
@@ -23,23 +24,10 @@ spec:
   {{- if .Values.autoscaling.enabled }}
   {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
   {{- end }}
-  {{- /* On upgrade, preserve live replica count so existing pods keep serving (zero-downtime).
-         On fresh install, lookup returns empty — fall back to 0 so no pods start before migration.
-         See ADR-002 for rationale. */ -}}
+  {{- /* On upgrade: preserve live replicas (zero-downtime). On fresh install: lookup returns empty, fall back to 0.
+         OpenFGA gates readiness on MinimumSupportedDatastoreSchemaRevision — see ADR-002. */ -}}
   {{- $existing := (lookup "apps/v1" "Deployment" (include "openfga.namespace" .) (include "openfga.fullname" .)) }}
-  {{- $desiredImage := printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
-  {{- $currentImage := "" }}
-  {{- range (($existing).spec).template.spec.containers }}
-    {{- if eq .name "openfga" }}
-      {{- $currentImage = .image }}
-    {{- end }}
-  {{- end }}
-  {{- if and $existing (eq $currentImage $desiredImage) }}
-  replicas: {{ $existing.spec.replicas }}
-  {{- else if $existing }}
-  {{- /* Image changed — preserve replicas; OpenFGA's built-in schema version check
-         (MinimumSupportedDatastoreSchemaRevision) causes readiness to fail until
-         migration completes, so old pods keep serving while new pods wait. */ -}}
+  {{- if and $existing (hasKey ($existing) "spec") }}
   replicas: {{ $existing.spec.replicas }}
   {{- else }}
   replicas: {{ ternary 1 0 (eq .Values.datastore.engine "memory") }}
@@ -60,7 +48,7 @@ spec:
         prometheus.io/path: /metrics
         prometheus.io/port: "{{ (split ":" .Values.telemetry.metrics.addr)._1 }}"
       labels:
-        {{- include "openfga.labels" . | nindent 8 }}
+        {{- include "openfga.selectorLabels" . | nindent 8 }}
         {{- with .Values.podExtraLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
