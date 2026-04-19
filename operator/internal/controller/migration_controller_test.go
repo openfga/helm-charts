@@ -200,6 +200,9 @@ func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Annotations: map[string]string{
+				"openfga.dev/desired-version": "v1.14.0",
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
@@ -285,6 +288,9 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Annotations: map[string]string{
+				"openfga.dev/desired-version": "v1.14.0",
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
@@ -396,6 +402,65 @@ func TestReconcile_RetryAfterCooldown_SkipsJobCreation(t *testing.T) {
 		Name: "openfga-migrate", Namespace: "default",
 	}, job); getErr == nil {
 		t.Error("expected no migration job during cooldown")
+	}
+}
+
+func TestReconcile_UnknownVersionJob_DeletedNotTrusted(t *testing.T) {
+	// Given: a Deployment desiring v1.14.0 and a JobComplete migration Job that
+	// carries no version annotation or label (e.g. left over from an older
+	// operator or created by a third-party tool). Trusting its outcome would
+	// write the wrong version into the migration-status ConfigMap.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migrate",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "openfga",
+					UID:        "test-uid-123",
+				},
+			},
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+
+	r := newReconciler(dep, job)
+
+	// When: reconciling.
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+
+	// Then: the Job is deleted and a requeue is scheduled; the ConfigMap is
+	// NOT created from the unknown-version Job's outcome.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected requeue after deleting unknown-version job")
+	}
+
+	deletedJob := &batchv1.Job{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, deletedJob); getErr == nil {
+		t.Error("expected unknown-version job to be deleted")
+	}
+
+	cm := &corev1.ConfigMap{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migration-status", Namespace: "default",
+	}, cm); getErr == nil {
+		t.Errorf("expected no migration-status ConfigMap; got version=%q", cm.Data["version"])
 	}
 }
 
@@ -794,6 +859,9 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Annotations: map[string]string{
+				"openfga.dev/desired-version": "v1.14.0",
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
