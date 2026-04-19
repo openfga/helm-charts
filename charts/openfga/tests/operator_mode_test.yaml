@@ -135,3 +135,36 @@ tests:
     asserts:
       - isNotNull:
           path: spec.template.spec.initContainers
+
+  # --- Pod template labels ---
+  # The pod template must carry the full common label set (helm.sh/chart,
+  # component, version, managed-by, part-of) — not just selectorLabels —
+  # so logging/monitoring tooling that filters on these labels keeps working
+  # across upgrades. Regression guard for the operator-migration branch.
+  - it: should include common labels on pod template metadata when operator is disabled
+    set:
+      operator.enabled: false
+    asserts:
+      - isNotEmpty:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: authorization-controller
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/part-of"]
+          value: openfga
+
+  - it: should include common labels on pod template metadata when operator is enabled
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - isNotEmpty:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: authorization-controller
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/part-of"]
+          value: openfga
