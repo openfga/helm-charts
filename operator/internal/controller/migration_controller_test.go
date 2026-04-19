@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,10 +12,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func newScheme() *runtime.Scheme {
@@ -393,6 +396,90 @@ func TestReconcile_RetryAfterCooldown_SkipsJobCreation(t *testing.T) {
 		Name: "openfga-migrate", Namespace: "default",
 	}, job); getErr == nil {
 		t.Error("expected no migration job during cooldown")
+	}
+}
+
+func TestReconcile_RetryAfterPersistsOnJobCreateFailure(t *testing.T) {
+	// Given: a Deployment with an elapsed retry-after annotation, and a client
+	// that fails Job creation with a non-AlreadyExists error.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	dep.Annotations[AnnotationRetryAfter] = time.Now().Add(-1 * time.Second).UTC().Format(time.RFC3339)
+
+	scheme := newScheme()
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*batchv1.Job); ok {
+					return fmt.Errorf("simulated transient API error")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+
+	// When: reconciling.
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+
+	// Then: an error is returned and the retry-after annotation is preserved
+	// so the next reconcile honors the cooldown.
+	if err == nil {
+		t.Fatal("expected error from failed job creation")
+	}
+
+	updated := &appsv1.Deployment{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga", Namespace: "default",
+	}, updated); getErr != nil {
+		t.Fatalf("getting deployment: %v", getErr)
+	}
+	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
+		t.Error("expected retry-after annotation to persist after Job creation failure")
+	}
+}
+
+func TestReconcile_RetryAfterClearedAfterJobCreated(t *testing.T) {
+	// Given: a Deployment with an elapsed retry-after annotation.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	dep.Annotations[AnnotationRetryAfter] = time.Now().Add(-1 * time.Second).UTC().Format(time.RFC3339)
+
+	r := newReconciler(dep)
+
+	// When: reconciling.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Then: the Job exists and the retry-after annotation has been cleared.
+	job := &batchv1.Job{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, job); getErr != nil {
+		t.Fatalf("expected migration job to be created: %v", getErr)
+	}
+
+	updated := &appsv1.Deployment{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga", Namespace: "default",
+	}, updated); getErr != nil {
+		t.Fatalf("getting deployment: %v", getErr)
+	}
+	if _, ok := updated.Annotations[AnnotationRetryAfter]; ok {
+		t.Error("expected retry-after annotation to be cleared after Job created")
 	}
 }
 

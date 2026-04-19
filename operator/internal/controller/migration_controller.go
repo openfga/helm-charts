@@ -123,21 +123,22 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			r.ActiveDeadlineSeconds,
 			r.TTLSecondsAfterFinished,
 		)
-		// Clear the retry-after annotation now that we're creating a new Job.
-		if _, hasRetry := deployment.Annotations[AnnotationRetryAfter]; hasRetry {
-			patch := client.MergeFrom(deployment.DeepCopy())
-			delete(deployment.Annotations, AnnotationRetryAfter)
-			if patchErr := r.Patch(ctx, deployment, patch); patchErr != nil {
-				logger.Error(patchErr, "failed to clear retry-after annotation")
-			}
-		}
 		if createErr := r.Create(ctx, job); createErr != nil {
 			if apierrors.IsAlreadyExists(createErr) {
 				// A concurrent reconcile already created the Job; requeue to pick it up.
 				logger.V(1).Info("migration job already exists, will recheck", "job", jobName)
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
+			// Leave the retry-after annotation intact so the cooldown survives this failure.
 			return ctrl.Result{}, fmt.Errorf("creating migration job: %w", createErr)
+		}
+		// Clear the retry-after annotation now that the Job is created.
+		if _, hasRetry := deployment.Annotations[AnnotationRetryAfter]; hasRetry {
+			patch := client.MergeFrom(deployment.DeepCopy())
+			delete(deployment.Annotations, AnnotationRetryAfter)
+			if patchErr := r.Patch(ctx, deployment, patch); patchErr != nil {
+				logger.Error(patchErr, "failed to clear retry-after annotation")
+			}
 		}
 		logger.Info("created migration job", "job", jobName, "version", desiredVersion)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
