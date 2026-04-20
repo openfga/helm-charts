@@ -12,8 +12,6 @@ We follow the format described by [Michael Nygard](https://cognitect.com/blog/20
 |-----|-------|--------|------|
 | [ADR-001](001-adopt-openfga-operator.md) | Adopt a Kubernetes Operator for OpenFGA Lifecycle Management | Proposed | 2026-04-06 |
 | [ADR-002](002-operator-managed-migrations.md) | Replace Helm Hook Migrations with Operator-Managed Migrations | Proposed | 2026-04-06 |
-| [ADR-003](003-declarative-store-lifecycle-crds.md) | Declarative Store Lifecycle Management via CRDs | Proposed | 2026-04-06 |
-| [ADR-004](004-operator-deployment-model.md) | Operator Deployment as Helm Subchart Dependency | Proposed | 2026-04-06 |
 
 ---
 
@@ -67,9 +65,9 @@ When multiple ADRs are part of a single cohesive proposal — e.g., a foundation
 
 When doing this:
 
-- **Explain the relationship in the PR description** — identify which ADR is the foundational decision and which are downstream. For example: "ADR-001 is the core decision to build an operator. ADR-002, 003, and 004 are downstream decisions about how the operator handles migrations, CRDs, and deployment."
+- **Explain the relationship in the PR description** — identify which ADR is the foundational decision and which are downstream. For example: "ADR-001 is the core decision to build an operator. ADR-002 is a downstream decision about how the operator handles migrations."
 - **Each ADR can be accepted or rejected independently** — a reviewer might approve the foundational decision but push back on a downstream one. If that happens, split the PR: merge the accepted ADRs and keep the contested ones open for further discussion.
-- **Keep each ADR self-contained** — even though they're in the same PR, each ADR should stand on its own. A reader should be able to understand ADR-003 without reading ADR-002 first (though they may reference each other).
+- **Keep each ADR self-contained** — even though they're in the same PR, each ADR should stand on its own. A reader should be able to understand a downstream ADR without reading the foundational one first (though they may reference each other).
 
 ## How to Give Feedback on an ADR
 
