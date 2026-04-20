@@ -193,31 +193,30 @@ No hooks. No init containers. No `k8s-wait-for`. No downtime on upgrade. All res
 
 ### What Changes in the Helm Chart
 
-**Removed:**
+Nothing is deleted outright — every change is gated on `operator.enabled` so the legacy flow remains the default for backward compatibility.
 
-| File/Section | Reason |
-|--------------|--------|
-| `templates/job.yaml` | Operator creates migration Jobs |
-| `templates/rbac.yaml` | No init container polling Job status |
-| `values.yaml`: `initContainer.repository`, `initContainer.tag` | `k8s-wait-for` eliminated |
-| `values.yaml`: `datastore.migrationType` | Operator always uses Job internally |
-| `values.yaml`: `datastore.waitForMigrations` | Operator handles ordering |
-| `values.yaml`: `migrate.annotations` (hook annotations) | No Helm hooks |
-| Deployment init containers for migration | Operator manages readiness via replica scaling |
+**Gated on `operator.enabled: false` (legacy Helm-hook flow, rendered when the operator is disabled):**
 
-**Added:**
+| File/Section | Behavior when operator is enabled |
+|--------------|-----------------------------------|
+| `templates/job.yaml` | Skipped — operator creates migration Jobs dynamically |
+| `templates/rbac.yaml` | Skipped — no init container needs to poll Job status |
+| `values.yaml`: `initContainer.*` | Unused — `k8s-wait-for` not deployed |
+| `values.yaml`: `datastore.migrationType`, `datastore.waitForMigrations` | Unused — operator always uses a Job and handles ordering |
+| `values.yaml`: `migrate.annotations` | Unused — no Helm hooks |
+| Deployment migration init containers | Skipped — operator manages readiness via replica scaling |
+
+**Added (active only when `operator.enabled: true`):**
 
 | File/Section | Purpose |
 |--------------|---------|
-| `values.yaml`: `operator.enabled` | Toggle operator subchart |
+| `values.yaml`: `operator.enabled` | Toggle the operator subchart |
 | `values.yaml`: `migration.serviceAccount.*` | Separate ServiceAccount for migration Jobs |
-| `values.yaml`: `migration.timeout`, `backoffLimit`, `ttlSecondsAfterFinished` | Migration Job configuration |
+| `values.yaml`: `migration.backoffLimit`, `activeDeadlineSeconds`, `ttlSecondsAfterFinished` | Migration Job configuration |
 | `templates/serviceaccount.yaml`: second SA | Migration ServiceAccount |
-| `charts/openfga-operator/` | Operator subchart |
+| `charts/openfga-operator/` | Operator subchart (conditional dependency) |
 
-**Preserved (backward compatible):**
-
-When `operator.enabled: false`, the chart falls back to the current behavior — Helm hooks, `k8s-wait-for` init container, shared ServiceAccount. This allows gradual adoption.
+Users on `operator.enabled: false` (the default) see identical rendered output to the pre-operator chart, so gradual adoption is possible with no forced migration.
 
 ## Consequences
 
@@ -226,7 +225,7 @@ When `operator.enabled: false`, the chart falls back to the current behavior —
 - **All 6 migration issues resolved** — no Helm hooks means no ArgoCD/FluxCD/`--wait` incompatibility
 - **`k8s-wait-for` eliminated** — removes an unmaintained image with CVEs from the supply chain (#132, #144)
 - **Least-privilege enforced** — separate ServiceAccounts for migration (DDL) and runtime (CRUD) (#95)
-- **Helm chart simplified** — 2 templates removed, init container logic removed, RBAC for job-watching removed
+- **Runtime surface area reduced** — when `operator.enabled: true`, the legacy migration Job, init-container `k8s-wait-for` logic, and job-watching RBAC are skipped from the rendered manifest
 - **Migration is observable** — Job is a regular resource visible in all tools; ConfigMap records migration history; operator conditions surface errors
 - **Idempotent and crash-safe** — operator can restart at any point and resume correctly
 
