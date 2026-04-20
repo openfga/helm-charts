@@ -21,7 +21,8 @@
           "type": "string"
         }
       },
-      "required": ["repository"]
+      "required": ["repository"],
+      "additionalProperties": false
     },
     "imagePullSecrets": {
       "type": "array",
@@ -30,7 +31,8 @@
         "properties": {
           "name": { "type": "string" }
         },
-        "required": ["name"]
+        "required": ["name"],
+        "additionalProperties": false
       }
     },
     "nameOverride": { "type": "string" },
@@ -42,7 +44,8 @@
         "create": { "type": "boolean" },
         "annotations": { "type": "object" },
         "name": { "type": "string" }
-      }
+      },
+      "additionalProperties": false
     },
     "podAnnotations": { "type": "object" },
     "podSecurityContext": { "type": "object" },
@@ -52,7 +55,8 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" }
-      }
+      },
+      "additionalProperties": false
     },
     "migrationJob": {
       "type": "object",
@@ -69,7 +73,8 @@
           "type": "integer",
           "minimum": 0
         }
-      }
+      },
+      "additionalProperties": false
     },
     "resources": { "type": "object" },
     "podDisruptionBudget": {
@@ -88,7 +93,8 @@
             { "type": "integer", "minimum": 0 }
           ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "nodeSelector": { "type": "object" },
     "tolerations": {
@@ -96,5 +102,6 @@
       "items": { "type": "object" }
     },
     "affinity": { "type": "object" }
-  }
+  },
+  "additionalProperties": false
 }
