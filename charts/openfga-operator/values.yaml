@@ -39,7 +39,12 @@ securityContext:
   runAsUser: 65532
 
 # -- Namespace to watch for OpenFGA Deployments.
-# Leave empty to default to the release namespace.
+# Leave empty to default to the operator pod's own namespace (read from
+# the POD_NAMESPACE env var, set via the downward API). This usually
+# equals the release namespace, but when `namespaceOverride` puts the
+# operator in a different namespace than the release, the watch follows
+# the pod — not the release. Set this explicitly to watch a specific
+# namespace independent of where the operator runs.
 watchNamespace: ""
 
 leaderElection:
