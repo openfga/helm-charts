@@ -1299,11 +1299,12 @@
                     "description": "Enable the openfga-operator subchart for operator-managed migrations",
                     "default": false
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "openfga-operator": {
             "type": "object",
-            "description": "Values passed through to the openfga-operator subchart"
+            "description": "Values passed through to the openfga-operator subchart (validated by that chart's own schema)"
         },
         "migration": {
             "type": "object",
@@ -1332,12 +1333,14 @@
                         },
                         "name": {
                             "type": "string",
-                            "description": "The name of the migration service account. Defaults to {fullname}-migration.",
+                            "description": "The name of the migration service account. Defaults to {fullname}-migration. Must be set explicitly when create=false and a dedicated migration SA is desired; leave empty to skip the annotation entirely.",
                             "default": ""
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
         }
     },
     "additionalProperties": false
