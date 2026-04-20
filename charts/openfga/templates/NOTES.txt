@@ -1,3 +1,20 @@
+{{- if and .Values.operator.enabled .Values.migration.enabled }}
+NOTE: operator-managed migration is enabled. The OpenFGA Deployment starts at
+0 replicas and is scaled up by the openfga-operator only after the migration
+Job completes successfully.
+
+If pods don't appear within ~2 minutes, check the operator and the migration
+Job:
+
+  kubectl get deployment -A -l app.kubernetes.io/name=openfga-operator
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=openfga-operator --tail=100
+  kubectl get job/{{ include "openfga.fullname" . }}-migrate -n {{ .Release.Namespace }} -o yaml
+  kubectl describe deployment/{{ include "openfga.fullname" . }} -n {{ .Release.Namespace }}
+
+A `MigrationFailed` condition on the Deployment indicates the migration Job
+failed; the operator will retry every 60s once the underlying issue is fixed.
+
+{{ end -}}
 1. Get the application URL by running these commands:
 {{- if .Values.ingress.enabled }}
 {{- range $host := .Values.ingress.hosts }}
