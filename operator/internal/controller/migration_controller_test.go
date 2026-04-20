@@ -372,6 +372,72 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 	}
 }
 
+func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
+	// Given: a Job with only JobFailureTarget=True (no JobFailed yet). The
+	// Job controller sets this as soon as it decides the Job will fail,
+	// before pods finish terminating and JobFailed is recorded. The operator
+	// should treat this as a failure to surface the error in seconds rather
+	// than waiting the full BackoffLimit × ActiveDeadlineSeconds.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migrate",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"openfga.dev/desired-version": "v1.14.0",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "openfga",
+					UID:        "test-uid-123",
+				},
+			},
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobFailureTarget, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"},
+			},
+		},
+	}
+
+	r := newReconciler(dep, job)
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != 60*time.Second {
+		t.Errorf("expected 60s requeue, got %v", result.RequeueAfter)
+	}
+
+	updated := &appsv1.Deployment{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga", Namespace: "default",
+	}, updated); getErr != nil {
+		t.Fatalf("getting deployment: %v", getErr)
+	}
+
+	deletedJob := &batchv1.Job{}
+	if getErr := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, deletedJob); getErr == nil {
+		t.Error("expected migration job to be deleted on JobFailureTarget")
+	}
+	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
+		t.Error("expected retry-after annotation to be set")
+	}
+	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
+	if cond == nil || cond.Status != corev1.ConditionTrue {
+		t.Fatal("expected MigrationFailed condition True")
+	}
+}
+
 func TestReconcile_RetryAfterCooldown_SkipsJobCreation(t *testing.T) {
 	// Given: a Deployment with a retry-after annotation in the future.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)

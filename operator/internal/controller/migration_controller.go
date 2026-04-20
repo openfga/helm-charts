@@ -197,7 +197,12 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	if isJobConditionTrue(job, batchv1.JobFailed) {
+	// JobFailureTarget is set as soon as the Job controller decides the Job
+	// will fail (backoff limit reached, deadline exceeded, etc.); JobFailed
+	// only flips after pods finish terminating, which can take BackoffLimit ×
+	// ActiveDeadlineSeconds. Treating either as "failed" surfaces the failure
+	// to users within seconds instead of minutes.
+	if isJobConditionTrue(job, batchv1.JobFailed) || isJobConditionTrue(job, batchv1.JobFailureTarget) {
 		logger.Info("migration job failed, will delete and retry", "job", jobName, "version", desiredVersion)
 
 		// Set condition so kubectl describe shows the failure.
