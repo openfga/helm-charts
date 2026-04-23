@@ -13,7 +13,7 @@ It is designed to make it easy for developers to model their application permiss
 
 ## Charts
 
-* [openfga](https://github.com/openfga/helm-charts/blob/main/charts/openfga)
+* [openfga](https://github.com/openfga/helm-charts/blob/main/charts/openfga) — see the [Getting Started guide](./charts/openfga/docs/getting-started.md) for a walkthrough from install to your first authorization check.
 
 ## Contributing
 

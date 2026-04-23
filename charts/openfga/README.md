@@ -9,6 +9,8 @@ helm repo add openfga https://openfga.github.io/helm-charts
 helm install openfga openfga/openfga
 ```
 
+New to the chart? Start with the [Getting Started guide](docs/getting-started.md) for a walkthrough from install to your first authorization check.
+
 ## Installing the Chart via Helm Repository
 
 To install the chart with the release name `openfga`:
