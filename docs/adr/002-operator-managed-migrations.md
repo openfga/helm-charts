@@ -75,22 +75,22 @@ The operator runs a **migration controller** that reconciles the OpenFGA Deploym
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                  Operator Reconciliation                  │
+│                  Operator Reconciliation                 │
 │                                                          │
 │  1. Read Deployment → extract image tag (e.g. v1.14.0)   │
-│  2. Read ConfigMap/openfga-migration-status               │
+│  2. Read ConfigMap/openfga-migration-status              │
 │     └── "Last migrated version: v1.13.0"                 │
-│  3. Versions differ → migration needed                    │
-│  4. Create Job/openfga-migrate                            │
+│  3. Versions differ → migration needed                   │
+│  4. Create Job/openfga-migrate                           │
 │     ├── ServiceAccount: openfga-migrator (DDL perms)     │
 │     ├── Image: openfga/openfga:v1.14.0                   │
 │     ├── Args: ["migrate"]                                │
 │     └── ttlSecondsAfterFinished: 300                     │
-│  5. Watch Job until succeeded                             │
+│  5. Watch Job until succeeded                            │
 │  6. Update ConfigMap → "version: v1.14.0"                │
-│  7. Ensure Deployment at desired replicas                 │
+│  7. Ensure Deployment at desired replicas                │
 │     (fresh install: 0 → N; upgrade: already running)     │
-│  8. New pods pass readiness, serve requests               │
+│  8. New pods pass readiness, serve requests              │
 └──────────────────────────────────────────────────────────┘
 ```
 
