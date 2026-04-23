@@ -23,7 +23,7 @@ jobs:
           git config user.email contact@openfga.dev
 
       - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_KEY_PASSPHRASE }}
@@ -32,13 +32,13 @@ jobs:
         run: gpg --export-secret-keys > ~/.gnupg/pubring.gpg
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.19.0
 
       - name: Add Helm Repositories
         run: |
-          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add bitnami-legacy https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
           helm repo add openfga https://openfga.github.io/helm-charts
           helm repo update
 
@@ -51,7 +51,7 @@ jobs:
           CR_SKIP_EXISTING: true
 
       - name: Login to GHCR
-        uses: docker/login-action@v3.7.0
+        uses: docker/login-action@v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

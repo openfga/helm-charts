@@ -137,6 +137,8 @@ spec:
               value: "{{ .Values.datastore.connMaxLifetime }}"
             {{- end }}
 
+            {{- include "openfga.datastore.secondary.envConfig" . | nindent 12 }}
+
             - name: OPENFGA_DATASTORE_METRICS_ENABLED
               value: "{{ .Values.datastore.metrics.enabled }}"
 
@@ -307,7 +309,7 @@ spec:
               value: "{{ .Values.listObjectsDeadline }}"
             {{- end }}
 
-            {{- if .Values.listObjectsMaxResults }}
+            {{- if ne .Values.listObjectsMaxResults nil }}
             - name: OPENFGA_LIST_OBJECTS_MAX_RESULTS
               value: "{{ .Values.listObjectsMaxResults }}"
             {{- end }}
@@ -317,7 +319,7 @@ spec:
               value: "{{ .Values.listUsersDeadline }}"
             {{- end }}
 
-            {{- if .Values.listUsersMaxResults }}
+            {{- if ne .Values.listUsersMaxResults nil }}
             - name: OPENFGA_LIST_USERS_MAX_RESULTS
               value: "{{ .Values.listUsersMaxResults }}"
             {{- end }}
