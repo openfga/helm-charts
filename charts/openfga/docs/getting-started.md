@@ -22,7 +22,7 @@ This guide walks you from an empty Kubernetes cluster to your first authorizatio
 Verify your tools:
 
 ```sh
-kubectl version --short
+kubectl version
 helm version --short
 ```
 
@@ -53,16 +53,20 @@ helm repo update
 helm install openfga openfga/openfga --namespace openfga --create-namespace
 ```
 
-This brings up 3 replicas backed by the in-memory datastore. No database required.
+This brings up a single OpenFGA pod backed by the in-memory datastore. The chart pins replicas to 1 whenever `datastore.engine` is `memory`, because in-memory data is not shared across pods — `replicaCount` only takes effect with a persistent engine.
 
 ### Dev / test with an ephemeral Postgres
 
 A complete, working values file lives at [`ci/postgres-values.yaml`](../ci/postgres-values.yaml). It deploys Postgres via `extraObjects` and wires the chart to it.
 
+Save the file locally (or check out this repo) and install:
+
 ```sh
+curl -sSLO https://raw.githubusercontent.com/openfga/helm-charts/main/charts/openfga/ci/postgres-values.yaml
+
 helm install openfga openfga/openfga \
   --namespace openfga --create-namespace \
-  -f charts/openfga/ci/postgres-values.yaml
+  -f postgres-values.yaml
 ```
 
 An equivalent example for MySQL lives at [`ci/mysql-values.yaml`](../ci/mysql-values.yaml).
@@ -274,6 +278,8 @@ Uninstall (keeps the database; drop it manually if you need a clean slate):
 ```sh
 helm uninstall openfga --namespace openfga
 ```
+
+> **Gotcha:** the chart runs its migration `Job` on `post-delete` too, so `helm uninstall` expects the datastore to still be reachable. If you tear down the database first, the uninstall can hang waiting for the hook. Uninstall the chart **before** removing the database, or delete the stuck `openfga-migrate` Job manually (`kubectl delete job openfga-migrate -n openfga`) to unblock it.
 
 ## Troubleshooting
 
