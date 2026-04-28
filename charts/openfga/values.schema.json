@@ -1289,6 +1289,58 @@
             "type": "boolean",
             "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
             "default": false
+        },
+        "operator": {
+            "type": "object",
+            "description": "Controls the openfga-operator subchart. When enabled, migration is managed by the operator instead of the Helm job hook.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable the openfga-operator subchart for operator-managed migrations",
+                    "default": false
+                }
+            },
+            "additionalProperties": false
+        },
+        "openfga-operator": {
+            "type": "object",
+            "description": "Values passed through to the openfga-operator subchart (validated by that chart's own schema)"
+        },
+        "migration": {
+            "type": "object",
+            "description": "Controls operator-driven migration behavior. Only used when operator.enabled is true.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable operator-managed database migrations",
+                    "default": true
+                },
+                "serviceAccount": {
+                    "type": "object",
+                    "properties": {
+                        "create": {
+                            "type": "boolean",
+                            "description": "Create a dedicated service account for migration Jobs",
+                            "default": true
+                        },
+                        "annotations": {
+                            "type": "object",
+                            "description": "Annotations to add to the migration service account",
+                            "additionalProperties": {
+                                "type": "string"
+                            },
+                            "default": {}
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The name of the migration service account. Defaults to {fullname}-migration. Must be set explicitly when create=false and a dedicated migration SA is desired; leave empty to skip the annotation entirely.",
+                            "default": ""
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "additionalProperties": false
         }
     },
     "additionalProperties": false

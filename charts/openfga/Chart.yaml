@@ -29,3 +29,7 @@ dependencies:
     repository: oci://registry-1.docker.io/bitnamicharts
     tags:
       - bitnami-common
+  - name: openfga-operator
+    version: "0.1.0"
+    repository: "file://../openfga-operator"
+    condition: operator.enabled

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: openfga-operator
+description: Helm chart for the OpenFGA Kubernetes operator.
+
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+home: "https://openfga.github.io/helm-charts"
+icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+
+maintainers:
+  - name: OpenFGA Authors
+    url: https://github.com/openfga
+sources:
+  - https://github.com/openfga/helm-charts
+
+annotations:
+  artifacthub.io/license: Apache-2.0

@@ -4,12 +4,35 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
-  {{- with .Values.annotations }}
+  {{- $hasOperatorAnnotations := and .Values.operator.enabled .Values.migration.enabled }}
+  {{- if or $hasOperatorAnnotations .Values.annotations }}
   annotations:
+    {{- if $hasOperatorAnnotations }}
+    openfga.dev/migration-enabled: "true"
+    openfga.dev/container-name: "{{ .Chart.Name }}"
+    openfga.dev/desired-replicas: '{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}'
+    {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
+    openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
+    {{- end }}
+    {{- end }}
+    {{- with .Values.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
-  {{- if not  .Values.autoscaling.enabled }}
+  {{- if and .Values.operator.enabled .Values.migration.enabled }}
+  {{- if .Values.autoscaling.enabled }}
+  {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
+  {{- end }}
+  {{- /* On upgrade: preserve live replicas (zero-downtime). On fresh install: lookup returns empty, fall back to 0.
+         OpenFGA gates readiness on MinimumSupportedDatastoreSchemaRevision — see ADR-002. */ -}}
+  {{- $existing := (lookup "apps/v1" "Deployment" (include "openfga.namespace" .) (include "openfga.fullname" .)) }}
+  {{- if and $existing (hasKey ($existing) "spec") }}
+  replicas: {{ $existing.spec.replicas }}
+  {{- else }}
+  replicas: {{ ternary 1 0 (eq .Values.datastore.engine "memory") }}
+  {{- end }}
+  {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
   {{- end }}
   selector:
@@ -37,9 +60,11 @@ spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{ if or (and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers }}
+      {{- $needsMigrationInit := and (not .Values.operator.enabled) (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations }}
+      {{- if or $needsMigrationInit .Values.extraInitContainers }}
       initContainers:
-        {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
+        {{- if $needsMigrationInit }}
+        {{- if eq .Values.datastore.migrationType "job" }}
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -49,7 +74,7 @@ spec:
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
-        {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) (eq .Values.datastore.migrationType "initContainer") }}
+        {{- if eq .Values.datastore.migrationType "initContainer" }}
         {{- with .Values.migrate.extraInitContainers }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -76,6 +101,7 @@ spec:
           {{- if .Values.migrate.sidecars }}
           {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
           {{- end }}
+        {{- end }}
         {{- end }}
         {{- with .Values.extraInitContainers }}
           {{- toYaml . | nindent 8 }}
