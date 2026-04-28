@@ -204,7 +204,7 @@
 			        },
 			        "additionalLabels": {
 			            "type": "object",
-			            "description": "additional labels to be added to the serivceMonitor resource",
+			            "description": "additional labels to be added to the serviceMonitor resource",
 			            "default": {}
 			        },
 			        "annotations": {
