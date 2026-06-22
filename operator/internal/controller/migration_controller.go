@@ -1,0 +1,343 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+)
+
+// MigrationReconciler watches OpenFGA Deployments and orchestrates database
+// migrations when the application version changes.
+type MigrationReconciler struct {
+	client.Client
+
+	// BackoffLimit for migration Jobs.
+	BackoffLimit int32
+	// ActiveDeadlineSeconds for migration Jobs.
+	ActiveDeadlineSeconds int64
+	// TTLSecondsAfterFinished for migration Jobs.
+	TTLSecondsAfterFinished int32
+}
+
+// Reconcile handles a single reconciliation for an OpenFGA Deployment.
+func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// 1. Get the OpenFGA Deployment.
+	deployment := &appsv1.Deployment{}
+	if err := r.Get(ctx, req.NamespacedName, deployment); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	// 2. Skip if migration is not opted-in via annotation.
+	if len(deployment.Annotations) == 0 || deployment.Annotations[AnnotationMigrationEnabled] != "true" {
+		logger.V(1).Info("migration not enabled for this deployment, skipping")
+		return ctrl.Result{}, nil
+	}
+
+	// 3. Find the OpenFGA container and extract the desired version.
+	mainContainer, err := findOpenFGAContainer(deployment)
+	if err != nil {
+		logger.Error(err, "unable to find OpenFGA container")
+		return ctrl.Result{}, err
+	}
+	desiredVersion := extractImageTag(mainContainer.Image)
+
+	// 3b. Skip migration for memory datastore — just ensure the Deployment is scaled up.
+	if isMemoryDatastore(mainContainer) {
+		logger.V(1).Info("memory datastore detected, skipping migration")
+		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
+			return ctrl.Result{}, scaleErr
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// 4. Check current migration status from ConfigMap.
+	configMap := &corev1.ConfigMap{}
+	cmName := migrationConfigMapName(req.Name)
+	err = r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: req.Namespace}, configMap)
+
+	currentVersion := ""
+	if err == nil {
+		currentVersion = configMap.Data["version"]
+	} else if !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf("getting migration status: %w", err)
+	}
+
+	// 5. If versions match, ensure Deployment is scaled up and return.
+	if currentVersion == desiredVersion {
+		logger.V(1).Info("migration up to date", "version", desiredVersion)
+		statusPatch := client.MergeFrom(deployment.DeepCopy())
+		clearMigrationFailedCondition(deployment)
+		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+			logger.Error(patchErr, "failed to clear MigrationFailed condition")
+		}
+		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
+			return ctrl.Result{}, scaleErr
+		}
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("migration needed", "currentVersion", currentVersion, "desiredVersion", desiredVersion)
+
+	// 6. Check retry-after annotation to honor backoff cooldown.
+	if retryAfter, ok := deployment.Annotations[AnnotationRetryAfter]; ok {
+		retryTime, parseErr := time.Parse(time.RFC3339, retryAfter)
+		if parseErr == nil && time.Now().Before(retryTime) {
+			remaining := time.Until(retryTime)
+			logger.V(1).Info("in retry cooldown", "retryAfter", retryAfter, "remaining", remaining)
+			return ctrl.Result{RequeueAfter: remaining}, nil
+		}
+	}
+
+	// 7. Check if a migration Job already exists.
+	jobName := migrationJobName(req.Name)
+	job := &batchv1.Job{}
+	err = r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: req.Namespace}, job)
+
+	if apierrors.IsNotFound(err) {
+		// Create the migration Job.
+		job = buildMigrationJob(
+			deployment,
+			mainContainer,
+			desiredVersion,
+			r.BackoffLimit,
+			r.ActiveDeadlineSeconds,
+			r.TTLSecondsAfterFinished,
+		)
+		if createErr := r.Create(ctx, job); createErr != nil {
+			if apierrors.IsAlreadyExists(createErr) {
+				// A concurrent reconcile already created the Job; requeue to pick it up.
+				logger.V(1).Info("migration job already exists, will recheck", "job", jobName)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			// Leave the retry-after annotation intact so the cooldown survives this failure.
+			return ctrl.Result{}, fmt.Errorf("creating migration job: %w", createErr)
+		}
+		// Clear the retry-after annotation now that the Job is created.
+		if _, hasRetry := deployment.Annotations[AnnotationRetryAfter]; hasRetry {
+			patch := client.MergeFrom(deployment.DeepCopy())
+			delete(deployment.Annotations, AnnotationRetryAfter)
+			if patchErr := r.Patch(ctx, deployment, patch); patchErr != nil {
+				logger.Error(patchErr, "failed to clear retry-after annotation")
+			}
+		}
+		logger.Info("created migration job", "job", jobName, "version", desiredVersion)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	} else if err != nil {
+		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
+	}
+
+	// 8. If the existing Job is for a different (or unknown) version, delete it
+	// and recreate. Check annotation first (supports digests > 63 chars), fall
+	// back to label. A Job with neither marker is treated as stale: we cannot
+	// trust its outcome to represent the current desired version, so trusting
+	// JobComplete in step 9 would write a wrong version into the status ConfigMap.
+	jobVersion := job.Annotations["openfga.dev/desired-version"]
+	versionMatch := jobVersion == desiredVersion
+	if jobVersion == "" {
+		// Label values have ":" replaced with "_", so sanitize desiredVersion for comparison.
+		sanitized := strings.ReplaceAll(desiredVersion, ":", "_")
+		if len(sanitized) > 63 {
+			sanitized = sanitized[:63]
+		}
+		jobVersion = job.Labels["app.kubernetes.io/version"]
+		versionMatch = jobVersion != "" && jobVersion == sanitized
+	}
+	if !versionMatch {
+		logger.Info("existing migration job is for a different or unknown version, deleting", "jobVersion", jobVersion, "desiredVersion", desiredVersion)
+		propagation := metav1.DeletePropagationBackground
+		if delErr := r.Delete(ctx, job, &client.DeleteOptions{
+			PropagationPolicy: &propagation,
+		}); delErr != nil && !apierrors.IsNotFound(delErr) {
+			return ctrl.Result{}, fmt.Errorf("deleting stale migration job: %w", delErr)
+		}
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	// 9. Check Job status using conditions for authoritative completion signals.
+	if isJobConditionTrue(job, batchv1.JobComplete) {
+		logger.Info("migration succeeded", "version", desiredVersion)
+
+		// Clear MigrationFailed condition.
+		statusPatch := client.MergeFrom(deployment.DeepCopy())
+		clearMigrationFailedCondition(deployment)
+		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+			logger.Error(patchErr, "failed to clear MigrationFailed condition")
+		}
+
+		// Update migration status ConfigMap.
+		if statusErr := updateMigrationStatus(ctx, r.Client, deployment, desiredVersion, jobName); statusErr != nil {
+			return ctrl.Result{}, statusErr
+		}
+
+		// Scale Deployment back up.
+		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
+			return ctrl.Result{}, scaleErr
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	// JobFailureTarget is set as soon as the Job controller decides the Job
+	// will fail (backoff limit reached, deadline exceeded, etc.); JobFailed
+	// only flips after pods finish terminating, which can take BackoffLimit ×
+	// ActiveDeadlineSeconds. Treating either as "failed" surfaces the failure
+	// to users within seconds instead of minutes.
+	if isJobConditionTrue(job, batchv1.JobFailed) || isJobConditionTrue(job, batchv1.JobFailureTarget) {
+		logger.Info("migration job failed, will delete and retry", "job", jobName, "version", desiredVersion)
+
+		// Set condition so kubectl describe shows the failure.
+		statusPatch := client.MergeFrom(deployment.DeepCopy())
+		setMigrationFailedCondition(deployment, desiredVersion)
+		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+			logger.Error(patchErr, "failed to set MigrationFailed condition")
+		}
+
+		// Persist a retry-after annotation so the cooldown is honored even
+		// when the Job deletion triggers an immediate re-enqueue.
+		retryAfter := time.Now().Add(60 * time.Second).UTC().Format(time.RFC3339)
+		patch := client.MergeFrom(deployment.DeepCopy())
+		if deployment.Annotations == nil {
+			deployment.Annotations = make(map[string]string)
+		}
+		deployment.Annotations[AnnotationRetryAfter] = retryAfter
+		if patchErr := r.Patch(ctx, deployment, patch); patchErr != nil {
+			return ctrl.Result{}, fmt.Errorf("persisting retry-after annotation: %w", patchErr)
+		}
+
+		// Delete the failed Job so a fresh one is created on the next reconcile.
+		propagation := metav1.DeletePropagationBackground
+		if delErr := r.Delete(ctx, job, &client.DeleteOptions{
+			PropagationPolicy: &propagation,
+		}); delErr != nil && !apierrors.IsNotFound(delErr) {
+			return ctrl.Result{}, fmt.Errorf("deleting failed migration job: %w", delErr)
+		}
+		logger.Info("deleted failed migration job, will retry", "job", jobName)
+
+		// Requeue after the cooldown period.
+		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	}
+
+	// 10. Job still running — requeue.
+	logger.V(1).Info("migration job in progress", "job", jobName)
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+// isJobConditionTrue returns true if the Job has a condition of the given type
+// with status True. This is more reliable than comparing status counters because
+// the Job controller sets conditions atomically when it makes its final decision.
+func isJobConditionTrue(job *batchv1.Job, conditionType batchv1.JobConditionType) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == conditionType && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+// isMemoryDatastore checks if the Deployment is using the memory datastore
+// (no database migration needed).
+//
+// NOTE: This only inspects explicit env vars on the container spec. If
+// OPENFGA_DATASTORE_ENGINE is injected via envFrom (ConfigMap/Secret), it
+// will not be detected here and the operator will attempt a migration.
+func isMemoryDatastore(container *corev1.Container) bool {
+	for _, env := range container.Env {
+		if env.Name == "OPENFGA_DATASTORE_ENGINE" {
+			return strings.EqualFold(env.Value, "memory")
+		}
+	}
+	return false
+}
+
+// setMigrationFailedCondition sets a MigrationFailed condition on the Deployment.
+func setMigrationFailedCondition(deployment *appsv1.Deployment, version string) {
+	condition := appsv1.DeploymentCondition{
+		Type:               "MigrationFailed",
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             "MigrationJobFailed",
+		Message:            fmt.Sprintf("Database migration failed for version %s. Check migration job logs.", version),
+	}
+
+	// Replace existing MigrationFailed condition if present.
+	for i, c := range deployment.Status.Conditions {
+		if c.Type == "MigrationFailed" {
+			deployment.Status.Conditions[i] = condition
+			return
+		}
+	}
+	deployment.Status.Conditions = append(deployment.Status.Conditions, condition)
+}
+
+// clearMigrationFailedCondition removes or sets the MigrationFailed condition to False.
+func clearMigrationFailedCondition(deployment *appsv1.Deployment) {
+	for i, c := range deployment.Status.Conditions {
+		if c.Type == "MigrationFailed" {
+			deployment.Status.Conditions[i].Status = corev1.ConditionFalse
+			deployment.Status.Conditions[i].LastTransitionTime = metav1.Now()
+			deployment.Status.Conditions[i].Reason = "MigrationSucceeded"
+			deployment.Status.Conditions[i].Message = "Migration completed successfully."
+			return
+		}
+	}
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *MigrationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Only watch Deployments that are part of OpenFGA.
+	labelPredicate, err := predicate.LabelSelectorPredicate(metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			LabelPartOf:    LabelPartOfValue,
+			LabelComponent: LabelComponentValue,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("creating label predicate: %w", err)
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&appsv1.Deployment{}, builder.WithPredicates(labelPredicate)).
+		Owns(&batchv1.Job{}).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, obj client.Object) []reconcile.Request {
+				// Only watch ConfigMaps that are migration status ConfigMaps.
+				if obj.GetLabels()[LabelPartOf] != LabelPartOfValue ||
+					obj.GetLabels()["app.kubernetes.io/managed-by"] != "openfga-operator" {
+					return nil
+				}
+				// Map back to the owning Deployment.
+				for _, ref := range obj.GetOwnerReferences() {
+					if ref.Kind == "Deployment" {
+						return []reconcile.Request{
+							{NamespacedName: types.NamespacedName{
+								Name:      ref.Name,
+								Namespace: obj.GetNamespace(),
+							}},
+						}
+					}
+				}
+				return nil
+			},
+		)).
+		Complete(r)
+}

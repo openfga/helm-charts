@@ -385,6 +385,45 @@ testContainerSpec: {}
 # -- Array of extra K8s manifests to deploy
 ## Note: Supports use of custom Helm templates
 extraObjects: []
+
+# -- operator controls the openfga-operator subchart.
+# When enabled, migration is managed by the operator instead of the Helm job hook.
+operator:
+  enabled: false
+
+# -- Values passed to the openfga-operator subchart (when operator.enabled is true).
+# See charts/openfga-operator/values.yaml for all available options.
+openfga-operator: {}
+  # migrationJob:
+  #   backoffLimit: 3
+  #   activeDeadlineSeconds: 300
+  #   ttlSecondsAfterFinished: 300
+  # leaderElection:
+  #   enabled: true
+  # watchNamespace: ""
+  # resources:
+  #   requests:
+  #     cpu: 10m
+  #     memory: 64Mi
+  #   limits:
+  #     memory: 128Mi
+
+# -- migration controls operator-driven migration behavior.
+# Only used when operator.enabled is true.
+migration:
+  # -- Enable operator-managed migrations. Set to false if you manage migrations externally.
+  enabled: true
+  serviceAccount:
+    # -- Create a dedicated service account for migration Jobs.
+    # The migration Job inherits env vars (including secretKeyRef) from the OpenFGA container.
+    # If your datastore secret has RBAC restrictions, ensure this service account can read it.
+    create: true
+    # -- Annotations to add to the migration service account.
+    # Use this to attach cloud IAM roles (e.g., eks.amazonaws.com/role-arn) for DDL permissions.
+    annotations: {}
+    # -- The name of the migration service account.
+    # If not set and create is true, defaults to {fullname}-migration.
+    name: ""
 ## Example: Deploy a PostgreSQL instance for dev/test using official Docker images.
 ## For production, use a managed database service or an operator like CloudnativePG.
 ## Configure the chart to use the secret:

@@ -1,0 +1,16 @@
+The openfga-operator has been deployed.
+
+NOTE: Ensure the operator image ({{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}) is available in your registry.
+If unavailable, the operator pod may remain in ImagePullBackOff until the image is pushed.
+
+To check operator status:
+  kubectl get deployment --namespace {{ include "openfga-operator.namespace" . }} {{ include "openfga-operator.fullname" . }}
+
+To view operator logs:
+  kubectl logs --namespace {{ include "openfga-operator.namespace" . }} -l "app.kubernetes.io/name={{ include "openfga-operator.name" . }}"
+
+To check migration status:
+  kubectl get configmap -n {{ include "openfga-operator.namespace" . }} -l app.kubernetes.io/managed-by=openfga-operator
+
+To inspect migration jobs:
+  kubectl get jobs -n {{ include "openfga-operator.namespace" . }} -l app.kubernetes.io/part-of=openfga,app.kubernetes.io/component=migration
