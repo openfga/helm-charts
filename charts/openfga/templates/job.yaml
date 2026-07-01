@@ -1,4 +1,13 @@
 {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations (eq .Values.datastore.migrationType "job") -}}
+{{- $annotations := .Values.migrate.annotations | default dict -}}
+{{- if eq (include "openfga.migrate.usePreInstallHooks" .) "true" -}}
+{{/*
+External datastore: migrate before the Deployment (and its wait-for-migration init container) to
+avoid the post-* --wait/GitOps deadlock and the post-delete uninstall stall. Weight -5 orders the
+Job after the ServiceAccount hook (-10); user annotations are merged in.
+*/}}
+{{- $annotations = merge (dict "helm.sh/hook" "pre-install,pre-upgrade" "helm.sh/hook-weight" "-5" "helm.sh/hook-delete-policy" "before-hook-creation") $annotations -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -8,14 +17,14 @@ metadata:
   {{- with .Values.migrate.labels }}
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- with .Values.migrate.annotations }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
   template:
     metadata:
-      {{- with .Values.migrate.annotations }}
+      {{- with $annotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
