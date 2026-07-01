@@ -151,6 +151,17 @@ datastore:
     passwordKey: password
 ```
 
+### Database Migrations
+
+When `datastore.engine` is `postgres` or `mysql` and `datastore.applyMigrations` is `true` (the default), the chart applies the OpenFGA schema before the server starts. `datastore.migrationType` selects how:
+
+- **`job`** (default) — migrations run in a Kubernetes Job. With `datastore.waitForMigrations: true` the Deployment also gets a `wait-for-migration` init container that gates the server on the Job. The Job's Helm hooks are chosen automatically:
+  - **External datastore** — when an external connection secret (`datastore.uriSecret` or `datastore.existingSecret`) is set and the bundled `postgresql`/`mysql` subcharts are disabled, the Job runs as a `pre-install`/`pre-upgrade` hook (and the ServiceAccount is promoted to match, at an earlier weight) so migrations finish before the Deployment exists. This avoids the deadlock and uninstall stall below. The database must be reachable independently of the release, and credentials must come from the external secret.
+  - **Otherwise (legacy default)** — the Job keeps the `post-install`/`post-upgrade`/`post-rollback`/`post-delete` hooks. This deadlocks readiness-waiting installs (`--wait`, `--atomic`, Argo CD, Flux) — the Deployment blocks on a Job Helm only creates after the wait — and `post-delete` stalls `helm uninstall`. Prefer an external datastore or `initContainer`.
+- **`initContainer`** — migrations run as an init container in the OpenFGA pod. Use this when the database ships **in the same release** (a subchart or `extraObjects`), since it starts alongside the database and retries until reachable.
+
+Override the chosen hooks with `migrate.annotations` (merged with the chart's selection).
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `openfga` deployment:
