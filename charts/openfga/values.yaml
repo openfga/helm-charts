@@ -19,7 +19,9 @@ commonLabels: {}
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account
+  # Annotations to add to the service account.
+  # With an external datastore + datastore.migrationType=job, pre-install hook annotations
+  # (weight -10) are merged in so the account exists before the migration Job's hook runs.
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
@@ -372,8 +374,14 @@ migrate:
   extraVolumeMounts: []
   extraInitContainers: []
   sidecars: []
+  # Annotations for the migration Job (datastore.migrationType=job). Default to the legacy post-*
+  # hooks. With an external datastore (datastore.uriSecret/existingSecret set, bundled subcharts
+  # disabled) the chart switches to pre-install/pre-upgrade hooks and promotes the ServiceAccount to
+  # match — post-* hooks otherwise deadlock --wait/GitOps installs and stall uninstall via the
+  # wait-for-migration init container. For an in-release database use
+  # datastore.migrationType=initContainer. Values set here are merged with the selected hooks.
   annotations:
-    helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
+    helm.sh/hook: "post-install,post-upgrade,post-rollback,post-delete"
     helm.sh/hook-weight: "-5"
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
