@@ -62,6 +62,25 @@ tests:
           path: metadata.annotations["helm.sh/hook"]
           value: "post-install,post-upgrade,post-rollback,post-delete"
 
+  - it: lets migrate.annotations override the chart's pre-install hook keys
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      migrate.annotations:
+        helm.sh/hook: pre-install
+        helm.sh/hook-weight: "-3"
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-3"
+      # A key the user does not set still falls back to the chart default.
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: "before-hook-creation"
+
   - it: is not rendered when migrations run as an init container
     set:
       datastore.engine: postgres
