@@ -160,7 +160,7 @@ When `datastore.engine` is `postgres` or `mysql` and `datastore.applyMigrations`
   - **Otherwise (legacy default)** — the Job keeps the `post-install`/`post-upgrade`/`post-rollback`/`post-delete` hooks. This deadlocks readiness-waiting installs (`--wait`, `--atomic`, Argo CD, Flux) — the Deployment blocks on a Job Helm only creates after the wait — and `post-delete` stalls `helm uninstall`. Prefer an external datastore or `initContainer`.
 - **`initContainer`** — migrations run as an init container in the OpenFGA pod. Use this when the database ships **in the same release** (a subchart or `extraObjects`), since it starts alongside the database and retries until reachable.
 
-Override the chosen hooks with `migrate.annotations` (merged with the chart's selection).
+Override the chosen hooks with `migrate.annotations`: any hook key you set wins, and keys you omit keep the chart's defaults.
 
 ## Uninstalling the Chart
 
