@@ -33,14 +33,24 @@ tests:
           path: metadata.annotations["helm.sh/hook"]
           pattern: "post-"
 
-  - it: runs as a pre-install/pre-upgrade hook for an externally provided datastore (existingSecret)
+  - it: runs as a pre-install/pre-upgrade hook for an externally provided datastore (existingSecret with uriKey)
+    set:
+      datastore.engine: postgres
+      datastore.existingSecret: my-secret
+      datastore.secretKeys.uriKey: uri
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+
+  - it: keeps the legacy hooks when existingSecret does not supply the URI (no uriKey)
     set:
       datastore.engine: postgres
       datastore.existingSecret: my-secret
     asserts:
       - equal:
           path: metadata.annotations["helm.sh/hook"]
-          value: "pre-install,pre-upgrade"
+          value: "post-install,post-upgrade,post-rollback,post-delete"
 
   - it: keeps the legacy hooks when the bundled subchart is enabled even with an external secret
     set:
