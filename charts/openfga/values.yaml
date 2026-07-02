@@ -374,17 +374,15 @@ migrate:
   extraVolumeMounts: []
   extraInitContainers: []
   sidecars: []
-  # Annotations for the migration Job (datastore.migrationType=job). Default to the legacy post-*
-  # hooks. When the datastore URI comes from an external secret (datastore.uriSecret, or
-  # datastore.existingSecret + secretKeys.uriKey) and the bundled subcharts are disabled, the chart
-  # switches to pre-install/pre-upgrade hooks and promotes the ServiceAccount to match — post-*
-  # hooks otherwise deadlock --wait/GitOps installs and stall uninstall via the wait-for-migration
-  # init container. For an in-release database use datastore.migrationType=initContainer. Values set
-  # here are merged with the selected hooks.
-  annotations:
-    helm.sh/hook: "post-install,post-upgrade,post-rollback,post-delete"
-    helm.sh/hook-weight: "-5"
-    helm.sh/hook-delete-policy: "before-hook-creation"
+  # Extra annotations for the migration Job (datastore.migrationType=job). The chart sets the Helm
+  # hooks automatically: legacy post-install/post-upgrade/post-rollback/post-delete (weight -5), or
+  # pre-install/pre-upgrade when the datastore URI comes from an external secret (datastore.uriSecret,
+  # or datastore.existingSecret + secretKeys.uriKey; bundled subcharts disabled) and the
+  # ServiceAccount is promoted to match — post-* hooks otherwise deadlock --wait/GitOps installs and
+  # stall uninstall via the wait-for-migration init container. For an in-release database use
+  # datastore.migrationType=initContainer. Any hook key set here overrides the chart default; keys
+  # you omit keep the default.
+  annotations: {}
   labels: {}
   timeout:
 
