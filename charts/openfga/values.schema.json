@@ -35,7 +35,7 @@
             "description": "Minimum number of seconds for which a newly created pod should be ready without any of its containers crashing, for it to be considered available. Defaults to the Kubernetes default (0). For more information see https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#min-ready-seconds"
         },
         "deploymentStrategy": {
-            "type": "object",
+            "type": ["object", "null"],
             "description": "Specifies the strategy used to replace old pods by new ones. Passed through verbatim to the deployment's spec.strategy field. For more information see https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy",
             "default": {}
         },

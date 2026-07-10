@@ -28,6 +28,13 @@ tests:
       - notExists:
           path: spec.strategy
 
+  - it: should not render strategy when deploymentStrategy is explicitly null
+    set:
+      deploymentStrategy: null
+    asserts:
+      - notExists:
+          path: spec.strategy
+
   - it: should render deploymentStrategy verbatim as spec.strategy
     set:
       deploymentStrategy:
