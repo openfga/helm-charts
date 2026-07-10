@@ -1,0 +1,56 @@
+suite: deployment - minReadySeconds and deploymentStrategy
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should not render minReadySeconds when not set
+    asserts:
+      - notExists:
+          path: spec.minReadySeconds
+
+  - it: should render minReadySeconds when set to 0
+    set:
+      minReadySeconds: 0
+    asserts:
+      - equal:
+          path: spec.minReadySeconds
+          value: 0
+
+  - it: should render minReadySeconds when set to a positive value
+    set:
+      minReadySeconds: 60
+    asserts:
+      - equal:
+          path: spec.minReadySeconds
+          value: 60
+
+  - it: should not render strategy when deploymentStrategy is not set
+    asserts:
+      - notExists:
+          path: spec.strategy
+
+  - it: should render deploymentStrategy verbatim as spec.strategy
+    set:
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+      - equal:
+          path: spec.strategy.rollingUpdate.maxSurge
+          value: 1
+      - equal:
+          path: spec.strategy.rollingUpdate.maxUnavailable
+          value: 0
+
+  - it: should render a Recreate strategy
+    set:
+      deploymentStrategy:
+        type: Recreate
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
