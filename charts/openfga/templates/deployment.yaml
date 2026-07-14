@@ -10,7 +10,7 @@ metadata:
   {{- end }}
 spec:
   {{- if not  .Values.autoscaling.enabled }}
-  replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory")}}
+  replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}
   {{- end }}
   selector:
     matchLabels:
@@ -137,6 +137,11 @@ spec:
               value: "{{ .Values.datastore.connMaxLifetime }}"
             {{- end }}
 
+            {{- include "openfga.datastore.secondary.envConfig" . | nindent 12 }}
+
+            - name: OPENFGA_DATASTORE_METRICS_ENABLED
+              value: "{{ .Values.datastore.metrics.enabled }}"
+
             {{- if .Values.maxConcurrentReadsForCheck }}
             - name: OPENFGA_MAX_CONCURRENT_READS_FOR_CHECK
               value: "{{ .Values.maxConcurrentReadsForCheck }}"
@@ -150,6 +155,16 @@ spec:
             {{- if .Values.maxConcurrentReadsForListUsers }}
             - name: OPENFGA_MAX_CONCURRENT_READS_FOR_LIST_USERS
               value: "{{ .Values.maxConcurrentReadsForListUsers }}"
+            {{- end }}
+
+            {{- if .Values.maxChecksPerBatchCheck }}
+            - name: OPENFGA_MAX_CHECKS_PER_BATCH_CHECK
+              value: "{{ .Values.maxChecksPerBatchCheck }}"
+            {{- end }}
+
+            {{- if .Values.maxConcurrentChecksPerBatchCheck }}
+            - name: OPENFGA_MAX_CONCURRENT_CHECKS_PER_BATCH_CHECK
+              value: "{{ .Values.maxConcurrentChecksPerBatchCheck }}"
             {{- end }}
 
             {{- if .Values.experimentals }}
@@ -294,7 +309,7 @@ spec:
               value: "{{ .Values.listObjectsDeadline }}"
             {{- end }}
 
-            {{- if .Values.listObjectsMaxResults }}
+            {{- if ne .Values.listObjectsMaxResults nil }}
             - name: OPENFGA_LIST_OBJECTS_MAX_RESULTS
               value: "{{ .Values.listObjectsMaxResults }}"
             {{- end }}
@@ -304,7 +319,7 @@ spec:
               value: "{{ .Values.listUsersDeadline }}"
             {{- end }}
 
-            {{- if .Values.listUsersMaxResults }}
+            {{- if ne .Values.listUsersMaxResults nil }}
             - name: OPENFGA_LIST_USERS_MAX_RESULTS
               value: "{{ .Values.listUsersMaxResults }}"
             {{- end }}
@@ -312,7 +327,7 @@ spec:
             {{- if .Values.requestTimeout }}
             - name: OPENFGA_REQUEST_TIMEOUT
               value: "{{ .Values.requestTimeout }}"
-            {{- end}}
+            {{- end }}
 
             {{- if .Values.checkQueryCache.enabled }}
             - name: OPENFGA_CHECK_QUERY_CACHE_ENABLED
@@ -369,7 +384,7 @@ spec:
 
             {{- if .Values.telemetry.trace.otlp.tls.enabled }}
             - name: OPENFGA_TRACE_OTLP_TLS_ENABLED
-              value: {{ .Values.telemetry.trace.otlp.tls.enabled }}
+              value: "{{ .Values.telemetry.trace.otlp.tls.enabled }}"
             {{- end }}
 
             {{- if .Values.telemetry.trace.sampleRatio }}
@@ -449,7 +464,7 @@ spec:
           {{- with .Values.lifecycle }}
           lifecycle:
             {{- toYaml . | nindent 12 }}
-          {{- end}}
+          {{- end }}
 
         {{- if .Values.sidecars }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.sidecars "context" $) | nindent 8 }}

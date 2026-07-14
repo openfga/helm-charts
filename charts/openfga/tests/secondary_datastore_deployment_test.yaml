@@ -1,0 +1,143 @@
+suite: secondary datastore deployment
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should not render secondary env vars when secondary is not configured
+    set:
+      datastore:
+        engine: postgres
+        uri: "postgres://user:pass@primary:5432/openfga"
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_ENGINE
+          any: true
+
+  - it: should render secondary engine env var
+    set:
+      datastore:
+        engine: postgres
+        uri: "postgres://user:pass@primary:5432/openfga"
+        secondary:
+          engine: postgres
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_ENGINE
+            value: "postgres"
+
+  - it: should render secondary URI from inline value via auto-generated secret
+    set:
+      datastore:
+        engine: postgres
+        uri: "postgres://user:pass@primary:5432/openfga"
+        secondary:
+          engine: postgres
+          uri: "postgres://user:pass@replica:5432/openfga"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_URI
+            valueFrom:
+              secretKeyRef:
+                name: "RELEASE-NAME-openfga-secondary-datastore-secret"
+                key: "uri"
+
+  - it: should render secondary URI from uriSecret
+    set:
+      datastore:
+        engine: postgres
+        uri: "postgres://user:pass@primary:5432/openfga"
+        secondary:
+          engine: postgres
+          uriSecret: my-uri-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_URI
+            valueFrom:
+              secretKeyRef:
+                name: "my-uri-secret"
+                key: uri
+
+  - it: should render secondary URI from existingSecret with custom key
+    set:
+      datastore:
+        engine: postgres
+        uri: "postgres://user:pass@primary:5432/openfga"
+        secondary:
+          engine: postgres
+          existingSecret: my-existing-secret
+          secretKeys:
+            uriKey: db-uri
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_URI
+            valueFrom:
+              secretKeyRef:
+                name: "my-existing-secret"
+                key: "db-uri"
+
+  - it: should render secondary username and password from existingSecret
+    set:
+      datastore:
+        engine: postgres
+        uri: "postgres://user:pass@primary:5432/openfga"
+        secondary:
+          engine: postgres
+          existingSecret: my-existing-secret
+          secretKeys:
+            uriKey: db-uri
+            usernameKey: db-user
+            passwordKey: db-pass
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: "my-existing-secret"
+                key: "db-user"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "my-existing-secret"
+                key: "db-pass"
+
+  - it: should render secondary username and password from inline values via auto-generated secret
+    set:
+      datastore:
+        engine: postgres
+        uri: "postgres://user:pass@primary:5432/openfga"
+        secondary:
+          engine: postgres
+          uri: "postgres://replica:5432/openfga"
+          username: replica-user
+          password: replica-pass
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: "RELEASE-NAME-openfga-secondary-datastore-secret"
+                key: "username"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_DATASTORE_SECONDARY_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "RELEASE-NAME-openfga-secondary-datastore-secret"
+                key: "password"
