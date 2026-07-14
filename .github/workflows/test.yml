@@ -9,14 +9,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.12.1
+
+      - name: Run helm unit tests
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
+          helm repo add bitnami-legacy https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
+          helm dependency build charts/openfga
+          helm unittest charts/openfga
 
       - uses: actions/setup-python@v6
         with:
@@ -37,7 +44,7 @@ jobs:
       - name: Add Helm Repositories
         if: steps.list-changed.outputs.changed == 'true'
         run: |
-          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add bitnami-legacy https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
           helm repo add openfga https://openfga.github.io/helm-charts
           helm repo update
 

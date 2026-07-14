@@ -400,6 +400,84 @@
                         "200ms"
                     ]
                 },
+                "secondary": {
+                    "type": "object",
+                    "description": "Configuration for a secondary (read-replica) datastore.",
+                    "properties": {
+                        "engine": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the datastore engine for the secondary datastore (currently only postgres is supported)",
+                            "enum": [
+                                null,
+                                "postgres"
+                            ]
+                        },
+                        "uri": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the URI of the secondary datastore"
+                        },
+                        "uriSecret": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the secret name where to get the secondary datastore URI, it expects a key named uri to exist in the secret"
+                        },
+                        "username": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the username to authenticate with the secondary datastore"
+                        },
+                        "password": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the password to authenticate with the secondary datastore"
+                        },
+                        "existingSecret": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "the name of an existing secret that contains the secondary datastore uri and credentials"
+                        },
+                        "secretKeys": {
+                            "type": "object",
+                            "properties": {
+                                "uriKey": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "description": "the key in the existing secret mapping to the secondary datastore uri"
+                                },
+                                "usernameKey": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "description": "the key in the existing secret mapping to the secondary datastore username"
+                                },
+                                "passwordKey": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "description": "the key in the existing secret mapping to the secondary datastore password"
+                                }
+                            }
+                        }
+                    }
+                },
                 "applyMigrations": {
                     "type": "boolean",
                     "description": "enable/disable the running of migrations in the datastore",
@@ -426,21 +504,63 @@
         },
         "postgresql": {
             "type": "object",
+            "description": "DEPRECATED: The bundled Bitnami PostgreSQL sub-chart uses the legacy archive repository which is no longer actively maintained or receiving security updates. Provided for backwards compatibility only. Will be removed in a future release.",
             "properties": {
                 "enabled": {
                     "type": "boolean",
-                    "description": "enable the bitnami/postgresql subchart and deploy Postgres",
+                    "description": "DEPRECATED: enable the bitnami/postgresql subchart (uses unsupported legacy archive)",
                     "default": false
+                },
+                "image": {
+                    "type": "object",
+                    "properties": {
+                        "registry": {
+                            "type": "string",
+                            "description": "PostgreSQL image registry",
+                            "default": "docker.io"
+                        },
+                        "repository": {
+                            "type": "string",
+                            "description": "PostgreSQL image repository",
+                            "default": "bitnamilegacy/postgresql"
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "PostgreSQL image tag",
+                            "default": "15.4.0-debian-11-r45"
+                        }
+                    }
                 }
             }
         },
         "mysql": {
             "type": "object",
+            "description": "DEPRECATED: The bundled Bitnami MySQL sub-chart uses the legacy archive repository which is no longer actively maintained or receiving security updates. Provided for backwards compatibility only. Will be removed in a future release.",
             "properties": {
                 "enabled": {
                     "type": "boolean",
-                    "description": "enable the bitnami/mysql subchart and deploy MySQL",
+                    "description": "DEPRECATED: enable the bitnami/mysql subchart (uses unsupported legacy archive)",
                     "default": false
+                },
+                "image": {
+                    "type": "object",
+                    "properties": {
+                        "registry": {
+                            "type": "string",
+                            "description": "MySQL image registry",
+                            "default": "docker.io"
+                        },
+                        "repository": {
+                            "type": "string",
+                            "description": "MySQL image repository",
+                            "default": "bitnamilegacy/mysql"
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "MySQL image tag",
+                            "default": "8.0.32-debian-11-r14"
+                        }
+                    }
                 }
             }
         },
