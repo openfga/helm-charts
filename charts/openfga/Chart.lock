@@ -1,12 +1,12 @@
 dependencies:
 - name: postgresql
   repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
-  version: 12.12.10
+  version: 18.8.0
 - name: mysql
   repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
-  version: 9.6.0
+  version: 14.0.3
 - name: common
   repository: oci://registry-1.docker.io/bitnamicharts
-  version: 2.13.3
-digest: sha256:4bbfb25821b0dfb6c70aabb5caf4c5ec7e6526261f93a8f531f507f1d4c43e3e
-generated: "2026-03-18T11:41:40.1785546-04:00"
+  version: 2.41.0
+digest: sha256:e686092581537936325f6136770a063ddb0c6670f075e12c7a1ef944927a572e
+generated: "2026-07-20T05:44:54.406619695Z"
