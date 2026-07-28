@@ -353,7 +353,7 @@ spec:
             {{- if .Values.requestTimeout }}
             - name: OPENFGA_REQUEST_TIMEOUT
               value: "{{ .Values.requestTimeout }}"
-            {{- end}}
+            {{- end }}
 
             {{- if .Values.checkQueryCache.enabled }}
             - name: OPENFGA_CHECK_QUERY_CACHE_ENABLED
@@ -410,7 +410,7 @@ spec:
 
             {{- if .Values.telemetry.trace.otlp.tls.enabled }}
             - name: OPENFGA_TRACE_OTLP_TLS_ENABLED
-              value: {{ .Values.telemetry.trace.otlp.tls.enabled }}
+              value: "{{ .Values.telemetry.trace.otlp.tls.enabled }}"
             {{- end }}
 
             {{- if .Values.telemetry.trace.sampleRatio }}
@@ -490,7 +490,7 @@ spec:
           {{- with .Values.lifecycle }}
           lifecycle:
             {{- toYaml . | nindent 12 }}
-          {{- end}}
+          {{- end }}
 
         {{- if .Values.sidecars }}
         {{- include "common.tplvalues.render" ( dict "value" .Values.sidecars "context" $) | nindent 8 }}
