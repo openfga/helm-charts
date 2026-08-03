@@ -1,0 +1,70 @@
+# Test values: Postgres deployed but scaled to 0 (simulates DB outage)
+operator:
+  enabled: true
+
+openfga-operator:
+  image:
+    repository: openfga/openfga-operator
+    tag: dev
+    pullPolicy: Never
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+datastore:
+  engine: postgres
+  uri: "postgres://openfga:changeme@openfga-test-postgres:5432/openfga?sslmode=disable"
+
+migration:
+  enabled: true
+  serviceAccount:
+    create: true
+
+extraObjects:
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: openfga-test-postgres-creds
+    stringData:
+      POSTGRES_USER: openfga
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: openfga
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: openfga-test-postgres
+    spec:
+      replicas: 0  # Start with Postgres DOWN
+      selector:
+        matchLabels:
+          app: openfga-test-postgres
+      template:
+        metadata:
+          labels:
+            app: openfga-test-postgres
+        spec:
+          containers:
+            - name: postgres
+              image: postgres:17
+              ports:
+                - containerPort: 5432
+              envFrom:
+                - secretRef:
+                    name: openfga-test-postgres-creds
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/postgresql/data
+          volumes:
+            - name: data
+              emptyDir: {}
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: openfga-test-postgres
+    spec:
+      selector:
+        app: openfga-test-postgres
+      ports:
+        - port: 5432
+          targetPort: 5432

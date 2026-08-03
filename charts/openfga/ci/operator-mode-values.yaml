@@ -1,0 +1,25 @@
+# Exercises operator-managed mode end-to-end via chart-testing.
+#
+# The openfga-operator subchart auto-installs (conditional dependency on
+# operator.enabled). With the memory datastore, the chart starts the
+# Deployment at replicas=1 immediately, so `helm test` runs without racing
+# the operator's reconcile loop. Migration is skipped (memory engine), but
+# the rest of the wiring is exercised: subchart resolution, operator RBAC,
+# pod/SA/annotation rendering, and the operator pod actually running and
+# reconciling against the openfga Deployment in its release namespace.
+#
+# Postgres + operator (which exercises the migration Job path) is left to
+# a follow-up E2E test — it requires waiting for the operator to scale the
+# Deployment up before `helm test` runs the gRPC probe.
+operator:
+  enabled: true
+
+migration:
+  enabled: true
+
+datastore:
+  engine: memory
+
+openfga-operator:
+  image:
+    pullPolicy: Never
