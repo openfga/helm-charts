@@ -12,10 +12,27 @@ spec:
     {{- toYaml . | nindent 8 }}
   {{- end }}
   containers:
-    - name: grpc-health-probe
-      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-      imagePullPolicy: {{ .Values.image.pullPolicy }}
-      command: ["grpc_health_probe", '-addr={{ include "openfga.fullname" . }}:{{ (split ":" .Values.grpc.addr)._1 }}']
+    - name: health-check
+      image: "{{ .Values.testImage.repository }}:{{ .Values.testImage.tag }}"
+      imagePullPolicy: {{ .Values.testImage.pullPolicy }}
+      {{- if .Values.http.enabled }}
+      command: ["curl"]
+      args:
+        - -sf
+        {{- if .Values.http.tls.enabled }}
+        - -k
+        - "https://{{ include "openfga.fullname" . }}:{{ (split ":" .Values.http.addr)._1 }}/healthz"
+        {{- else }}
+        - "http://{{ include "openfga.fullname" . }}:{{ (split ":" .Values.http.addr)._1 }}/healthz"
+        {{- end }}
+      {{- else }}
+      command: ["sh", "-c"]
+      args:
+        - >-
+          echo "The HTTP server is disabled (http.enabled=false), so the /healthz
+          endpoint is unavailable. Provide a custom test via testContainerSpec to
+          probe the gRPC server." && exit 1
+      {{- end }}
       {{- with .Values.testContainerSpec }}
         {{- toYaml . | nindent 6 }}
       {{- end }}

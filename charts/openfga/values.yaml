@@ -55,6 +55,14 @@ initContainer:
 
 ## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes
+##
+## Probe handler selection (the OpenFGA image no longer bundles grpc_health_probe):
+##   - When http.enabled=true (default): httpGet /healthz (scheme follows http.tls.enabled).
+##     /healthz is a gateway to the gRPC health service, so it reflects overall health.
+##   - When http.enabled=false: the native grpc: handler is used. This works for plaintext
+##     gRPC but NOT for gRPC mTLS (grpc.tls.enabled=true), because the Kubernetes-native
+##     grpc probe cannot present a client certificate. In that specific case, supply a
+##     customLivenessProbe / customReadinessProbe / customStartupProbe.
 
 ## @param livenessProbe.enabled Enable liveness probes on OpenFGA containers.
 ## @param livenessProbe.initialDelaySeconds Number of seconds after the container has started before liveness probes are initiated.
@@ -378,6 +386,14 @@ migrate:
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
   timeout:
+
+## @param testImage.repository image used by the `helm test` connection pod to probe the /healthz endpoint. The OpenFGA image is distroless and ships no HTTP client, so a small curl image is used instead.
+## @param testImage.tag tag for the test image.
+## @param testImage.pullPolicy pull policy for the test image.
+testImage:
+  repository: curlimages/curl
+  tag: 8.11.1
+  pullPolicy: IfNotPresent
 
 testPodSpec: {}
 testContainerSpec: {}

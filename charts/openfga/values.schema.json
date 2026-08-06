@@ -1269,6 +1269,24 @@
                 }
             }
         },
+        "testImage": {
+            "type": "object",
+            "description": "Image used by the `helm test` connection pod to probe the /healthz endpoint",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "default": "curlimages/curl"
+                },
+                "tag": {
+                    "type": "string",
+                    "default": "8.11.1"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "default": "IfNotPresent"
+                }
+            }
+        },
         "testPodSpec": {
             "type": "object",
             "description": "Extra spec for the test pod to match cluster policy"
