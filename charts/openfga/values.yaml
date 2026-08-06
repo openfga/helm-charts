@@ -393,7 +393,7 @@ migrate:
 ## @param testImage.pullPolicy pull policy for the test image.
 testImage:
   repository: curlimages/curl
-  tag: 8.11.1
+  tag: 8.21.0
   pullPolicy: IfNotPresent
 
 testPodSpec: {}
