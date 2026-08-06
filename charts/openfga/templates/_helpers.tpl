@@ -7,15 +7,17 @@ Expand the name of the chart.
 
 {{/*
 Health probe handler.
-OpenFGA images no longer bundle the grpc_health_probe binary, so probes rely on
-Kubernetes-native handlers. The HTTP /healthz endpoint is a grpc-gateway proxy to
-the gRPC health service, so it is a faithful signal for overall service health and
-is the only binary-free option that works when gRPC mTLS is enabled (the native
-grpc: handler cannot present a client certificate).
+Newer OpenFGA images will no longer bundle the grpc_health_probe binary, so
+probes rely on Kubernetes-native handlers. The HTTP /healthz endpoint is a
+grpc-gateway proxy to the gRPC health service, so it is a faithful signal for
+overall service health and is the only binary-free option that works when gRPC
+mTLS is enabled (the native grpc: handler cannot present a client certificate).
 
 - When the HTTP server is enabled, probe httpGet /healthz (scheme follows http.tls.enabled).
-- Otherwise fall back to the native grpc: handler (works for plaintext gRPC).
-  gRPC-only deployments that also enable gRPC mTLS must supply a custom*Probe.
+- Otherwise use the native grpc: handler. This only supports plaintext gRPC; a
+  native grpc probe against a TLS listener fails the handshake, so when
+  grpc.tls.enabled is set we fail rendering and ask for a custom*Probe rather
+  than emitting a probe that would silently keep the pod NotReady.
 */}}
 {{- define "openfga.probeHandler" -}}
 {{- if .Values.http.enabled -}}
@@ -23,6 +25,8 @@ httpGet:
   path: /healthz
   port: {{ (split ":" .Values.http.addr)._1 }}
   scheme: {{ if .Values.http.tls.enabled }}HTTPS{{ else }}HTTP{{ end }}
+{{- else if .Values.grpc.tls.enabled -}}
+{{- fail "grpc.tls.enabled=true with http.enabled=false has no binary-free native probe (the Kubernetes grpc probe cannot present a client certificate). Set a customLivenessProbe / customReadinessProbe / customStartupProbe, or enable the HTTP server." -}}
 {{- else -}}
 grpc:
   port: {{ (split ":" .Values.grpc.addr)._1 }}

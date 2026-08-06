@@ -18,7 +18,7 @@ spec:
       {{- if .Values.http.enabled }}
       command: ["curl"]
       args:
-        - -sf
+        - -fsS
         {{- if .Values.http.tls.enabled }}
         - -k
         - "https://{{ include "openfga.fullname" . }}:{{ (split ":" .Values.http.addr)._1 }}/healthz"

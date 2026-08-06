@@ -56,13 +56,14 @@ initContainer:
 ## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes
 ##
-## Probe handler selection (the OpenFGA image no longer bundles grpc_health_probe):
+## Probe handler selection (newer OpenFGA images will not bundle grpc_health_probe):
 ##   - When http.enabled=true (default): httpGet /healthz (scheme follows http.tls.enabled).
 ##     /healthz is a gateway to the gRPC health service, so it reflects overall health.
 ##   - When http.enabled=false: the native grpc: handler is used. This works for plaintext
 ##     gRPC but NOT for gRPC mTLS (grpc.tls.enabled=true), because the Kubernetes-native
-##     grpc probe cannot present a client certificate. In that specific case, supply a
-##     customLivenessProbe / customReadinessProbe / customStartupProbe.
+##     grpc probe cannot present a client certificate. In that specific case template
+##     rendering fails with an explanatory message; supply a customLivenessProbe /
+##     customReadinessProbe / customStartupProbe instead.
 
 ## @param livenessProbe.enabled Enable liveness probes on OpenFGA containers.
 ## @param livenessProbe.initialDelaySeconds Number of seconds after the container has started before liveness probes are initiated.
