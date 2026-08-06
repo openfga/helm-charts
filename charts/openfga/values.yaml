@@ -390,14 +390,13 @@ migrate:
   labels: {}
   timeout:
 
-## @param testImage.repository image used by the `helm test` connection pod to probe the /healthz endpoint. The OpenFGA image is distroless and ships no HTTP client, so a small curl image is used instead.
-## @param testImage.tag tag for the test image.
-## @param testImage.pullPolicy pull policy for the test image.
-testImage:
-  repository: curlimages/curl
-  tag: 8.21.0
-  pullPolicy: IfNotPresent
-
+## The `helm test` connection pod runs the OpenFGA image's built-in
+## `openfga healthcheck` command against the /healthz endpoint, so no separate
+## test image is needed. It only renders when http.enabled=true.
+## When TLS is enabled the command verifies the server certificate against the
+## service DNS name, so that name must be present in the certificate's SANs and
+## the certificate file must be available inside the test pod (mount it via
+## testPodSpec / testContainerSpec).
 testPodSpec: {}
 testContainerSpec: {}
 

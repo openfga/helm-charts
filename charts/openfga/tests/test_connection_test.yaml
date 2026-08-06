@@ -2,41 +2,43 @@ suite: helm test connection hook
 templates:
   - templates/tests/test-connection.yaml
 tests:
-  - it: probes /healthz over HTTP by default
+  - it: runs openfga healthcheck against the http endpoint by default
     asserts:
       - hasDocuments:
           count: 1
-      - equal:
+      - matchRegex:
           path: spec.containers[0].image
-          value: curlimages/curl:8.21.0
-      - equal:
-          path: spec.containers[0].command
-          value: ["curl"]
+          pattern: "^openfga/openfga:"
       - contains:
-          path: spec.containers[0].args
-          content: "http://RELEASE-NAME-openfga:8080/healthz"
+          path: spec.containers[0].command
+          content: healthcheck
+      - contains:
+          path: spec.containers[0].command
+          content: "RELEASE-NAME-openfga:8080"
+      - notContains:
+          path: spec.containers[0].command
+          content: --http-tls-enabled
 
-  - it: probes /healthz over HTTPS with insecure flag when http TLS is enabled
+  - it: enables TLS verification when http TLS is enabled
     set:
       http.tls.enabled: true
-      http.tls.cert: /cert
+      http.tls.cert: /etc/openfga/http.crt
       http.tls.key: /key
     asserts:
       - contains:
-          path: spec.containers[0].args
-          content: "-k"
+          path: spec.containers[0].command
+          content: --http-tls-enabled
       - contains:
-          path: spec.containers[0].args
-          content: "https://RELEASE-NAME-openfga:8080/healthz"
+          path: spec.containers[0].command
+          content: /etc/openfga/http.crt
 
-  - it: honours a custom test image
+  - it: honours a custom http port
     set:
-      testImage.repository: mirror/curl
-      testImage.tag: "9.0.0"
+      http.addr: 0.0.0.0:9090
     asserts:
-      - equal:
-          path: spec.containers[0].image
-          value: mirror/curl:9.0.0
+      - contains:
+          path: spec.containers[0].command
+          content: "RELEASE-NAME-openfga:9090"
 
   - it: renders no test pod when the HTTP server is disabled
     set:

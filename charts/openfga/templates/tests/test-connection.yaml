@@ -14,16 +14,19 @@ spec:
   {{- end }}
   containers:
     - name: health-check
-      image: "{{ .Values.testImage.repository }}:{{ .Values.testImage.tag }}"
-      imagePullPolicy: {{ .Values.testImage.pullPolicy }}
-      command: ["curl"]
-      args:
-        - -fsS
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      command:
+        - /openfga
+        - healthcheck
+        - --target
+        - http
+        - --http-addr
+        - "{{ include "openfga.fullname" . }}:{{ (split ":" .Values.http.addr)._1 }}"
         {{- if .Values.http.tls.enabled }}
-        - -k
-        - "https://{{ include "openfga.fullname" . }}:{{ (split ":" .Values.http.addr)._1 }}/healthz"
-        {{- else }}
-        - "http://{{ include "openfga.fullname" . }}:{{ (split ":" .Values.http.addr)._1 }}/healthz"
+        - --http-tls-enabled
+        - --http-tls-cert
+        - "{{ .Values.http.tls.cert }}"
         {{- end }}
       {{- with .Values.testContainerSpec }}
         {{- toYaml . | nindent 6 }}
