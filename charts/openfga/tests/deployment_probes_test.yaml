@@ -1,0 +1,145 @@
+suite: deployment - health probe handler
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: uses httpGet /healthz over HTTP by default
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 8080
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.scheme
+          value: HTTP
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.scheme
+          value: HTTP
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.grpc
+
+  - it: uses httpGet /healthz over HTTPS when http TLS is enabled
+    set:
+      http.tls.enabled: true
+      http.tls.cert: /cert
+      http.tls.key: /key
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.scheme
+          value: HTTPS
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.scheme
+          value: HTTPS
+
+  - it: uses httpGet over HTTPS even when gRPC TLS is also enabled
+    set:
+      http.tls.enabled: true
+      http.tls.cert: /hcert
+      http.tls.key: /hkey
+      grpc.tls.enabled: true
+      grpc.tls.cert: /gcert
+      grpc.tls.key: /gkey
+      grpc.tls.ca: /gca
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.scheme
+          value: HTTPS
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.grpc
+
+  - it: honours a custom http port in the probe
+    set:
+      http.addr: 0.0.0.0:9090
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 9090
+
+  - it: falls back to native grpc probe for plaintext gRPC when HTTP is disabled
+    set:
+      http.enabled: false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.grpc.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.grpc.port
+          value: 8081
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+
+  - it: honours a custom gRPC port in the native probe
+    set:
+      http.enabled: false
+      grpc.addr: 0.0.0.0:7070
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.grpc.port
+          value: 7070
+
+  - it: uses an openfga healthcheck exec probe for gRPC TLS when HTTP is disabled
+    set:
+      http.enabled: false
+      grpc.tls.enabled: true
+      grpc.tls.cert: /gcert
+      grpc.tls.key: /gkey
+      grpc.tls.ca: /gca
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value:
+            - /openfga
+            - healthcheck
+            - --target
+            - grpc
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.exec.command
+          value:
+            - /openfga
+            - healthcheck
+            - --target
+            - grpc
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.grpc
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+
+  - it: renders custom probes verbatim without invoking the handler (gRPC mTLS, HTTP disabled)
+    set:
+      http.enabled: false
+      grpc.tls.enabled: true
+      grpc.tls.cert: /gcert
+      grpc.tls.key: /gkey
+      grpc.tls.ca: /gca
+      customReadinessProbe:
+        tcpSocket:
+          port: 8081
+      customLivenessProbe:
+        tcpSocket:
+          port: 8081
+      startupProbe.enabled: true
+      customStartupProbe:
+        tcpSocket:
+          port: 8081
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.tcpSocket.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.tcpSocket.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.tcpSocket.port
+          value: 8081
+
+  - it: renders a startup probe via the handler when enabled
+    set:
+      startupProbe.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.scheme
+          value: HTTP

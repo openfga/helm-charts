@@ -55,6 +55,17 @@ initContainer:
 
 ## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes
+##
+## Probe handler selection (newer OpenFGA images no longer bundle grpc_health_probe):
+##   - When http.enabled=true (default): httpGet /healthz (scheme follows http.tls.enabled).
+##     /healthz is a gateway to the gRPC health service, so it reflects overall health.
+##   - When http.enabled=false and gRPC is plaintext: the native grpc: handler.
+##   - When http.enabled=false and grpc.tls.enabled=true: an exec probe running
+##     `openfga healthcheck`. The native grpc probe is plaintext-only and cannot verify
+##     a TLS server, so the in-binary command is used instead; it reads the same
+##     OPENFGA_GRPC_* env vars the container already sets and probes over TLS.
+## Any of these defaults can be overridden with customLivenessProbe / customReadinessProbe /
+## customStartupProbe.
 
 ## @param livenessProbe.enabled Enable liveness probes on OpenFGA containers.
 ## @param livenessProbe.initialDelaySeconds Number of seconds after the container has started before liveness probes are initiated.
@@ -379,6 +390,13 @@ migrate:
   labels: {}
   timeout:
 
+## The `helm test` connection pod runs the OpenFGA image's built-in
+## `openfga healthcheck` command against the /healthz endpoint, so no separate
+## test image is needed. It only renders when http.enabled=true.
+## When TLS is enabled the command verifies the server certificate against the
+## service DNS name, so that name must be present in the certificate's SANs and
+## the certificate file must be available inside the test pod (mount it via
+## testPodSpec / testContainerSpec).
 testPodSpec: {}
 testContainerSpec: {}
 
