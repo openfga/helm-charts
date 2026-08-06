@@ -78,7 +78,7 @@ tests:
           path: spec.template.spec.containers[0].readinessProbe.grpc.port
           value: 7070
 
-  - it: fails rendering for gRPC mTLS when HTTP is disabled and no custom probe is set
+  - it: uses an openfga healthcheck exec probe for gRPC TLS when HTTP is disabled
     set:
       http.enabled: false
       grpc.tls.enabled: true
@@ -86,8 +86,24 @@ tests:
       grpc.tls.key: /gkey
       grpc.tls.ca: /gca
     asserts:
-      - failedTemplate:
-          errorMessage: "grpc.tls.enabled=true with http.enabled=false has no binary-free native probe (the Kubernetes grpc probe cannot present a client certificate). Set a customLivenessProbe / customReadinessProbe / customStartupProbe, or enable the HTTP server."
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value:
+            - /openfga
+            - healthcheck
+            - --target
+            - grpc
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.exec.command
+          value:
+            - /openfga
+            - healthcheck
+            - --target
+            - grpc
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.grpc
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
 
   - it: renders custom probes verbatim without invoking the handler (gRPC mTLS, HTTP disabled)
     set:
