@@ -1,0 +1,46 @@
+suite: helm test connection hook
+templates:
+  - templates/tests/test-connection.yaml
+tests:
+  - it: probes /healthz over HTTP by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.containers[0].image
+          value: curlimages/curl:8.21.0
+      - equal:
+          path: spec.containers[0].command
+          value: ["curl"]
+      - contains:
+          path: spec.containers[0].args
+          content: "http://RELEASE-NAME-openfga:8080/healthz"
+
+  - it: probes /healthz over HTTPS with insecure flag when http TLS is enabled
+    set:
+      http.tls.enabled: true
+      http.tls.cert: /cert
+      http.tls.key: /key
+    asserts:
+      - contains:
+          path: spec.containers[0].args
+          content: "-k"
+      - contains:
+          path: spec.containers[0].args
+          content: "https://RELEASE-NAME-openfga:8080/healthz"
+
+  - it: honours a custom test image
+    set:
+      testImage.repository: mirror/curl
+      testImage.tag: "9.0.0"
+    asserts:
+      - equal:
+          path: spec.containers[0].image
+          value: mirror/curl:9.0.0
+
+  - it: renders no test pod when the HTTP server is disabled
+    set:
+      http.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
