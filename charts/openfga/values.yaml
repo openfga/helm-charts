@@ -19,10 +19,9 @@ commonLabels: {}
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account.
-  # When migrations use a postgres/mysql external URI from a Secret, migrationType=job,
-  # applyMigrations=true, and both bundled database subcharts are disabled, pre-install hook
-  # annotations (weight -10) are merged in so the account exists before the migration Job runs.
+  # Annotations to add to the workload service account.
+  # Eligible pre-install migration Jobs use a separate hook-managed service account that inherits
+  # these annotations for workload identity without changing the workload account's lifecycle.
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
@@ -378,11 +377,11 @@ migrate:
   # Extra annotations for the migration Job (datastore.migrationType=job). The chart sets the Helm
   # hooks automatically: legacy post-install/post-upgrade/post-rollback/post-delete (weight -5), or
   # pre-install/pre-upgrade when the datastore URI comes from an external secret (datastore.uriSecret,
-  # or datastore.existingSecret + secretKeys.uriKey; bundled subcharts disabled) and the
-  # ServiceAccount is promoted to match — post-* hooks otherwise deadlock --wait/GitOps installs and
-  # stall uninstall via the wait-for-migration init container. For an in-release database use
-  # datastore.migrationType=initContainer. Any hook key set here overrides the chart default; keys
-  # you omit keep the default.
+  # or datastore.existingSecret + secretKeys.uriKey; bundled subcharts disabled). Pre-hooks use a
+  # dedicated hook-managed migration ServiceAccount — post-* hooks otherwise deadlock --wait/GitOps
+  # installs and stall uninstall via the wait-for-migration init container. For an in-release
+  # database use datastore.migrationType=initContainer. Any hook key set here overrides the chart
+  # default; keys you omit keep the default.
   annotations: {}
   labels: {}
   timeout:
