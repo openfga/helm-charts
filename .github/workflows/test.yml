@@ -59,6 +59,13 @@ jobs:
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@v1.14.0
 
+      - name: Build and load operator image into kind
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          version=$(helm show chart charts/openfga-operator | awk '$1 == "appVersion:" { print $2 }')
+          docker build -t ghcr.io/openfga/openfga-operator:${version} operator/
+          kind load docker-image ghcr.io/openfga/openfga-operator:${version} --name chart-testing
+
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
         run: ct install --target-branch ${{ github.event.repository.default_branch }}
