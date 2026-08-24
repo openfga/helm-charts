@@ -7,9 +7,9 @@
 
 ## Context
 
-The OpenFGA Helm chart currently handles all lifecycle concerns — deployment, configuration, database migrations, and secret management — through Helm templates and hooks. This approach works for simple installations but breaks down in several important scenarios:
+The OpenFGA Helm chart's legacy path handles lifecycle concerns — deployment, configuration, database migrations, and secret management — through Helm templates and hooks. This approach works for simple installations but breaks down in several important scenarios:
 
-1. **Database migrations rely on Helm hooks**, which are incompatible with GitOps tools (ArgoCD, FluxCD) and Helm's own `--wait` flag. This is the single biggest pain point for users, accounting for 6 open issues (#211, #107, #120, #100, #95, #126).
+1. **Job-based database migrations rely on Helm hooks**, which create GitOps lifecycle and Helm `--wait` problems. The legacy path now uses pre-install/pre-upgrade hooks for eligible external-secret datastores and post-* hooks otherwise, but both remain deploy-time hook orchestration. This is the single biggest pain point for users, accounting for 6 open issues (#211, #107, #120, #100, #95, #126).
 
 2. **Store provisioning, authorization model updates, and tuple management** are runtime operations that happen through the OpenFGA API. There is no declarative, GitOps-native way to manage these. Teams must use imperative scripts, CI pipelines, or manual API calls to set up stores and push models after deployment.
 
@@ -53,7 +53,7 @@ The OpenFGA Helm chart currently handles all lifecycle concerns — deployment, 
 
 We will build an **OpenFGA Kubernetes Operator** that handles:
 
-1. **Database migration orchestration** (Stage 1) — replacing Helm hooks, the `k8s-wait-for` init container, and shared ServiceAccount with operator-managed migration Jobs and deployment readiness gating.
+1. **Database migration orchestration** (Stage 1) — replacing Helm hooks, the `k8s-wait-for` init container, and shared ServiceAccount with operator-managed migration Jobs, fresh-install replica gating, and OpenFGA's application readiness check during upgrades.
 
 2. **Declarative store lifecycle management** (Stages 2-4) — exposing `FGAStore`, `FGAModel`, and `FGATuples` CRDs for GitOps-native authorization configuration.
 
@@ -66,7 +66,7 @@ Development will follow a staged approach to deliver value incrementally:
 
 | Stage | Scope | Outcome |
 |-------|-------|---------|
-| 1 | Operator scaffolding + migration handling | All 6 migration issues resolved |
+| 1 | Operator scaffolding + migration handling | All 6 migration issues resolved when the operator path is enabled |
 | 2 | `FGAStore` CRD | Declarative store provisioning |
 | 3 | `FGAModel` CRD | Declarative authorization model management |
 | 4 | `FGATuples` CRD | Declarative tuple management |
@@ -80,8 +80,8 @@ Stage 1 has shipped on the `feat/operator-migration` branch. Stages 2-4 are plan
 - Operator Go project under `/operator/`, built with `controller-runtime` and kubebuilder scaffolding
 - Operator packaged as a Helm subchart (`charts/openfga-operator/`) and wired into the main chart via a `condition: operator.enabled` dependency
 - `operator.enabled` values toggle (default `false`) that gates all operator-managed behavior
-- Migration reconciler (`migration_controller.go`) that orchestrates migration Jobs and gates Deployment readiness when the operator is enabled
-- Separate migration ServiceAccount with IAM-annotation support (`openfga.migrationServiceAccountName` helper), created when the operator is enabled
+- Migration reconciler (`migration_controller.go`) that holds fresh installs at zero replicas until migration succeeds; upgrades preserve the live replica count and rely on OpenFGA's schema-aware readiness endpoint through the configured readiness probe
+- Separate migration ServiceAccount with IAM-annotation support (`openfga.migrationServiceAccountName` helper); the chart creates it only when `migration.serviceAccount.create: true`, while `create: false` requires a pre-existing `migration.serviceAccount.name`
 
 ### Deferred to later stages
 
@@ -90,7 +90,7 @@ Stage 1 has shipped on the `feat/operator-migration` branch. Stages 2-4 are plan
 
 ### Backward-compatibility path (deprecated)
 
-When `operator.enabled: false`, the chart still renders the legacy migration path: the Helm-hook migration Job, the `groundnuty/k8s-wait-for` init container, and the job-status RBAC. **This path is deprecated and will be removed in a future release** once the operator is the default and users have had time to migrate. It remains only to preserve backward compatibility during the transition.
+When `operator.enabled: false`, the chart still renders the legacy migration path: the Helm-hook migration Job, the `groundnuty/k8s-wait-for` init container, and the job-status RBAC. Eligible external-secret datastores use pre-install/pre-upgrade hooks; other Job-mode configurations keep the post-* hooks. **This path is deprecated and will be removed in a future release** once the operator is the default and users have had time to migrate. It remains only to preserve backward compatibility during the transition.
 
 ## Consequences
 
@@ -99,7 +99,7 @@ When `operator.enabled: false`, the chart still renders the legacy migration pat
 - **Resolves all 6 migration issues** (#211, #107, #120, #100, #95, #126) and related dependency issues (#132, #144) on the operator-enabled path
 - **Removes `k8s-wait-for` from the operator-enabled path** — the unmaintained, CVE-carrying image is no longer used when `operator.enabled: true`, and will be removed from the chart entirely once the legacy path is retired
 - **Enables GitOps-native authorization management** (planned, Stages 2-4) — stores, models, and tuples will become declarative Kubernetes resources that ArgoCD/FluxCD can sync
-- **Enforces least-privilege** — separate ServiceAccounts for migration (DDL) and runtime (CRUD) on the operator-enabled path
+- **Enables least-privilege** — the operator-enabled path can use a chart-created or pre-existing migration ServiceAccount for DDL permissions, separate from the runtime account's CRUD permissions
 - **Path to simplifying the Helm chart** — the migration Job template, init container logic, job-status RBAC, and hook annotations are conditionalized behind `operator.enabled: false` and scheduled for removal when the legacy path is retired
 - **Follows Kubernetes ecosystem conventions** — operators are the standard pattern for managing stateful application lifecycle
 
