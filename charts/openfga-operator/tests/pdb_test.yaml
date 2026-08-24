@@ -1,0 +1,39 @@
+suite: pod disruption budget
+templates:
+  - templates/pdb.yaml
+tests:
+  - it: renders an explicit zero minAvailable
+    set:
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 0
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 0
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: renders an explicit zero maxUnavailable when minAvailable is unset
+    set:
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: ""
+        maxUnavailable: 0
+    asserts:
+      - notExists:
+          path: spec.minAvailable
+      - equal:
+          path: spec.maxUnavailable
+          value: 0
+
+  - it: defaults maxUnavailable when minAvailable is unset
+    set:
+      podDisruptionBudget:
+        enabled: true
+    asserts:
+      - notExists:
+          path: spec.minAvailable
+      - equal:
+          path: spec.maxUnavailable
+          value: 1

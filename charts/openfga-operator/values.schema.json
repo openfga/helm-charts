@@ -53,7 +53,10 @@
     "podAnnotations": { "type": "object" },
     "podSecurityContext": { "type": "object" },
     "securityContext": { "type": "object" },
-    "watchNamespace": { "type": "string" },
+    "watchNamespace": {
+      "type": "string",
+      "description": "Namespace to watch for OpenFGA Deployments. The chart grants RBAC only in the operator namespace; users must provide equivalent RBAC when watching a different namespace."
+    },
     "leaderElection": {
       "type": "object",
       "properties": {
