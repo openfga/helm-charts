@@ -75,6 +75,13 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Create the name of the dedicated migration service account.
+*/}}
+{{- define "openfga.migrationServiceAccountName" -}}
+{{- printf "%s-migration" (include "openfga.fullname" . | trunc 53 | trimSuffix "-") }}
+{{- end }}
+
+{{/*
 Return true if a secret object should be created
 */}}
 {{- define "openfga.createSecret" -}}
