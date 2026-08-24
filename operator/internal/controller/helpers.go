@@ -19,9 +19,11 @@ const (
 	// Labels used to discover OpenFGA Deployments.
 	LabelPartOf    = "app.kubernetes.io/part-of"
 	LabelComponent = "app.kubernetes.io/component"
+	LabelManagedBy = "app.kubernetes.io/managed-by"
 
 	LabelPartOfValue    = "openfga"
 	LabelComponentValue = "authorization-controller"
+	LabelManagedByValue = "openfga-operator"
 
 	// Annotations set on the Deployment by the Helm chart / operator.
 	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
@@ -120,10 +122,10 @@ func buildMigrationJob(
 			Name:      migrationJobName(deployment.Name),
 			Namespace: deployment.Namespace,
 			Labels: map[string]string{
-				LabelPartOf:    LabelPartOfValue,
-				LabelComponent: "migration",
-				"app.kubernetes.io/managed-by": "openfga-operator",
-				"app.kubernetes.io/version":    labelVersion,
+				LabelPartOf:                 LabelPartOfValue,
+				LabelComponent:              "migration",
+				LabelManagedBy:              LabelManagedByValue,
+				"app.kubernetes.io/version": labelVersion,
 			},
 			Annotations: map[string]string{
 				"openfga.dev/desired-version": desiredVersion,
@@ -194,7 +196,7 @@ func updateMigrationStatus(
 			Labels: map[string]string{
 				LabelPartOf:    LabelPartOfValue,
 				LabelComponent: "migration",
-				"app.kubernetes.io/managed-by": "openfga-operator",
+				LabelManagedBy: LabelManagedByValue,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -228,6 +230,15 @@ func updateMigrationStatus(
 		return nil
 	}
 
+	if !isOperatorManaged(existing) {
+		return fmt.Errorf(
+			"migration status ConfigMap %s/%s exists but is not managed by %s",
+			existing.Namespace,
+			existing.Name,
+			LabelManagedByValue,
+		)
+	}
+
 	// Update existing ConfigMap (including OwnerReferences in case the Deployment
 	// was deleted and recreated with a new UID).
 	existing.Data = cm.Data
@@ -237,6 +248,24 @@ func updateMigrationStatus(
 		return fmt.Errorf("updating migration status ConfigMap: %w", updateErr)
 	}
 	return nil
+}
+
+func deleteMigrationJob(ctx context.Context, c client.Client, job *batchv1.Job) error {
+	propagation := metav1.DeletePropagationBackground
+	preconditions := &metav1.Preconditions{}
+	if job.UID != "" {
+		uid := job.UID
+		preconditions.UID = &uid
+	}
+	if job.ResourceVersion != "" {
+		resourceVersion := job.ResourceVersion
+		preconditions.ResourceVersion = &resourceVersion
+	}
+
+	return c.Delete(ctx, job, &client.DeleteOptions{
+		PropagationPolicy: &propagation,
+		Preconditions:     preconditions,
+	})
 }
 
 // ensureDeploymentScaled ensures the Deployment is scaled to the desired replica count.
@@ -272,3 +301,18 @@ func ensureDeploymentScaled(ctx context.Context, c client.Client, deployment *ap
 	return false, nil
 }
 
+func isOperatorManaged(object metav1.Object) bool {
+	return object.GetLabels()[LabelManagedBy] == LabelManagedByValue
+}
+
+func isOwnedByDeployment(object metav1.Object, deployment *appsv1.Deployment) bool {
+	for _, owner := range object.GetOwnerReferences() {
+		if owner.APIVersion == "apps/v1" &&
+			owner.Kind == "Deployment" &&
+			owner.Name == deployment.Name &&
+			owner.UID == deployment.UID {
+			return true
+		}
+	}
+	return false
+}
