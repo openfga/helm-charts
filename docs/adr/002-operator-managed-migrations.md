@@ -16,15 +16,15 @@ Seven files are involved:
 
 | File | Role |
 |------|------|
-| `templates/job.yaml` | Migration Job with Helm hook annotations |
-| `templates/deployment.yaml` | OpenFGA Deployment + `wait-for-migration` init container |
-| `templates/serviceaccount.yaml` | Shared ServiceAccount (migration + runtime) |
-| `templates/rbac.yaml` | Role + RoleBinding so init container can poll Job status |
-| `templates/_helpers.tpl` | Datastore environment variable helpers |
-| `values.yaml` | `datastore.*`, `migrate.*`, `initContainer.*` configuration |
-| `Chart.yaml` | `bitnami/common` dependency for migration sidecars |
+| `charts/openfga/templates/job.yaml` | Migration Job with Helm hook annotations |
+| `charts/openfga/templates/deployment.yaml` | OpenFGA Deployment + `wait-for-migration` init container |
+| `charts/openfga/templates/serviceaccount.yaml` | Shared ServiceAccount (migration + runtime) |
+| `charts/openfga/templates/rbac.yaml` | Role + RoleBinding so init container can poll Job status |
+| `charts/openfga/templates/_helpers.tpl` | Datastore environment variable helpers |
+| `charts/openfga/values.yaml` | `datastore.*`, `migrate.*`, `initContainer.*` configuration |
+| `charts/openfga/Chart.yaml` | `bitnami/common` dependency for migration sidecars |
 
-**The migration Job** (`templates/job.yaml`) is annotated as a Helm hook. For static credentials, chart-created Secrets, and in-release databases, the historical post-hook default is:
+**The migration Job** (`charts/openfga/templates/job.yaml`) is annotated as a Helm hook. For static credentials, chart-created Secrets, and in-release databases, the historical post-hook default is:
 
 ```yaml
 annotations:
@@ -57,7 +57,7 @@ It polls the Kubernetes API for the release-derived `<fullname>-migrate` Job unt
 | **#120** | Helm `--wait` | In the post-hook case, Helm waits for the Deployment to be ready before running post-install hooks. The Deployment is never ready because the init container waits for the hook Job. The Job never runs because Helm is waiting. The external-secret pre-hook exception avoids this specific cycle when its prerequisites are met. |
 | **#100** | FluxCD | FluxCD waits for all resources by default. The `hook-delete-policy: before-hook-creation` removes the completed Job before FluxCD can confirm the Deployment is healthy. |
 | **#95** | AWS IRSA | Migration and runtime share a ServiceAccount. With IAM-based DB auth, the runtime gets DDL permissions it doesn't need (CREATE TABLE, ALTER TABLE). |
-| **#126** | All | The `k8s-wait-for` image is configured in two separate places in `values.yaml`, leading to inconsistency. Related: #132 (image unmaintained, has CVEs) and #144 (pinned by mutable tag). |
+| **#126** | All | The `k8s-wait-for` image is configured in two separate places in `charts/openfga/values.yaml`, leading to inconsistency. Related: #132 (image unmaintained, has CVEs) and #144 (pinned by mutable tag). |
 
 ### Why Helm Hooks Are Fundamentally Wrong for This
 
@@ -202,23 +202,23 @@ Nothing is deleted outright — every change is gated on `operator.enabled` so t
 
 | File/Section | Behavior when operator is enabled |
 |--------------|-----------------------------------|
-| `templates/job.yaml` | Skipped — operator creates migration Jobs dynamically |
-| `templates/rbac.yaml` | Skipped — no init container needs to poll Job status |
-| `values.yaml`: `initContainer.*` | Unused — `k8s-wait-for` not deployed |
-| `values.yaml`: `datastore.applyMigrations`, `datastore.migrationType`, `datastore.waitForMigrations` | Ignored in operator mode — use `migration.enabled: false` when migrations are managed externally |
-| `values.yaml`: `migrate.annotations` | Unused — no Helm hooks |
-| `values.yaml`: `migrate.extraVolumes`, `migrate.extraVolumeMounts` | Ignored — the operator inherits the main Deployment's volumes and container mounts; use top-level `extraVolumes` and `extraVolumeMounts` |
+| `charts/openfga/templates/job.yaml` | Skipped — operator creates migration Jobs dynamically |
+| `charts/openfga/templates/rbac.yaml` | Skipped — no init container needs to poll Job status |
+| `charts/openfga/values.yaml`: `initContainer.*` | Unused — `k8s-wait-for` not deployed |
+| `charts/openfga/values.yaml`: `datastore.applyMigrations`, `datastore.migrationType`, `datastore.waitForMigrations` | Ignored in operator mode — use `migration.enabled: false` when migrations are managed externally |
+| `charts/openfga/values.yaml`: `migrate.annotations` | Unused — no Helm hooks |
+| `charts/openfga/values.yaml`: `migrate.extraVolumes`, `migrate.extraVolumeMounts` | Ignored — the operator inherits the main Deployment's volumes and container mounts; use top-level `extraVolumes` and `extraVolumeMounts` |
 | Chart-generated Deployment migration init containers | Skipped — fresh installs use replica gating and upgrades rely on application readiness; user-supplied `extraInitContainers` are preserved |
 
 **Added (active only when `operator.enabled: true`):**
 
 | File/Section | Purpose |
 |--------------|---------|
-| `values.yaml`: `operator.enabled` | Toggle the operator subchart |
-| `values.yaml`: `migration.enabled` | Toggle operator-managed migrations; disable it for externally managed migrations |
-| `values.yaml`: `migration.serviceAccount.*` | Create the dedicated migration ServiceAccount or name a pre-existing one |
-| `values.yaml`: `openfga-operator.migrationJob.*` | Configure `backoffLimit`, `activeDeadlineSeconds`, and `ttlSecondsAfterFinished` in the dependent operator chart |
-| `templates/serviceaccount.yaml`: second SA | Migration ServiceAccount, rendered only when `migration.serviceAccount.create: true` |
+| `charts/openfga/values.yaml`: `operator.enabled` | Toggle the operator subchart |
+| `charts/openfga/values.yaml`: `migration.enabled` | Toggle operator-managed migrations; disable it for externally managed migrations |
+| `charts/openfga/values.yaml`: `migration.serviceAccount.*` | Create the dedicated migration ServiceAccount or name a pre-existing one |
+| `charts/openfga/values.yaml`: `openfga-operator.migrationJob.*` | Configure `backoffLimit`, `activeDeadlineSeconds`, and `ttlSecondsAfterFinished` in the dependent operator chart |
+| `charts/openfga/templates/serviceaccount.yaml`: second SA | Migration ServiceAccount, rendered only when `migration.serviceAccount.create: true` |
 | `charts/openfga-operator/` | Operator subchart (conditional dependency) |
 
 Users on `operator.enabled: false` (the default) retain the non-operator migration flow, so gradual adoption is possible with no forced migration. The current legacy flow is not byte-for-byte identical to older chart releases: it now selects pre-install/pre-upgrade hooks and promotes the ServiceAccount for eligible external-secret datastores, while other Job-mode configurations retain the post-hook behavior.
