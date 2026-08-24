@@ -1,4 +1,5 @@
-{{- if .Values.podDisruptionBudget.enabled -}}
+{{- $pdb := .Values.podDisruptionBudget | default dict -}}
+{{- if (get $pdb "enabled") -}}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -7,10 +8,16 @@ metadata:
   labels:
     {{- include "openfga-operator.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.podDisruptionBudget.minAvailable }}
-  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- $minAvailable := get $pdb "minAvailable" }}
+  {{- if and (hasKey $pdb "minAvailable") (ne $minAvailable nil) (ne (toString $minAvailable) "") }}
+  minAvailable: {{ $minAvailable }}
   {{- else }}
-  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | default 1 }}
+  {{- $maxUnavailable := get $pdb "maxUnavailable" }}
+  {{- if and (hasKey $pdb "maxUnavailable") (ne $maxUnavailable nil) (ne (toString $maxUnavailable) "") }}
+  maxUnavailable: {{ $maxUnavailable }}
+  {{- else }}
+  maxUnavailable: 1
+  {{- end }}
   {{- end }}
   selector:
     matchLabels:
