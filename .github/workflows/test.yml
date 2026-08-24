@@ -62,9 +62,9 @@ jobs:
       - name: Build and load operator image into kind
         if: steps.list-changed.outputs.changed == 'true'
         run: |
-          version=$(grep '^appVersion:' charts/openfga-operator/Chart.yaml | awk '{print $2}' | tr -d '"')
-          docker build -t "ghcr.io/openfga/openfga-operator:${version}" operator/
-          kind load docker-image "ghcr.io/openfga/openfga-operator:${version}" --name chart-testing
+          version=$(helm show chart charts/openfga-operator | awk '$1 == "appVersion:" { print $2 }')
+          docker build -t ghcr.io/openfga/openfga-operator:${version} operator/
+          kind load docker-image ghcr.io/openfga/openfga-operator:${version} --name chart-testing
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
