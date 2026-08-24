@@ -171,7 +171,16 @@ migration:
 
 For PostgreSQL and MySQL, a new Deployment starts with zero replicas. The operator creates a regular migration Job and scales the Deployment to `replicaCount` after the Job succeeds. Upgrades preserve the live replica count while OpenFGA's readiness checks prevent an incompatible server from becoming ready. The memory datastore starts with one replica immediately because it does not require migrations.
 
-Operator mode disables the chart's Helm migration Job, migration init containers, and legacy Job-reader RBAC. Operator-managed migrations are incompatible with `autoscaling.enabled`. By default, migration Jobs use a dedicated `{release}-openfga-migration` ServiceAccount; configure `migration.serviceAccount.name` to use a pre-existing account, or add cloud IAM annotations through `migration.serviceAccount.annotations`.
+Operator mode disables the chart's Helm migration Job, migration init containers, and legacy Job-reader RBAC. Operator-managed migrations are incompatible with `autoscaling.enabled`. By default, migration Jobs use a dedicated `{release}-openfga-migration` ServiceAccount. Add cloud IAM annotations through `migration.serviceAccount.annotations`.
+
+To use a pre-existing migration ServiceAccount, disable creation and set its name:
+
+```yaml
+migration:
+  serviceAccount:
+    create: false
+    name: existing-openfga-migration
+```
 
 Set `migration.enabled: false` when migrations are managed outside the chart. Values under `openfga-operator` are passed to the operator subchart.
 

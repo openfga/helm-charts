@@ -20,10 +20,16 @@ const (
 	LabelPartOf    = "app.kubernetes.io/part-of"
 	LabelComponent = "app.kubernetes.io/component"
 	LabelManagedBy = "app.kubernetes.io/managed-by"
+	LabelName      = "app.kubernetes.io/name"
+	LabelInstance  = "app.kubernetes.io/instance"
+	LabelHelmChart = "helm.sh/chart"
 
 	LabelPartOfValue    = "openfga"
 	LabelComponentValue = "authorization-controller"
 	LabelManagedByValue = "openfga-operator"
+	LabelManagedByHelm  = "Helm"
+
+	AnnotationHelmHook = "helm.sh/hook"
 
 	// Annotations set on the Deployment by the Helm chart / operator.
 	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
@@ -303,6 +309,39 @@ func ensureDeploymentScaled(ctx context.Context, c client.Client, deployment *ap
 
 func isOperatorManaged(object metav1.Object) bool {
 	return object.GetLabels()[LabelManagedBy] == LabelManagedByValue
+}
+
+func isLegacyHelmMigrationHook(job *batchv1.Job, deployment *appsv1.Deployment) bool {
+	if job.Name != migrationJobName(deployment.Name) || job.Namespace != deployment.Namespace {
+		return false
+	}
+
+	jobLabels := job.GetLabels()
+	deploymentLabels := deployment.GetLabels()
+	if jobLabels[LabelManagedBy] != LabelManagedByHelm {
+		return false
+	}
+
+	releaseInstance := deploymentLabels[LabelInstance]
+	if releaseInstance == "" || jobLabels[LabelInstance] != releaseInstance {
+		return false
+	}
+
+	for _, identityLabel := range []string{LabelName, LabelPartOf, LabelComponent, LabelHelmChart} {
+		if expected := deploymentLabels[identityLabel]; expected != "" && jobLabels[identityLabel] != expected {
+			return false
+		}
+	}
+
+	for _, event := range strings.Split(job.GetAnnotations()[AnnotationHelmHook], ",") {
+		switch strings.TrimSpace(event) {
+		case "pre-install", "pre-upgrade", "post-install", "post-upgrade", "post-rollback", "post-delete":
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func isOwnedByDeployment(object metav1.Object, deployment *appsv1.Deployment) bool {
