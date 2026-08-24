@@ -1,0 +1,23 @@
+# Test values with NO postgres — simulates database unavailable
+operator:
+  enabled: true
+
+openfga-operator:
+  image:
+    repository: openfga/openfga-operator
+    tag: dev
+    pullPolicy: Never
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+datastore:
+  engine: postgres
+  # Points to a service that doesn't exist
+  uri: "postgres://openfga:changeme@postgres-does-not-exist:5432/openfga?sslmode=disable"
+
+migration:
+  enabled: true
+  serviceAccount:
+    create: true
