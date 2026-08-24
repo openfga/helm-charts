@@ -1,6 +1,14 @@
 suite: operator mode
 templates:
   - templates/deployment.yaml
+kubernetesProvider:
+  scheme:
+    "apps/v1/Deployment":
+      gvr:
+        group: apps
+        version: v1
+        resource: deployments
+      namespaced: true
 tests:
   # --- Deployment annotations ---
   - it: should set operator annotations when operator and migration are enabled
@@ -88,6 +96,27 @@ tests:
       - equal:
           path: spec.replicas
           value: 1
+
+  - it: should fall back to 0 when an existing Deployment omits replicas
+    release:
+      namespace: default
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: RELEASE-NAME-openfga
+            namespace: default
+          spec: {}
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      replicaCount: 3
+      datastore.engine: postgres
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 0
 
   - it: should set replicas to replicaCount when operator is disabled
     set:
