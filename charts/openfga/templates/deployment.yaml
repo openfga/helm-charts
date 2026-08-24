@@ -27,7 +27,7 @@ spec:
   {{- /* On upgrade: preserve live replicas (zero-downtime). On fresh install: lookup returns empty, fall back to 0.
          OpenFGA gates readiness on MinimumSupportedDatastoreSchemaRevision — see ADR-002. */ -}}
   {{- $existing := (lookup "apps/v1" "Deployment" (include "openfga.namespace" .) (include "openfga.fullname" .)) }}
-  {{- if and $existing (hasKey ($existing) "spec") }}
+  {{- if and $existing (hasKey ($existing.spec | default dict) "replicas") }}
   replicas: {{ $existing.spec.replicas }}
   {{- else }}
   replicas: {{ ternary 1 0 (eq .Values.datastore.engine "memory") }}

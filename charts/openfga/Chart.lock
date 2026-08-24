@@ -12,4 +12,4 @@ dependencies:
   repository: file://../openfga-operator
   version: 0.1.0
 digest: sha256:d502dc105790995a4368a049c0f593820d08f2f82dc9c9a70480a343c7affe8b
-generated: "2026-04-10T11:45:16.638975-04:00"
+generated: "2026-08-24T14:35:47.3389+05:30"

@@ -1,4 +1,4 @@
-{{- if and .Values.operator.enabled .Values.migration.enabled }}
+{{- if and .Values.operator.enabled .Values.migration.enabled (has .Values.datastore.engine (list "postgres" "mysql")) }}
 NOTE: operator-managed migration is enabled. The OpenFGA Deployment starts at
 0 replicas and is scaled up by the openfga-operator only after the migration
 Job completes successfully.

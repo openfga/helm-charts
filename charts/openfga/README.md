@@ -155,6 +155,28 @@ datastore:
 
 When `datastore.engine` is `postgres` or `mysql` and `datastore.applyMigrations` is `true` (the default), the chart applies the OpenFGA schema before the server starts. `datastore.migrationType` selects how:
 
+#### Operator-managed migrations
+
+Set `operator.enabled: true` to install the `openfga-operator` subchart and have it coordinate migrations:
+
+```yaml
+operator:
+  enabled: true
+
+migration:
+  enabled: true
+  serviceAccount:
+    create: true
+```
+
+For PostgreSQL and MySQL, a new Deployment starts with zero replicas. The operator creates a regular migration Job and scales the Deployment to `replicaCount` after the Job succeeds. Upgrades preserve the live replica count while OpenFGA's readiness checks prevent an incompatible server from becoming ready. The memory datastore starts with one replica immediately because it does not require migrations.
+
+Operator mode disables the chart's Helm migration Job, migration init containers, and legacy Job-reader RBAC. Operator-managed migrations are incompatible with `autoscaling.enabled`. By default, migration Jobs use a dedicated `{release}-openfga-migration` ServiceAccount; configure `migration.serviceAccount.name` to use a pre-existing account, or add cloud IAM annotations through `migration.serviceAccount.annotations`.
+
+Set `migration.enabled: false` when migrations are managed outside the chart. Values under `openfga-operator` are passed to the operator subchart.
+
+#### Helm-managed migrations
+
 - **`job`** (default) — migrations run in a Kubernetes Job. With `datastore.waitForMigrations: true` the Deployment also gets a `wait-for-migration` init container that gates the server on the Job. The Job's Helm hooks are chosen automatically:
   - **External datastore** — when the datastore URI comes from an external secret (`datastore.uriSecret`, or `datastore.existingSecret` together with `datastore.secretKeys.uriKey`) and the bundled `postgresql`/`mysql` subcharts are disabled, the Job runs as a `pre-install`/`pre-upgrade` hook (and the ServiceAccount is promoted to match, at an earlier weight) so migrations finish before the Deployment exists. Helm removes the promoted ServiceAccount after all hooks for the event succeed. This avoids the deadlock and uninstall stall below. The database must be reachable independently of the release. A static `datastore.uri` does not qualify, since its chart-managed Secret is not created until after pre-install hooks run.
   - **Otherwise (legacy default)** — the Job keeps the `post-install`/`post-upgrade`/`post-rollback`/`post-delete` hooks. This deadlocks readiness-waiting installs (`--wait`, `--atomic`, Argo CD, Flux) — the Deployment blocks on a Job Helm only creates after the wait — and `post-delete` stalls `helm uninstall`. Prefer an external datastore or `initContainer`.
