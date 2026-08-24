@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,8 +11,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
@@ -81,6 +84,28 @@ func newReconciler(objects ...runtime.Object) *MigrationReconciler {
 		BackoffLimit:            DefaultBackoffLimit,
 		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
 		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+}
+
+func newLegacyHelmMigrationJob(deployment *appsv1.Deployment, hook string) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            migrationJobName(deployment.Name),
+			Namespace:       deployment.Namespace,
+			UID:             "legacy-job-uid",
+			ResourceVersion: "7",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByHelm,
+				LabelInstance:  deployment.Labels[LabelInstance],
+				LabelName:      deployment.Labels[LabelName],
+				LabelPartOf:    deployment.Labels[LabelPartOf],
+				LabelComponent: deployment.Labels[LabelComponent],
+				LabelHelmChart: deployment.Labels[LabelHelmChart],
+			},
+			Annotations: map[string]string{
+				AnnotationHelmHook: hook,
+			},
+		},
 	}
 }
 
@@ -958,6 +983,132 @@ func TestReconcile_ExistingJob_RequiresManagedLabelAndDeploymentOwner(t *testing
 				t.Fatal("expected trusted stale migration job to be deleted")
 			}
 		})
+	}
+}
+
+func TestReconcile_MatchingLegacyHelmMigrationHook_DeletedThenReplaced(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+	dep.Labels[LabelInstance] = "authorization"
+	dep.Labels[LabelName] = "openfga"
+	dep.Labels[LabelHelmChart] = "openfga-0.3.12"
+	legacyJob := newLegacyHelmMigrationJob(dep, "post-install,post-upgrade")
+	r := newReconciler(dep, legacyJob)
+	request := ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace},
+	}
+
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error adopting legacy Job: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue after deleting legacy Job")
+	}
+	job := &batchv1.Job{}
+	jobKey := types.NamespacedName{Name: legacyJob.Name, Namespace: legacyJob.Namespace}
+	if getErr := r.Get(context.Background(), jobKey, job); getErr == nil {
+		t.Fatal("expected matching legacy Helm migration Job to be deleted")
+	}
+
+	result, err = r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error replacing legacy Job: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue after creating operator Job")
+	}
+	if getErr := r.Get(context.Background(), jobKey, job); getErr != nil {
+		t.Fatalf("expected operator migration Job to replace legacy Job: %v", getErr)
+	}
+	if !isOperatorManaged(job) || !isOwnedByDeployment(job, dep) {
+		t.Fatal("expected replacement Job to be operator-managed and owned by the Deployment")
+	}
+}
+
+func TestReconcile_LegacyHelmMigrationHook_MismatchedInstanceRejected(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+	dep.Labels[LabelInstance] = "authorization"
+	legacyJob := newLegacyHelmMigrationJob(dep, "pre-upgrade")
+	legacyJob.Labels[LabelInstance] = "another-release"
+	r := newReconciler(dep, legacyJob)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace},
+	})
+	if err == nil {
+		t.Fatal("expected another release's Helm Job to be rejected")
+	}
+	if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(legacyJob), &batchv1.Job{}); getErr != nil {
+		t.Fatalf("expected mismatched Helm Job to remain untouched: %v", getErr)
+	}
+}
+
+func TestReconcile_LegacyHelmMigrationHook_MissingOrInvalidHookRejected(t *testing.T) {
+	for _, hook := range []string{"", "test", "backup,cleanup", "pre-upgrade,test"} {
+		t.Run(fmt.Sprintf("hook_%q", hook), func(t *testing.T) {
+			dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+			dep.Labels[LabelInstance] = "authorization"
+			legacyJob := newLegacyHelmMigrationJob(dep, hook)
+			r := newReconciler(dep, legacyJob)
+
+			_, err := r.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace},
+			})
+			if err == nil {
+				t.Fatal("expected Helm Job without an expected migration hook event to be rejected")
+			}
+			if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(legacyJob), &batchv1.Job{}); getErr != nil {
+				t.Fatalf("expected invalid Helm Job to remain untouched: %v", getErr)
+			}
+		})
+	}
+}
+
+func TestReconcile_LegacyHelmMigrationHook_DeleteConflictRequeues(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+	dep.Labels[LabelInstance] = "authorization"
+	legacyJob := newLegacyHelmMigrationJob(dep, "post-upgrade")
+	scheme := newScheme()
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, legacyJob).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(_ context.Context, _ client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+				deleteOptions := (&client.DeleteOptions{}).ApplyOptions(opts)
+				if deleteOptions.Preconditions == nil ||
+					deleteOptions.Preconditions.UID == nil ||
+					*deleteOptions.Preconditions.UID != legacyJob.UID ||
+					deleteOptions.Preconditions.ResourceVersion == nil ||
+					*deleteOptions.Preconditions.ResourceVersion != legacyJob.ResourceVersion {
+					t.Fatal("expected legacy Job deletion to use UID and resource-version preconditions")
+				}
+				return apierrors.NewConflict(
+					schema.GroupResource{Group: "batch", Resource: "jobs"},
+					obj.GetName(),
+					errors.New("resource version changed"),
+				)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace},
+	})
+	if err != nil {
+		t.Fatalf("expected deletion conflict to requeue without error: %v", err)
+	}
+	if result.RequeueAfter != time.Second {
+		t.Fatalf("expected one-second conflict requeue, got %s", result.RequeueAfter)
+	}
+	if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(legacyJob), &batchv1.Job{}); getErr != nil {
+		t.Fatalf("expected conflicted legacy Job to remain: %v", getErr)
 	}
 }
 
