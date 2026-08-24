@@ -20,8 +20,9 @@ serviceAccount:
   # Specifies whether a service account should be created
   create: true
   # Annotations to add to the service account.
-  # With an external datastore + datastore.migrationType=job, pre-install hook annotations
-  # (weight -10) are merged in so the account exists before the migration Job's hook runs.
+  # When migrations use a postgres/mysql external URI from a Secret, migrationType=job,
+  # applyMigrations=true, and both bundled database subcharts are disabled, pre-install hook
+  # annotations (weight -10) are merged in so the account exists before the migration Job runs.
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
