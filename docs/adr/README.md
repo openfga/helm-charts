@@ -10,7 +10,7 @@ We follow the format described by [Michael Nygard](https://cognitect.com/blog/20
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](001-adopt-openfga-operator.md) | Adopt a Kubernetes Operator for OpenFGA Lifecycle Management | Proposed | 2026-04-06 |
+| [ADR-001](001-adopt-openfga-operator.md) | Adopt a Kubernetes Operator for OpenFGA Lifecycle Management | Accepted — Stage 1 implemented | 2026-04-06 |
 | [ADR-002](002-operator-managed-migrations.md) | Replace Helm Hook Migrations with Operator-Managed Migrations | Proposed | 2026-04-06 |
 
 ---
@@ -24,7 +24,7 @@ An ADR captures a single architectural decision. It records:
 - **What alternatives** were considered and why they were rejected
 - **What consequences** follow from the decision (positive, negative, and neutral)
 
-ADRs are **immutable once accepted** — if a decision changes, you write a new ADR that supersedes the old one rather than editing it. This preserves the history of *why* things changed over time.
+An accepted ADR's **decision content is immutable**. If the decision changes, write a new ADR that supersedes the old one rather than rewriting its context, decision, or consequences. Lifecycle metadata remains mutable: update the old ADR's status and supersession link, and keep the index synchronized. This preserves the history of *why* things changed while making the current lifecycle state clear.
 
 ## ADR Lifecycle
 
@@ -108,14 +108,14 @@ ADR review happens in the **pull request**, not by editing the ADR directly. Thi
 
 When a decision needs to change:
 
-1. **Do NOT edit the original ADR** — it's a historical record
+1. **Do NOT rewrite the original ADR's decision content** — its context, decision, and consequences are a historical record
 
 2. **Write a new ADR** that references the old one:
    ```markdown
    - **Supersedes:** [ADR-002](002-operator-managed-migrations.md)
    ```
 
-3. **Update the old ADR's status** — change it to:
+3. **Update the old ADR's lifecycle metadata** — change its status to:
    ```markdown
    - **Status:** Superseded by [ADR-007](007-new-approach.md)
    ```
