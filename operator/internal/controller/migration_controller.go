@@ -77,11 +77,15 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	currentVersion := ""
 	if err == nil {
-		if isOperatorManaged(configMap) {
-			currentVersion = configMap.Data["version"]
-		} else {
-			logger.Info("ignoring unmanaged migration status ConfigMap", "configMap", cmName)
+		if !isOperatorManaged(configMap) {
+			return ctrl.Result{}, fmt.Errorf(
+				"migration status ConfigMap %s/%s exists but is not managed by %s",
+				configMap.Namespace,
+				configMap.Name,
+				LabelManagedByValue,
+			)
 		}
+		currentVersion = configMap.Data["version"]
 	} else if !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("getting migration status: %w", err)
 	}
@@ -150,9 +154,9 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
 	}
 
-	if !isOperatorManaged(job) && !isOwnedByDeployment(job, deployment) {
+	if !isOperatorManaged(job) || !isOwnedByDeployment(job, deployment) {
 		return ctrl.Result{}, fmt.Errorf(
-			"migration job %s/%s exists but is neither managed by %s nor owned by Deployment %s",
+			"migration job %s/%s exists but must be managed by %s and owned by Deployment %s",
 			job.Namespace,
 			job.Name,
 			LabelManagedByValue,
