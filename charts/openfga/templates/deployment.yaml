@@ -12,7 +12,7 @@ metadata:
     openfga.dev/container-name: "{{ .Chart.Name }}"
     openfga.dev/desired-replicas: '{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}'
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
-    openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
+    openfga.dev/migration-service-account: '{{ include "openfga.operatorMigrationServiceAccountName" . }}'
     {{- end }}
     {{- end }}
     {{- with .Values.annotations }}
