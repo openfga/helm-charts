@@ -44,7 +44,9 @@ securityContext:
 # equals the release namespace, but when `namespaceOverride` puts the
 # operator in a different namespace than the release, the watch follows
 # the pod — not the release. Set this explicitly to watch a specific
-# namespace independent of where the operator runs.
+# namespace independent of where the operator runs. This chart grants
+# RBAC only in the operator namespace; watching a different namespace
+# requires users to provide equivalent RBAC there.
 watchNamespace: ""
 
 leaderElection:

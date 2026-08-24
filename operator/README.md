@@ -8,12 +8,12 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 
 1. The operator watches Deployments **in its own namespace** labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
 2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
-   - Keeps the Deployment at 0 replicas
+   - Leaves the Deployment's current replica count unchanged
    - Creates a migration Job running `openfga migrate`
    - Waits for the Job to complete
    - Updates the ConfigMap with the new version
    - Scales the Deployment up to the desired replica count
-3. On failure, a `MigrationFailed` condition is set on the Deployment and replicas stay at 0
+3. On failure, a `MigrationFailed` condition is set on the Deployment and its replica count remains unchanged
 
 ## Prerequisites
 
