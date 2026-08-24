@@ -165,6 +165,44 @@ tests:
       - isNotNull:
           path: spec.template.spec.initContainers
 
+  - it: should render explicit migration initContainer when waitForMigrations is false
+    set:
+      operator.enabled: false
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.waitForMigrations: false
+      datastore.migrationType: initContainer
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: migrate-database
+
+  - it: should not render the Job waiter when waitForMigrations is false
+    set:
+      operator.enabled: false
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.waitForMigrations: false
+      datastore.migrationType: job
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  - it: should suppress explicit migration initContainer when operator is enabled
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.waitForMigrations: false
+      datastore.migrationType: initContainer
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
   # --- Pod template labels ---
   # The pod template must carry the full common label set (helm.sh/chart,
   # component, version, managed-by, part-of) — not just selectorLabels —

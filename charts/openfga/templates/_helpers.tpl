@@ -75,9 +75,16 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Create the name of the migration service account to use (operator mode only)
+Create the name of the dedicated Helm migration service account.
 */}}
 {{- define "openfga.migrationServiceAccountName" -}}
+{{- printf "%s-migration" (include "openfga.fullname" . | trunc 53 | trimSuffix "-") }}
+{{- end }}
+
+{{/*
+Create the name of the operator-managed migration service account.
+*/}}
+{{- define "openfga.operatorMigrationServiceAccountName" -}}
 {{- if .Values.migration.serviceAccount.create }}
 {{- default (printf "%s-migration" (include "openfga.fullname" .)) .Values.migration.serviceAccount.name | trunc 63 | trimSuffix "-" }}
 {{- else }}
