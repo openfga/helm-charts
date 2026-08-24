@@ -155,6 +155,18 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if !isOperatorManaged(job) || !isOwnedByDeployment(job, deployment) {
+		if isLegacyHelmMigrationHook(job, deployment) {
+			// This exact Job belongs to the same Helm release and uses the chart's
+			// migration hook lifecycle, so removing it is safe during operator adoption.
+			logger.Info("deleting legacy Helm migration hook before operator adoption", "job", jobName)
+			if delErr := deleteMigrationJob(ctx, r.Client, job); delErr != nil && !apierrors.IsNotFound(delErr) {
+				if apierrors.IsConflict(delErr) {
+					return ctrl.Result{RequeueAfter: time.Second}, nil
+				}
+				return ctrl.Result{}, fmt.Errorf("deleting legacy Helm migration job: %w", delErr)
+			}
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 		return ctrl.Result{}, fmt.Errorf(
 			"migration job %s/%s exists but must be managed by %s and owned by Deployment %s",
 			job.Namespace,
