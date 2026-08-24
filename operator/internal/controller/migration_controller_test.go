@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -222,7 +223,7 @@ func TestReconcile_VersionMatch_ScalesUp(t *testing.T) {
 	}
 }
 
-func TestReconcile_UnmanagedMatchingConfigMap_NotTrusted(t *testing.T) {
+func TestReconcile_UnmanagedMatchingConfigMap_ReturnsCollisionError(t *testing.T) {
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
 	dep.Annotations[AnnotationDesiredReplicas] = "3"
 
@@ -238,28 +239,31 @@ func TestReconcile_UnmanagedMatchingConfigMap_NotTrusted(t *testing.T) {
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
 	})
-	if err != nil {
+	if err == nil {
+		t.Fatal("expected unmanaged migration status ConfigMap collision to return an error")
+	}
+	if !strings.Contains(err.Error(), "migration status ConfigMap default/openfga-migration-status exists but is not managed") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected migration to be scheduled despite colliding ConfigMap")
+	if result != (ctrl.Result{}) {
+		t.Errorf("expected empty result, got %+v", result)
 	}
 
 	job := &batchv1.Job{}
 	if getErr := r.Get(context.Background(), types.NamespacedName{
 		Name: "openfga-migrate", Namespace: "default",
-	}, job); getErr != nil {
-		t.Fatalf("expected migration job to be created: %v", getErr)
+	}, job); getErr == nil {
+		t.Fatal("expected no migration job to be created")
 	}
 
-	updated := &appsv1.Deployment{}
+	unchanged := &corev1.ConfigMap{}
 	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
+		Name: "openfga-migration-status", Namespace: "default",
+	}, unchanged); getErr != nil {
+		t.Fatalf("getting colliding ConfigMap: %v", getErr)
 	}
-	if *updated.Spec.Replicas != 0 {
-		t.Errorf("expected replicas to remain at 0, got %d", *updated.Spec.Replicas)
+	if unchanged.Data["version"] != "v1.14.0" {
+		t.Errorf("expected colliding ConfigMap to remain unchanged, got version %q", unchanged.Data["version"])
 	}
 }
 
@@ -281,6 +285,9 @@ func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
 			Annotations: map[string]string{
 				"openfga.dev/desired-version": "v1.14.0",
 			},
@@ -369,6 +376,9 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
 			Annotations: map[string]string{
 				"openfga.dev/desired-version": "v1.14.0",
 			},
@@ -466,6 +476,9 @@ func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
 			Annotations: map[string]string{
 				"openfga.dev/desired-version": "v1.14.0",
 			},
@@ -564,6 +577,9 @@ func TestReconcile_UnknownVersionJob_DeletedNotTrusted(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
@@ -809,6 +825,7 @@ func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
 			Namespace: "default",
 			Labels: map[string]string{
 				"app.kubernetes.io/version": "v1.14.0",
+				LabelManagedBy:              LabelManagedByValue,
 			},
 			Annotations: map[string]string{
 				"openfga.dev/desired-version": "v1.14.0",
@@ -876,31 +893,71 @@ func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
 	}
 }
 
-func TestReconcile_UnmanagedStaleJob_NotDeleted(t *testing.T) {
+func TestReconcile_ExistingJob_RequiresManagedLabelAndDeploymentOwner(t *testing.T) {
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
-	staleJob := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Annotations: map[string]string{
-				"openfga.dev/desired-version": "v1.14.0",
-			},
-		},
+	staleJob := buildMigrationJob(
+		dep,
+		&dep.Spec.Template.Spec.Containers[0],
+		"v1.14.0",
+		DefaultBackoffLimit,
+		DefaultActiveDeadlineSeconds,
+		DefaultTTLSecondsAfterFinished,
+	)
+
+	tests := []struct {
+		name      string
+		managed   bool
+		owned     bool
+		wantError bool
+	}{
+		{name: "label only", managed: true, wantError: true},
+		{name: "owner only", owned: true, wantError: true},
+		{name: "both", managed: true, owned: true},
+		{name: "neither", wantError: true},
 	}
 
-	r := newReconciler(dep, staleJob)
-	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-	if err == nil {
-		t.Fatal("expected unmanaged migration job collision to return an error")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testJob := staleJob.DeepCopy()
+			if !tt.managed {
+				delete(testJob.Labels, LabelManagedBy)
+			}
+			if !tt.owned {
+				testJob.OwnerReferences = nil
+			}
 
-	existingJob := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, existingJob); getErr != nil {
-		t.Fatalf("expected unmanaged migration job to remain: %v", getErr)
+			r := newReconciler(dep.DeepCopy(), testJob)
+			result, err := r.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+			})
+
+			existingJob := &batchv1.Job{}
+			getErr := r.Get(context.Background(), types.NamespacedName{
+				Name: "openfga-migrate", Namespace: "default",
+			}, existingJob)
+			if tt.wantError {
+				if err == nil {
+					t.Fatal("expected migration job collision to return an error")
+				}
+				if !strings.Contains(err.Error(), "must be managed by openfga-operator and owned by Deployment openfga") {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if getErr != nil {
+					t.Fatalf("expected untrusted migration job to remain: %v", getErr)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.RequeueAfter == 0 {
+				t.Fatal("expected requeue after deleting trusted stale job")
+			}
+			if getErr == nil {
+				t.Fatal("expected trusted stale migration job to be deleted")
+			}
+		})
 	}
 }
 
@@ -956,6 +1013,14 @@ func TestReconcile_StaleJob_LabelOnlyFallback_DeletedAndRequeued(t *testing.T) {
 			Labels: map[string]string{
 				"app.kubernetes.io/version": "v1.14.0",
 				LabelManagedBy:              LabelManagedByValue,
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "openfga",
+					UID:        "test-uid-123",
+				},
 			},
 			// No annotation — forces the label-only fallback path.
 		},
@@ -1068,6 +1133,9 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
 			Annotations: map[string]string{
 				"openfga.dev/desired-version": "v1.14.0",
 			},
@@ -1170,6 +1238,9 @@ func TestReconcile_JobInProgress_Requeues(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openfga-migrate",
 			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
 			Annotations: map[string]string{
 				"openfga.dev/desired-version": "v1.14.0",
 			},
