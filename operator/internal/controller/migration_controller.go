@@ -77,7 +77,11 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	currentVersion := ""
 	if err == nil {
-		currentVersion = configMap.Data["version"]
+		if isOperatorManaged(configMap) {
+			currentVersion = configMap.Data["version"]
+		} else {
+			logger.Info("ignoring unmanaged migration status ConfigMap", "configMap", cmName)
+		}
 	} else if !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("getting migration status: %w", err)
 	}
@@ -146,6 +150,16 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
 	}
 
+	if !isOperatorManaged(job) && !isOwnedByDeployment(job, deployment) {
+		return ctrl.Result{}, fmt.Errorf(
+			"migration job %s/%s exists but is neither managed by %s nor owned by Deployment %s",
+			job.Namespace,
+			job.Name,
+			LabelManagedByValue,
+			deployment.Name,
+		)
+	}
+
 	// 8. If the existing Job is for a different (or unknown) version, delete it
 	// and recreate. Check annotation first (supports digests > 63 chars), fall
 	// back to label. A Job with neither marker is treated as stale: we cannot
@@ -164,10 +178,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	if !versionMatch {
 		logger.Info("existing migration job is for a different or unknown version, deleting", "jobVersion", jobVersion, "desiredVersion", desiredVersion)
-		propagation := metav1.DeletePropagationBackground
-		if delErr := r.Delete(ctx, job, &client.DeleteOptions{
-			PropagationPolicy: &propagation,
-		}); delErr != nil && !apierrors.IsNotFound(delErr) {
+		if delErr := deleteMigrationJob(ctx, r.Client, job); delErr != nil && !apierrors.IsNotFound(delErr) {
+			if apierrors.IsConflict(delErr) {
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("deleting stale migration job: %w", delErr)
 		}
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
@@ -225,10 +239,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		// Delete the failed Job so a fresh one is created on the next reconcile.
-		propagation := metav1.DeletePropagationBackground
-		if delErr := r.Delete(ctx, job, &client.DeleteOptions{
-			PropagationPolicy: &propagation,
-		}); delErr != nil && !apierrors.IsNotFound(delErr) {
+		if delErr := deleteMigrationJob(ctx, r.Client, job); delErr != nil && !apierrors.IsNotFound(delErr) {
+			if apierrors.IsConflict(delErr) {
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("deleting failed migration job: %w", delErr)
 		}
 		logger.Info("deleted failed migration job, will retry", "job", jobName)
@@ -257,9 +271,9 @@ func isJobConditionTrue(job *batchv1.Job, conditionType batchv1.JobConditionType
 // isMemoryDatastore checks if the Deployment is using the memory datastore
 // (no database migration needed).
 //
-// NOTE: This only inspects explicit env vars on the container spec. If
-// OPENFGA_DATASTORE_ENGINE is injected via envFrom (ConfigMap/Secret), it
-// will not be detected here and the operator will attempt a migration.
+// NOTE: This only inspects literal values in explicit env vars. If
+// OPENFGA_DATASTORE_ENGINE is injected via envFrom or resolved via valueFrom,
+// its value is unknown here and the operator will attempt a migration.
 func isMemoryDatastore(container *corev1.Container) bool {
 	for _, env := range container.Env {
 		if env.Name == "OPENFGA_DATASTORE_ENGINE" {
@@ -322,7 +336,7 @@ func (r *MigrationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				// Only watch ConfigMaps that are migration status ConfigMaps.
 				if obj.GetLabels()[LabelPartOf] != LabelPartOfValue ||
-					obj.GetLabels()["app.kubernetes.io/managed-by"] != "openfga-operator" {
+					obj.GetLabels()[LabelManagedBy] != LabelManagedByValue {
 					return nil
 				}
 				// Map back to the owning Deployment.
