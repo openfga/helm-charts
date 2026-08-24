@@ -1,0 +1,48 @@
+suite: helm test connection hook
+templates:
+  - templates/tests/test-connection.yaml
+tests:
+  - it: runs openfga healthcheck against the http endpoint by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - matchRegex:
+          path: spec.containers[0].image
+          pattern: "^openfga/openfga:"
+      - contains:
+          path: spec.containers[0].command
+          content: healthcheck
+      - contains:
+          path: spec.containers[0].command
+          content: "RELEASE-NAME-openfga:8080"
+      - notContains:
+          path: spec.containers[0].command
+          content: --http-tls-enabled
+
+  - it: enables TLS verification when http TLS is enabled
+    set:
+      http.tls.enabled: true
+      http.tls.cert: /etc/openfga/http.crt
+      http.tls.key: /key
+    asserts:
+      - contains:
+          path: spec.containers[0].command
+          content: --http-tls-enabled
+      - contains:
+          path: spec.containers[0].command
+          content: /etc/openfga/http.crt
+
+  - it: honours a custom http port
+    set:
+      http.addr: 0.0.0.0:9090
+    asserts:
+      - contains:
+          path: spec.containers[0].command
+          content: "RELEASE-NAME-openfga:9090"
+
+  - it: renders no test pod when the HTTP server is disabled
+    set:
+      http.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

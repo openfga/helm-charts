@@ -1,3 +1,4 @@
+{{- if .Values.http.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
@@ -12,10 +13,21 @@ spec:
     {{- toYaml . | nindent 8 }}
   {{- end }}
   containers:
-    - name: grpc-health-probe
+    - name: health-check
       image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
       imagePullPolicy: {{ .Values.image.pullPolicy }}
-      command: ["grpc_health_probe", '-addr={{ include "openfga.fullname" . }}:{{ (split ":" .Values.grpc.addr)._1 }}']
+      command:
+        - /openfga
+        - healthcheck
+        - --target
+        - http
+        - --http-addr
+        - "{{ include "openfga.fullname" . }}:{{ (split ":" .Values.http.addr)._1 }}"
+        {{- if .Values.http.tls.enabled }}
+        - --http-tls-enabled
+        - --http-tls-cert
+        - "{{ .Values.http.tls.cert }}"
+        {{- end }}
       {{- with .Values.testContainerSpec }}
         {{- toYaml . | nindent 6 }}
       {{- end }}
@@ -23,3 +35,4 @@ spec:
   {{- with .Values.testPodSpec }}
     {{- toYaml . | nindent 2 }}
   {{- end }}
+{{- end }}

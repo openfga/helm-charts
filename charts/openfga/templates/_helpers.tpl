@@ -6,6 +6,43 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
+Health probe handler.
+Newer OpenFGA images no longer bundle the grpc_health_probe binary, so probes
+rely on Kubernetes-native handlers where possible and on the in-binary
+`openfga healthcheck` command for the case native handlers cannot cover.
+
+- When the HTTP server is enabled: httpGet /healthz (scheme follows
+  http.tls.enabled). /healthz is a grpc-gateway proxy to the gRPC health
+  service, so it faithfully reflects overall health.
+- When HTTP is disabled and gRPC is plaintext: the native grpc: handler.
+- When HTTP is disabled and gRPC TLS is enabled: an exec probe running
+  `openfga healthcheck`. The Kubernetes-native grpc: handler is plaintext-only
+  and would fail the TLS handshake, so it cannot be used here. The healthcheck
+  command reads the same OPENFGA_GRPC_* env vars the container already sets
+  (addr, tls.enabled, tls.cert), so it probes the gRPC health service over TLS
+  and verifies the server against the configured certificate with no extra
+  configuration.
+*/}}
+{{- define "openfga.probeHandler" -}}
+{{- if .Values.http.enabled -}}
+httpGet:
+  path: /healthz
+  port: {{ (split ":" .Values.http.addr)._1 }}
+  scheme: {{ if .Values.http.tls.enabled }}HTTPS{{ else }}HTTP{{ end }}
+{{- else if .Values.grpc.tls.enabled -}}
+exec:
+  command:
+    - /openfga
+    - healthcheck
+    - --target
+    - grpc
+{{- else -}}
+grpc:
+  port: {{ (split ":" .Values.grpc.addr)._1 }}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
