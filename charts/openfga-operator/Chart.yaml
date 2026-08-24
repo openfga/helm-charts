@@ -17,3 +17,6 @@ sources:
 
 annotations:
   artifacthub.io/license: Apache-2.0
+  artifacthub.io/signKey: |
+    fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+    url: https://openfga.github.io/helm-charts/pgp-public-key.asc
