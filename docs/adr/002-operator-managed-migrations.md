@@ -4,7 +4,7 @@
 - **Date:** 2026-04-06
 - **Deciders:** OpenFGA Helm Charts maintainers
 - **Related ADR:** [ADR-001](001-adopt-openfga-operator.md)
-- **Related Issues:** #211, #107, #120, #100, #95, #126, #132, #144
+- **Related Issues:** [#211](https://github.com/openfga/helm-charts/issues/211), [#107](https://github.com/openfga/helm-charts/issues/107), [#120](https://github.com/openfga/helm-charts/issues/120), [#100](https://github.com/openfga/helm-charts/issues/100), [#95](https://github.com/openfga/helm-charts/issues/95), [#126](https://github.com/openfga/helm-charts/issues/126), [#132](https://github.com/openfga/helm-charts/issues/132), [#144](https://github.com/openfga/helm-charts/issues/144)
 
 ## Context
 
@@ -18,7 +18,7 @@ Seven files are involved:
 |------|------|
 | `charts/openfga/templates/job.yaml` | Migration Job with Helm hook annotations |
 | `charts/openfga/templates/deployment.yaml` | OpenFGA Deployment + `wait-for-migration` init container |
-| `charts/openfga/templates/serviceaccount.yaml` | Shared ServiceAccount (migration + runtime) |
+| `charts/openfga/templates/serviceaccount.yaml` | Normal workload ServiceAccount, dedicated hook-managed migration ServiceAccount for eligible external-secret pre-hooks, and separately configurable operator migration ServiceAccount |
 | `charts/openfga/templates/rbac.yaml` | Role + RoleBinding so init container can poll Job status |
 | `charts/openfga/templates/_helpers.tpl` | Datastore environment variable helpers |
 | `charts/openfga/values.yaml` | `datastore.*`, `migrate.*`, `initContainer.*` configuration |
@@ -33,7 +33,7 @@ annotations:
   "helm.sh/hook-weight": "-5"
 ```
 
-When the datastore URI comes from `datastore.uriSecret`, or from `datastore.existingSecret` plus `datastore.secretKeys.uriKey`, and both bundled database subcharts are disabled, the chart instead selects `pre-install,pre-upgrade` and promotes the runtime ServiceAccount to an earlier pre-hook. This avoids the post-hook `--wait` deadlock for externally reachable databases. Both variants remain Helm hooks outside the normal release lifecycle: the post-hook variant runs after regular resources, while the external-secret variant runs before them.
+When the datastore URI comes from `datastore.uriSecret`, or from `datastore.existingSecret` plus `datastore.secretKeys.uriKey`, and both bundled database subcharts are disabled, the chart instead selects `pre-install,pre-upgrade` and creates a dedicated hook-managed migration ServiceAccount ordered before the Job. This avoids the post-hook `--wait` deadlock for externally reachable databases without changing the runtime ServiceAccount lifecycle. Both variants remain Helm hooks outside the normal release lifecycle: the post-hook variant runs after regular resources, while the external-secret variant runs before them.
 
 **The wait-for init container** blocks the Deployment pods from starting:
 
@@ -48,16 +48,16 @@ It polls the Kubernetes API for the release-derived `<fullname>-migrate` Job unt
 
 **The alternative mode** (`datastore.migrationType: initContainer`) runs migration directly inside each Deployment pod as an init container, avoiding hooks entirely but introducing redundant migration runs across replicas.
 
-### The Six Issues
+### The Six Tracked Issues
 
 | Issue | Tool | Root Cause |
 |-------|------|-----------|
-| **#211** | ArgoCD | ArgoCD and Helm hooks have incompatible lifecycle semantics. In the post-hook case, the init container can wait for a Job that the deployment workflow has not created as a regular managed resource. |
-| **#107** | ArgoCD | The hook Job is not a stable application resource in the GitOps desired state, which makes it difficult to observe, debug, or sync through ArgoCD. |
-| **#120** | Helm `--wait` | In the post-hook case, Helm waits for the Deployment to be ready before running post-install hooks. The Deployment is never ready because the init container waits for the hook Job. The Job never runs because Helm is waiting. The external-secret pre-hook exception avoids this specific cycle when its prerequisites are met. |
-| **#100** | FluxCD | FluxCD waits for all resources by default. The `hook-delete-policy: before-hook-creation` removes the completed Job before FluxCD can confirm the Deployment is healthy. |
-| **#95** | AWS IRSA | Migration and runtime share a ServiceAccount. With IAM-based DB auth, the runtime gets DDL permissions it doesn't need (CREATE TABLE, ALTER TABLE). |
-| **#126** | All | The `k8s-wait-for` image is configured in two separate places in `charts/openfga/values.yaml`, leading to inconsistency. Related: #132 (image unmaintained, has CVEs) and #144 (pinned by mutable tag). |
+| [**#211**](https://github.com/openfga/helm-charts/issues/211) | ArgoCD | ArgoCD and Helm hooks have incompatible lifecycle semantics. In the post-hook case, the init container can wait for a Job that the deployment workflow has not created as a regular managed resource. |
+| [**#107**](https://github.com/openfga/helm-charts/issues/107) | ArgoCD | The hook Job is not a stable application resource in the GitOps desired state, which makes it difficult to observe, debug, or sync through ArgoCD. |
+| [**#120**](https://github.com/openfga/helm-charts/issues/120) | Helm `--wait` | In the post-hook case, Helm waits for the Deployment to be ready before running post-install hooks. The Deployment is never ready because the init container waits for the hook Job. The Job never runs because Helm is waiting. The external-secret pre-hook exception avoids this specific cycle when its prerequisites are met. |
+| [**#100**](https://github.com/openfga/helm-charts/issues/100) | FluxCD | FluxCD waits for all resources by default. The `hook-delete-policy: before-hook-creation` removes the completed Job before FluxCD can confirm the Deployment is healthy. |
+| [**#95**](https://github.com/openfga/helm-charts/issues/95) | AWS IRSA | Legacy post-hook migrations share the workload ServiceAccount. Eligible external-secret pre-hooks and the operator path use dedicated migration accounts, but the operator Job still inherits datastore environment and volume configuration from the runtime Deployment. A separate migration database URI remains future work. |
+| [**#126**](https://github.com/openfga/helm-charts/issues/126) | All | The `k8s-wait-for` image is configured in two separate places in `charts/openfga/values.yaml`, leading to inconsistency. Related: [#132](https://github.com/openfga/helm-charts/issues/132) tracks reported vulnerabilities and [#144](https://github.com/openfga/helm-charts/issues/144) tracks the mutable tag. |
 
 ### Why Helm Hooks Are Fundamentally Wrong for This
 
@@ -108,7 +108,7 @@ The operator does not scale an existing Deployment to zero during upgrades; it r
 
 #### Version tracking via ConfigMap
 
-A ConfigMap named `<deployment-name>-migration-status` records the last successfully migrated version. The operator compares this to the Deployment's image tag or digest to determine if migration is needed. This is:
+A ConfigMap named `<deployment-name>-migration-status` stores the latest successful migration status as `version`, `migratedAt`, and `jobName`. Each success overwrites those fields, so the ConfigMap is not a migration history or audit trail. The operator compares the stored version to the Deployment's image tag or digest to determine if migration is needed. This is:
 - Simple to inspect (`kubectl get configmap <deployment-name>-migration-status -o yaml`)
 - Survives operator restarts
 - Rebuilt from a matching completed Job if the ConfigMap is deleted while that Job still exists
@@ -117,7 +117,7 @@ Deleting the ConfigMap alone therefore does not reliably force a migration. To f
 
 #### Separate ServiceAccount for migrations
 
-By default, the chart creates a dedicated `<fullname>-migration` ServiceAccount for migration Jobs. Users can annotate it with cloud IAM roles that grant DDL permissions while the runtime ServiceAccount retains only CRUD permissions. When `migration.serviceAccount.create: false`, the chart requires `migration.serviceAccount.name` and uses that pre-existing account instead.
+By default, the operator path creates a dedicated `<fullname>-migration` ServiceAccount for migration Jobs. Users can annotate it with cloud IAM roles that grant DDL permissions while the runtime ServiceAccount retains only CRUD permissions. When `migration.serviceAccount.create: false`, the chart requires `migration.serviceAccount.name` and uses that pre-existing account instead. This separates workload identity, but the operator Job still inherits datastore `Env` and `EnvFrom`, volumes, volume mounts, and resources from the runtime Deployment. A separate migration database URI and full migration-specific environment and volume configuration remain future work under [#95](https://github.com/openfga/helm-charts/issues/95).
 
 #### Migration Job is a regular resource
 
@@ -218,20 +218,20 @@ Nothing is deleted outright — every change is gated on `operator.enabled` so t
 | `charts/openfga/values.yaml`: `migration.enabled` | Toggle operator-managed migrations; disable it for externally managed migrations |
 | `charts/openfga/values.yaml`: `migration.serviceAccount.*` | Create the dedicated migration ServiceAccount or name a pre-existing one |
 | `charts/openfga/values.yaml`: `openfga-operator.migrationJob.*` | Configure `backoffLimit`, `activeDeadlineSeconds`, and `ttlSecondsAfterFinished` in the dependent operator chart |
-| `charts/openfga/templates/serviceaccount.yaml`: second SA | Migration ServiceAccount, rendered only when `migration.serviceAccount.create: true` |
+| `charts/openfga/templates/serviceaccount.yaml`: operator migration SA | Separately configurable operator migration ServiceAccount, rendered only when `migration.serviceAccount.create: true`; eligible external-secret pre-hooks use a different hook-managed migration account |
 | `charts/openfga-operator/` | Operator subchart (conditional dependency) |
 
-Users on `operator.enabled: false` (the default) retain the non-operator migration flow, so gradual adoption is possible with no forced migration. The current legacy flow is not byte-for-byte identical to older chart releases: it now selects pre-install/pre-upgrade hooks and promotes the ServiceAccount for eligible external-secret datastores, while other Job-mode configurations retain the post-hook behavior.
+Users on `operator.enabled: false` (the default) retain the non-operator migration flow, so gradual adoption is possible with no forced migration. The current legacy flow is not byte-for-byte identical to older chart releases: it now selects pre-install/pre-upgrade hooks and creates a dedicated hook-managed migration ServiceAccount for eligible external-secret datastores, while other Job-mode configurations retain the post-hook behavior and workload ServiceAccount.
 
 ## Consequences
 
 ### Positive
 
-- **All 6 migration issues resolved on the operator-enabled path** — no Helm migration hooks means no hook-related ArgoCD/FluxCD/`--wait` incompatibility when `operator.enabled: true`
-- **`k8s-wait-for` eliminated from the operator-enabled path** — removes an unmaintained image with CVEs from that deployment mode (#132, #144)
-- **Least-privilege enabled** — a chart-created or pre-existing migration ServiceAccount can hold DDL permissions separately from the runtime account's CRUD permissions (#95)
+- **Five migration issues resolved on the operator path:** [#211](https://github.com/openfga/helm-charts/issues/211), [#107](https://github.com/openfga/helm-charts/issues/107), [#120](https://github.com/openfga/helm-charts/issues/120), [#100](https://github.com/openfga/helm-charts/issues/100), and [#126](https://github.com/openfga/helm-charts/issues/126). [#95](https://github.com/openfga/helm-charts/issues/95) is partially addressed through the separate operator migration ServiceAccount.
+- **`k8s-wait-for` eliminated from the operator-enabled path:** removes an inactively maintained image with [reported vulnerabilities](https://github.com/openfga/helm-charts/issues/132) and a [mutable tag](https://github.com/openfga/helm-charts/issues/144) from that deployment mode
+- **Workload identity separation improved:** a chart-created or pre-existing migration ServiceAccount can hold DDL permissions separately from the runtime account's CRUD permissions. The migration datastore environment and volume configuration are still inherited, so separate migration credentials are not yet fully supported.
 - **Runtime surface area reduced** — when `operator.enabled: true`, the legacy migration Job, init-container `k8s-wait-for` logic, and job-watching RBAC are skipped from the rendered manifest
-- **Migration is observable through Kubernetes** — the dynamically created Job is inspectable through the Kubernetes API, the ConfigMap records migration history, and operator conditions surface errors; the Job is not tracked as a GitOps desired resource
+- **Migration is observable through Kubernetes:** the dynamically created Job is inspectable through the Kubernetes API, the ConfigMap stores only the latest `version`, `migratedAt`, and `jobName`, and operator conditions surface errors. The ConfigMap is not an audit trail, and the Job is not tracked as a GitOps desired resource.
 - **Idempotent and crash-safe** — operator can restart at any point and resume correctly
 
 ### Negative
