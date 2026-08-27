@@ -75,6 +75,24 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Create the generated name of the dedicated migration service account.
+*/}}
+{{- define "openfga.migrationServiceAccountName.generated" -}}
+{{- printf "%s-migration" (include "openfga.fullname" . | trunc 53 | trimSuffix "-") }}
+{{- end }}
+
+{{/*
+Reject an external workload ServiceAccount name that Helm would delete as a migration hook.
+*/}}
+{{- define "openfga.migrationServiceAccountName" -}}
+{{- $name := include "openfga.migrationServiceAccountName.generated" . -}}
+{{- if and (eq (include "openfga.migrate.usePreInstallHooks" .) "true") (not .Values.serviceAccount.create) (eq (include "openfga.serviceAccountName" .) $name) -}}
+{{- fail (printf "serviceAccount.name %q conflicts with the generated migration ServiceAccount name when pre-install migration hooks are enabled" $name) -}}
+{{- end -}}
+{{- $name -}}
+{{- end }}
+
+{{/*
 Return true if a secret object should be created
 */}}
 {{- define "openfga.createSecret" -}}
@@ -198,5 +216,17 @@ Return true if a secret object should be created
     secretKeyRef:
       name: {{ include "openfga.datastore.secretName" . | quote }}
       key: "password"
+{{- end -}}
+{{- end -}}
+
+{{/*
+Run the migration Job as a pre-install/pre-upgrade hook only when the datastore URI comes from an
+external secret (datastore.uriSecret, or datastore.existingSecret + secretKeys.uriKey) and the
+bundled subcharts are disabled. Otherwise the URI lives in the chart-managed Secret, which does not
+exist yet at pre-install time, so those cases keep the legacy post-* hooks.
+*/}}
+{{- define "openfga.migrate.usePreInstallHooks" -}}
+{{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations (eq .Values.datastore.migrationType "job") (or .Values.datastore.uriSecret (and .Values.datastore.existingSecret .Values.datastore.secretKeys.uriKey)) (not .Values.postgresql.enabled) (not .Values.mysql.enabled) -}}
+true
 {{- end -}}
 {{- end -}}

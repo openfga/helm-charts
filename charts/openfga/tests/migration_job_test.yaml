@@ -1,0 +1,146 @@
+suite: migration job - helm hooks
+templates:
+  - templates/job.yaml
+tests:
+  - it: keeps the legacy post-* hooks by default (in-release datastore)
+    set:
+      datastore.engine: postgres
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: "before-hook-creation"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga
+
+  - it: runs as a pre-install/pre-upgrade hook for an externally provided datastore (uriSecret)
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-5"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: "before-hook-creation"
+      - notMatchRegex:
+          path: metadata.annotations["helm.sh/hook"]
+          pattern: "post-"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migration
+
+  - it: runs as a pre-install/pre-upgrade hook for an externally provided datastore (existingSecret with uriKey)
+    set:
+      datastore.engine: postgres
+      datastore.existingSecret: my-secret
+      datastore.secretKeys.uriKey: uri
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migration
+
+  - it: runs as a pre-install/pre-upgrade hook for an external MySQL URI secret
+    set:
+      datastore.engine: mysql
+      datastore.uriSecret: my-secret
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+      - notMatchRegex:
+          path: metadata.annotations["helm.sh/hook"]
+          pattern: "post-"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migration
+
+  - it: keeps the legacy hooks when existingSecret does not supply the URI (no uriKey)
+    set:
+      datastore.engine: postgres
+      datastore.existingSecret: my-secret
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga
+
+  - it: keeps the legacy hooks when the bundled subchart is enabled even with an external secret
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      postgresql.enabled: true
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga
+
+  - it: does not use an externally managed workload account for eligible pre-hooks
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      serviceAccount.create: false
+      serviceAccount.name: external-workload
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migration
+
+  - it: permits the generated migration name for an external workload account in post-hook mode
+    set:
+      datastore.engine: postgres
+      datastore.uri: postgres://example
+      serviceAccount.create: false
+      serviceAccount.name: RELEASE-NAME-openfga-migration
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migration
+
+  - it: lets migrate.annotations override the chart's pre-install hook keys
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      migrate.annotations:
+        helm.sh/hook: pre-install
+        helm.sh/hook-weight: "-3"
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-3"
+      # A key the user does not set still falls back to the chart default.
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: "before-hook-creation"
+
+  - it: is not rendered when migrations run as an init container
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      datastore.migrationType: initContainer
+    asserts:
+      - hasDocuments:
+          count: 0
