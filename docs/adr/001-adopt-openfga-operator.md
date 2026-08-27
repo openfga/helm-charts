@@ -92,7 +92,7 @@ Stage 1 is implemented in [native stack 351](https://github.com/openfga/helm-cha
 
 ### Release model
 
-The operator uses an intentional monorepo model, not a Git submodule. Controller source lives in `operator/`, the operator chart lives in `charts/openfga-operator/`, and the OpenFGA chart integration lives in `charts/openfga/`. Co-location keeps controller, chart, integration, and end-to-end changes versioned and tested atomically. A separate repository can be reconsidered if ownership or release cadence diverges.
+The operator is developed and released from this repository. Controller source lives in `operator/`, the operator chart lives in `charts/openfga-operator/`, and the OpenFGA chart integration lives in `charts/openfga/`. Co-location keeps controller, chart, integration, and end-to-end changes versioned and tested atomically. A separate repository can be reconsidered if ownership or release cadence diverges.
 
 Chart releases run after merge to `main` through `.github/workflows/release.yml` and chart-releaser. Because `CR_SKIP_EXISTING=true`, a pull request with a publishable chart change must bump that chart's `version`. Operator image tags derive from the `appVersion` in `charts/openfga-operator/Chart.yaml`. A releasable runtime change under `operator/` must bump both the operator chart `version` and `appVersion`, although those values do not need to be equal. A packaging-only operator chart change must bump the chart `version` but may leave `appVersion` unchanged.
 
