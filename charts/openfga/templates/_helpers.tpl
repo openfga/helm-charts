@@ -75,10 +75,21 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Create the name of the dedicated Helm migration service account.
+Create the generated name of the dedicated migration service account.
+*/}}
+{{- define "openfga.migrationServiceAccountName.generated" -}}
+{{- printf "%s-migration" (include "openfga.fullname" . | trunc 53 | trimSuffix "-") }}
+{{- end }}
+
+{{/*
+Reject an external workload ServiceAccount name that Helm would delete as a migration hook.
 */}}
 {{- define "openfga.migrationServiceAccountName" -}}
-{{- printf "%s-migration" (include "openfga.fullname" . | trunc 53 | trimSuffix "-") }}
+{{- $name := include "openfga.migrationServiceAccountName.generated" . -}}
+{{- if and (eq (include "openfga.migrate.usePreInstallHooks" .) "true") (not .Values.serviceAccount.create) (eq (include "openfga.serviceAccountName" .) $name) -}}
+{{- fail (printf "serviceAccount.name %q conflicts with the generated migration ServiceAccount name when pre-install migration hooks are enabled" $name) -}}
+{{- end -}}
+{{- $name -}}
 {{- end }}
 
 {{/*
