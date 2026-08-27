@@ -52,6 +52,21 @@ tests:
           path: spec.template.spec.serviceAccountName
           value: RELEASE-NAME-openfga-migration
 
+  - it: runs as a pre-install/pre-upgrade hook for an external MySQL URI secret
+    set:
+      datastore.engine: mysql
+      datastore.uriSecret: my-secret
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+      - notMatchRegex:
+          path: metadata.annotations["helm.sh/hook"]
+          pattern: "post-"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migration
+
   - it: keeps the legacy hooks when existingSecret does not supply the URI (no uriKey)
     set:
       datastore.engine: postgres
@@ -84,6 +99,20 @@ tests:
       serviceAccount.create: false
       serviceAccount.name: external-workload
     asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migration
+
+  - it: permits the generated migration name for an external workload account in post-hook mode
+    set:
+      datastore.engine: postgres
+      datastore.uri: postgres://example
+      serviceAccount.create: false
+      serviceAccount.name: RELEASE-NAME-openfga-migration
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
       - equal:
           path: spec.template.spec.serviceAccountName
           value: RELEASE-NAME-openfga-migration
