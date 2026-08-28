@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -14,8 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/openfga/openfga-operator/internal/controller"
+	"github.com/openfga/helm-charts/operator/internal/controller"
 )
+
+const serviceAccountNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 var scheme = runtime.NewScheme()
 
@@ -25,12 +28,12 @@ func init() {
 
 func main() {
 	var (
-		leaderElect     bool
-		watchNamespace  string
-		metricsAddr     string
-		healthProbeAddr string
-		backoffLimit    int
-		activeDeadline  int
+		leaderElect      bool
+		watchNamespace   string
+		metricsAddr      string
+		healthProbeAddr  string
+		backoffLimit     int
+		activeDeadline   int
 		ttlAfterFinished int
 	)
 
@@ -46,39 +49,31 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	// Validate flag values.
-	for _, v := range []struct {
-		name  string
-		value int
-		max   int
-	}{
-		{"backoff-limit", backoffLimit, math.MaxInt32},
-		{"active-deadline-seconds", activeDeadline, math.MaxInt32},
-		{"ttl-seconds-after-finished", ttlAfterFinished, math.MaxInt32},
-	} {
-		if v.value < 0 || v.value > v.max {
-			fmt.Fprintf(os.Stderr, "invalid value for --%s: must be between 0 and %d\n", v.name, v.max)
-			os.Exit(1)
-		}
+	if err := validateJobOptions(backoffLimit, activeDeadline, ttlAfterFinished); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	logger := ctrl.Log.WithName("setup")
 
-	// Fall back to the pod's namespace when no explicit scope is set.
-	if watchNamespace == "" {
-		if podNS, ok := os.LookupEnv("POD_NAMESPACE"); ok && podNS != "" {
-			watchNamespace = podNS
-			logger.Info("defaulting watch scope to pod namespace", "namespace", podNS)
-		}
+	watchNamespace, err := resolveWatchNamespace(
+		watchNamespace,
+		serviceAccountNamespacePath,
+		os.LookupEnv,
+		os.ReadFile,
+	)
+	if err != nil {
+		logger.Error(err, "unable to determine watch namespace")
+		os.Exit(1)
 	}
+	logger.Info("using namespace-scoped cache", "namespace", watchNamespace)
 
 	// Configure cache namespace restrictions.
-	var cacheOpts cache.Options
-	if watchNamespace != "" {
-		cacheOpts.DefaultNamespaces = map[string]cache.Config{
+	cacheOpts := cache.Options{
+		DefaultNamespaces: map[string]cache.Config{
 			watchNamespace: {},
-		}
+		},
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -120,4 +115,59 @@ func main() {
 		logger.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func validateJobOptions(backoffLimit, activeDeadline, ttlAfterFinished int) error {
+	for _, option := range []struct {
+		name  string
+		value int64
+		min   int64
+		max   int64
+	}{
+		{name: "backoff-limit", value: int64(backoffLimit), min: 0, max: math.MaxInt32},
+		{name: "active-deadline-seconds", value: int64(activeDeadline), min: 1, max: math.MaxInt64},
+		{name: "ttl-seconds-after-finished", value: int64(ttlAfterFinished), min: 0, max: math.MaxInt32},
+	} {
+		if option.value < option.min || option.value > option.max {
+			return fmt.Errorf(
+				"invalid value for --%s: must be between %d and %d",
+				option.name,
+				option.min,
+				option.max,
+			)
+		}
+	}
+	return nil
+}
+
+func resolveWatchNamespace(
+	explicitNamespace string,
+	namespaceFile string,
+	lookupEnv func(string) (string, bool),
+	readFile func(string) ([]byte, error),
+) (string, error) {
+	if namespace := strings.TrimSpace(explicitNamespace); namespace != "" {
+		return namespace, nil
+	}
+	if value, ok := lookupEnv("POD_NAMESPACE"); ok {
+		if namespace := strings.TrimSpace(value); namespace != "" {
+			return namespace, nil
+		}
+	}
+
+	value, err := readFile(namespaceFile)
+	if err != nil {
+		return "", fmt.Errorf(
+			"POD_NAMESPACE is empty and reading service-account namespace file %q: %w",
+			namespaceFile,
+			err,
+		)
+	}
+	if namespace := strings.TrimSpace(string(value)); namespace != "" {
+		return namespace, nil
+	}
+	return "", fmt.Errorf(
+		"POD_NAMESPACE and service-account namespace file %q are empty",
+		namespaceFile,
+	)
 }

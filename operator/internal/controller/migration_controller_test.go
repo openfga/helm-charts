@@ -100,7 +100,6 @@ func newLegacyHelmMigrationJob(deployment *appsv1.Deployment, hook string) *batc
 				LabelName:      deployment.Labels[LabelName],
 				LabelPartOf:    deployment.Labels[LabelPartOf],
 				LabelComponent: deployment.Labels[LabelComponent],
-				LabelHelmChart: deployment.Labels[LabelHelmChart],
 			},
 			Annotations: map[string]string{
 				AnnotationHelmHook: hook,
@@ -144,6 +143,10 @@ func TestDeleteMigrationJob_UsesObjectPreconditions(t *testing.T) {
 				if deleteOptions.Preconditions.ResourceVersion == nil ||
 					*deleteOptions.Preconditions.ResourceVersion != job.ResourceVersion {
 					t.Errorf("expected resource-version precondition %q", job.ResourceVersion)
+				}
+				if deleteOptions.PropagationPolicy == nil ||
+					*deleteOptions.PropagationPolicy != metav1.DeletePropagationForeground {
+					t.Error("expected foreground deletion")
 				}
 				return c.Delete(ctx, obj, opts...)
 			},
@@ -245,6 +248,176 @@ func TestReconcile_VersionMatch_ScalesUp(t *testing.T) {
 	}
 	if *updated.Spec.Replicas != 3 {
 		t.Errorf("expected 3 replicas, got %d", *updated.Spec.Replicas)
+	}
+}
+
+func TestReconcile_VersionMatch_NonZeroReplicasRemainUntouched(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 2)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migration-status",
+			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
+		},
+		Data: map[string]string{"version": "v1.14.0"},
+	}
+	r := newReconciler(dep, cm)
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updated := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(dep), updated); err != nil {
+		t.Fatalf("getting deployment: %v", err)
+	}
+	if *updated.Spec.Replicas != 2 {
+		t.Fatalf("expected live replica count 2 to remain untouched, got %d", *updated.Spec.Replicas)
+	}
+}
+
+func TestReconcile_VersionMatch_ConcurrentScaleIsNotOverwritten(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migration-status",
+			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
+		},
+		Data: map[string]string{"version": "v1.14.0"},
+	}
+
+	concurrentScaleApplied := false
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, cm).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if _, ok := obj.(*appsv1.Deployment); ok && !concurrentScaleApplied {
+					latest := &appsv1.Deployment{}
+					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
+						return err
+					}
+					latest.Spec.Replicas = ptr.To[int32](2)
+					if err := c.Update(ctx, latest); err != nil {
+						return err
+					}
+					concurrentScaleApplied = true
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if !apierrors.IsConflict(err) {
+		t.Fatalf("expected optimistic-lock conflict, got %v", err)
+	}
+
+	updated := &appsv1.Deployment{}
+	if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(dep), updated); getErr != nil {
+		t.Fatalf("getting deployment: %v", getErr)
+	}
+	if *updated.Spec.Replicas != 2 {
+		t.Fatalf("expected concurrent replica count 2 to remain untouched, got %d", *updated.Spec.Replicas)
+	}
+}
+
+func TestReconcile_VersionMatch_ClearedConditionIsIdempotent(t *testing.T) {
+	transitionTime := metav1.NewTime(time.Date(2026, 8, 28, 1, 2, 3, 0, time.UTC))
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 3)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	dep.Status.Conditions = []appsv1.DeploymentCondition{{
+		Type:               "MigrationFailed",
+		Status:             corev1.ConditionFalse,
+		LastTransitionTime: transitionTime,
+		Reason:             "MigrationSucceeded",
+		Message:            "Migration completed successfully.",
+	}}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migration-status",
+			Namespace: "default",
+			Labels: map[string]string{
+				LabelManagedBy: LabelManagedByValue,
+			},
+		},
+		Data: map[string]string{"version": "v1.14.0"},
+	}
+
+	statusPatchCalls := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, cm).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(
+				ctx context.Context,
+				c client.Client,
+				subResourceName string,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.SubResourcePatchOption,
+			) error {
+				statusPatchCalls++
+				return c.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	for range 2 {
+		if _, err := r.Reconcile(context.Background(), request); err != nil {
+			t.Fatalf("unexpected reconcile error: %v", err)
+		}
+	}
+	if statusPatchCalls != 0 {
+		t.Fatalf("expected no repeated status patches, got %d", statusPatchCalls)
+	}
+
+	updated := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(dep), updated); err != nil {
+		t.Fatalf("getting deployment: %v", err)
+	}
+	condition := findCondition(updated.Status.Conditions, "MigrationFailed")
+	if condition == nil {
+		t.Fatal("expected MigrationFailed condition")
+	}
+	if !condition.LastTransitionTime.Equal(&transitionTime) {
+		t.Fatalf(
+			"expected transition time %s to remain unchanged, got %s",
+			transitionTime,
+			condition.LastTransitionTime,
+		)
 	}
 }
 
@@ -554,6 +727,82 @@ func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
 	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
 	if cond == nil || cond.Status != corev1.ConditionTrue {
 		t.Fatal("expected MigrationFailed condition True")
+	}
+}
+
+func TestReconcile_FailedJob_StatusPatchErrorPreservesJob(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	job := buildMigrationJob(
+		dep,
+		&dep.Spec.Template.Spec.Containers[0],
+		"v1.14.0",
+		DefaultBackoffLimit,
+		DefaultActiveDeadlineSeconds,
+		DefaultTTLSecondsAfterFinished,
+	)
+	job.Status.Conditions = []batchv1.JobCondition{{
+		Type:   batchv1.JobFailed,
+		Status: corev1.ConditionTrue,
+	}}
+
+	deleteCalls := 0
+	statusErr := apierrors.NewConflict(
+		schema.GroupResource{Group: "apps", Resource: "deployments"},
+		dep.Name,
+		errors.New("status changed"),
+	)
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(
+				_ context.Context,
+				_ client.Client,
+				_ string,
+				_ client.Object,
+				_ client.Patch,
+				_ ...client.SubResourcePatchOption,
+			) error {
+				return statusErr
+			},
+			Delete: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.DeleteOption,
+			) error {
+				deleteCalls++
+				return c.Delete(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if !errors.Is(err, statusErr) {
+		t.Fatalf("expected status patch error, got %v", err)
+	}
+	if deleteCalls != 0 {
+		t.Fatalf("expected no Job deletion after status patch failure, got %d calls", deleteCalls)
+	}
+	if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); getErr != nil {
+		t.Fatalf("expected failed Job to remain: %v", getErr)
+	}
+
+	updated := &appsv1.Deployment{}
+	if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(dep), updated); getErr != nil {
+		t.Fatalf("getting deployment: %v", getErr)
+	}
+	if _, ok := updated.Annotations[AnnotationRetryAfter]; ok {
+		t.Fatal("expected retry annotation not to be persisted after status patch failure")
 	}
 }
 
@@ -918,6 +1167,60 @@ func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
 	}
 }
 
+func TestReconcile_TerminatingMigrationJob_WaitsWithoutReplacement(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+	job := buildMigrationJob(
+		dep,
+		&dep.Spec.Template.Spec.Containers[0],
+		"v1.14.0",
+		DefaultBackoffLimit,
+		DefaultActiveDeadlineSeconds,
+		DefaultTTLSecondsAfterFinished,
+	)
+	now := metav1.Now()
+	job.DeletionTimestamp = &now
+	job.Finalizers = []string{"foregroundDeletion"}
+
+	createCalls := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok {
+					createCalls++
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != time.Second {
+		t.Fatalf("expected one-second deletion poll, got %s", result.RequeueAfter)
+	}
+	if createCalls != 0 {
+		t.Fatalf("expected no replacement while old Job is terminating, got %d creates", createCalls)
+	}
+}
+
 func TestReconcile_ExistingJob_RequiresManagedLabelAndDeploymentOwner(t *testing.T) {
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
 	staleJob := buildMigrationJob(
@@ -986,12 +1289,13 @@ func TestReconcile_ExistingJob_RequiresManagedLabelAndDeploymentOwner(t *testing
 	}
 }
 
-func TestReconcile_MatchingLegacyHelmMigrationHook_DeletedThenReplaced(t *testing.T) {
+func TestReconcile_CrossChartVersionLegacyHelmMigrationHook_DeletedThenReplaced(t *testing.T) {
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
 	dep.Labels[LabelInstance] = "authorization"
 	dep.Labels[LabelName] = "openfga"
-	dep.Labels[LabelHelmChart] = "openfga-0.3.12"
+	dep.Labels["helm.sh/chart"] = "openfga-0.4.0"
 	legacyJob := newLegacyHelmMigrationJob(dep, "post-install,post-upgrade")
+	legacyJob.Labels["helm.sh/chart"] = "openfga-0.3.12"
 	r := newReconciler(dep, legacyJob)
 	request := ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace},
@@ -1025,21 +1329,42 @@ func TestReconcile_MatchingLegacyHelmMigrationHook_DeletedThenReplaced(t *testin
 	}
 }
 
-func TestReconcile_LegacyHelmMigrationHook_MismatchedInstanceRejected(t *testing.T) {
+func TestReconcile_LegacyHelmMigrationHook_MismatchedStableIdentityRejected(t *testing.T) {
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
 	dep.Labels[LabelInstance] = "authorization"
-	legacyJob := newLegacyHelmMigrationJob(dep, "pre-upgrade")
-	legacyJob.Labels[LabelInstance] = "another-release"
-	r := newReconciler(dep, legacyJob)
+	dep.Labels[LabelName] = "openfga"
 
-	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace},
-	})
-	if err == nil {
-		t.Fatal("expected another release's Helm Job to be rejected")
+	tests := []struct {
+		name  string
+		label string
+		value string
+	}{
+		{name: "instance", label: LabelInstance, value: "another-release"},
+		{name: "name", label: LabelName, value: "another-app"},
+		{name: "part-of", label: LabelPartOf, value: "another-system"},
+		{name: "component", label: LabelComponent, value: "another-component"},
 	}
-	if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(legacyJob), &batchv1.Job{}); getErr != nil {
-		t.Fatalf("expected mismatched Helm Job to remain untouched: %v", getErr)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			legacyJob := newLegacyHelmMigrationJob(dep, "pre-upgrade")
+			legacyJob.Labels[tt.label] = tt.value
+			r := newReconciler(dep.DeepCopy(), legacyJob)
+
+			_, err := r.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(dep),
+			})
+			if err == nil {
+				t.Fatal("expected mismatched stable release identity to be rejected")
+			}
+			if getErr := r.Get(
+				context.Background(),
+				client.ObjectKeyFromObject(legacyJob),
+				&batchv1.Job{},
+			); getErr != nil {
+				t.Fatalf("expected mismatched Helm Job to remain untouched: %v", getErr)
+			}
+		})
 	}
 }
 
@@ -1082,6 +1407,10 @@ func TestReconcile_LegacyHelmMigrationHook_DeleteConflictRequeues(t *testing.T) 
 					deleteOptions.Preconditions.ResourceVersion == nil ||
 					*deleteOptions.Preconditions.ResourceVersion != legacyJob.ResourceVersion {
 					t.Fatal("expected legacy Job deletion to use UID and resource-version preconditions")
+				}
+				if deleteOptions.PropagationPolicy == nil ||
+					*deleteOptions.PropagationPolicy != metav1.DeletePropagationForeground {
+					t.Fatal("expected legacy Job deletion to use foreground propagation")
 				}
 				return apierrors.NewConflict(
 					schema.GroupResource{Group: "batch", Resource: "jobs"},
@@ -1260,9 +1589,10 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 			Name:      "openfga-migration-status",
 			Namespace: "default",
 			Labels: map[string]string{
-				LabelPartOf:    LabelPartOfValue,
-				LabelComponent: "migration",
-				LabelManagedBy: LabelManagedByValue,
+				LabelPartOf:         "incorrect",
+				LabelComponent:      "incorrect",
+				LabelManagedBy:      LabelManagedByValue,
+				"example.com/owner": "preserve-me",
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -1340,6 +1670,18 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 	}
 	if cm.Data["version"] != "v1.14.0" {
 		t.Errorf("expected version v1.14.0 in ConfigMap, got %s", cm.Data["version"])
+	}
+	if cm.Labels["example.com/owner"] != "preserve-me" {
+		t.Error("expected unrelated ConfigMap label to be preserved")
+	}
+	for key, expected := range map[string]string{
+		LabelPartOf:    LabelPartOfValue,
+		LabelComponent: "migration",
+		LabelManagedBy: LabelManagedByValue,
+	} {
+		if cm.Labels[key] != expected {
+			t.Errorf("expected required label %s=%q, got %q", key, expected, cm.Labels[key])
+		}
 	}
 }
 
