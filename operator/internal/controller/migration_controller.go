@@ -94,9 +94,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if currentVersion == desiredVersion {
 		logger.V(1).Info("migration up to date", "version", desiredVersion)
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
-		clearMigrationFailedCondition(deployment)
-		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-			logger.Error(patchErr, "failed to clear MigrationFailed condition")
+		if clearMigrationFailedCondition(deployment) {
+			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+				logger.Error(patchErr, "failed to clear MigrationFailed condition")
+			}
 		}
 		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
 			return ctrl.Result{}, scaleErr
@@ -154,6 +155,11 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
 	}
 
+	if job.DeletionTimestamp != nil {
+		logger.V(1).Info("waiting for migration job deletion to complete", "job", jobName)
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
 	if !isOperatorManaged(job) || !isOwnedByDeployment(job, deployment) {
 		if isLegacyHelmMigrationHook(job, deployment) {
 			// This exact Job belongs to the same Helm release and uses the chart's
@@ -209,9 +215,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		// Clear MigrationFailed condition.
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
-		clearMigrationFailedCondition(deployment)
-		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-			logger.Error(patchErr, "failed to clear MigrationFailed condition")
+		if clearMigrationFailedCondition(deployment) {
+			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+				logger.Error(patchErr, "failed to clear MigrationFailed condition")
+			}
 		}
 
 		// Update migration status ConfigMap.
@@ -239,7 +246,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
 		setMigrationFailedCondition(deployment, desiredVersion)
 		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-			logger.Error(patchErr, "failed to set MigrationFailed condition")
+			return ctrl.Result{}, fmt.Errorf("setting MigrationFailed condition: %w", patchErr)
 		}
 
 		// Persist a retry-after annotation so the cooldown is honored even
@@ -319,17 +326,27 @@ func setMigrationFailedCondition(deployment *appsv1.Deployment, version string) 
 	deployment.Status.Conditions = append(deployment.Status.Conditions, condition)
 }
 
-// clearMigrationFailedCondition removes or sets the MigrationFailed condition to False.
-func clearMigrationFailedCondition(deployment *appsv1.Deployment) {
+// clearMigrationFailedCondition sets the MigrationFailed condition to False and
+// reports whether the status changed.
+func clearMigrationFailedCondition(deployment *appsv1.Deployment) bool {
+	const (
+		reason  = "MigrationSucceeded"
+		message = "Migration completed successfully."
+	)
+
 	for i, c := range deployment.Status.Conditions {
 		if c.Type == "MigrationFailed" {
+			if c.Status == corev1.ConditionFalse && c.Reason == reason && c.Message == message {
+				return false
+			}
 			deployment.Status.Conditions[i].Status = corev1.ConditionFalse
 			deployment.Status.Conditions[i].LastTransitionTime = metav1.Now()
-			deployment.Status.Conditions[i].Reason = "MigrationSucceeded"
-			deployment.Status.Conditions[i].Message = "Migration completed successfully."
-			return
+			deployment.Status.Conditions[i].Reason = reason
+			deployment.Status.Conditions[i].Message = message
+			return true
 		}
 	}
+	return false
 }
 
 // SetupWithManager sets up the controller with the Manager.
