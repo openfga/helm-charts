@@ -1,4 +1,4 @@
-module github.com/openfga/openfga-operator
+module github.com/openfga/helm-charts/operator
 
 go 1.26.2
 

@@ -22,7 +22,6 @@ const (
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 	LabelName      = "app.kubernetes.io/name"
 	LabelInstance  = "app.kubernetes.io/instance"
-	LabelHelmChart = "helm.sh/chart"
 
 	LabelPartOfValue    = "openfga"
 	LabelComponentValue = "authorization-controller"
@@ -246,9 +245,14 @@ func updateMigrationStatus(
 	}
 
 	// Update existing ConfigMap (including OwnerReferences in case the Deployment
-	// was deleted and recreated with a new UID).
+	// was deleted and recreated with a new UID) without dropping unrelated labels.
 	existing.Data = cm.Data
-	existing.Labels = cm.Labels
+	if existing.Labels == nil {
+		existing.Labels = make(map[string]string)
+	}
+	for key, value := range cm.Labels {
+		existing.Labels[key] = value
+	}
 	existing.OwnerReferences = cm.OwnerReferences
 	if updateErr := c.Update(ctx, existing); updateErr != nil {
 		return fmt.Errorf("updating migration status ConfigMap: %w", updateErr)
@@ -257,7 +261,7 @@ func updateMigrationStatus(
 }
 
 func deleteMigrationJob(ctx context.Context, c client.Client, job *batchv1.Job) error {
-	propagation := metav1.DeletePropagationBackground
+	propagation := metav1.DeletePropagationForeground
 	preconditions := &metav1.Preconditions{}
 	if job.UID != "" {
 		uid := job.UID
@@ -274,13 +278,16 @@ func deleteMigrationJob(ctx context.Context, c client.Client, job *batchv1.Job) 
 	})
 }
 
-// ensureDeploymentScaled ensures the Deployment is scaled to the desired replica count.
-// The desired count is read from the AnnotationDesiredReplicas annotation.
-// Returns true if the Deployment was already at the desired scale.
+// ensureDeploymentScaled restores a Deployment from zero replicas once migration
+// is complete. Non-zero replica counts may be controlled by an HPA or an operator,
+// so they are never overwritten from the desired-replicas annotation.
 func ensureDeploymentScaled(ctx context.Context, c client.Client, deployment *appsv1.Deployment) (bool, error) {
+	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
+		return true, nil
+	}
+
 	desiredStr, ok := deployment.Annotations[AnnotationDesiredReplicas]
 	if !ok || desiredStr == "" {
-		// No annotation — nothing to do. The Deployment may not have been scaled down yet.
 		return true, nil
 	}
 
@@ -290,16 +297,14 @@ func ensureDeploymentScaled(ctx context.Context, c client.Client, deployment *ap
 	}
 
 	desiredInt32 := int32(desired)
-	current := int32(1)
-	if deployment.Spec.Replicas != nil {
-		current = *deployment.Spec.Replicas
-	}
-
-	if current == desiredInt32 {
+	if desiredInt32 == 0 {
 		return true, nil
 	}
 
-	patch := client.MergeFrom(deployment.DeepCopy())
+	patch := client.MergeFromWithOptions(
+		deployment.DeepCopy(),
+		client.MergeFromWithOptimisticLock{},
+	)
 	deployment.Spec.Replicas = ptr.To(desiredInt32)
 	if patchErr := c.Patch(ctx, deployment, patch); patchErr != nil {
 		return false, fmt.Errorf("scaling deployment to %d replicas: %w", desiredInt32, patchErr)
@@ -327,7 +332,7 @@ func isLegacyHelmMigrationHook(job *batchv1.Job, deployment *appsv1.Deployment) 
 		return false
 	}
 
-	for _, identityLabel := range []string{LabelName, LabelPartOf, LabelComponent, LabelHelmChart} {
+	for _, identityLabel := range []string{LabelName, LabelPartOf, LabelComponent} {
 		if expected := deploymentLabels[identityLabel]; expected != "" && jobLabels[identityLabel] != expected {
 			return false
 		}
