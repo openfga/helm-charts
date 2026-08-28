@@ -1,5 +1,9 @@
 replicaCount: 3
 
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate: {}
+
 image:
   repository: openfga/openfga
   pullPolicy: Always
