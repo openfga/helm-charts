@@ -23,6 +23,26 @@ tests:
           path: spec.minReadySeconds
           value: 60
 
+  - it: should render minReadySeconds at the maximum allowed value
+    set:
+      minReadySeconds: 599
+    asserts:
+      - equal:
+          path: spec.minReadySeconds
+          value: 599
+
+  - it: should reject a negative minReadySeconds
+    set:
+      minReadySeconds: -1
+    asserts:
+      - failedTemplate: {}
+
+  - it: should reject minReadySeconds of 600 or more
+    set:
+      minReadySeconds: 600
+    asserts:
+      - failedTemplate: {}
+
   - it: should not render strategy when deploymentStrategy is not set
     asserts:
       - notExists:
