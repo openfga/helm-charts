@@ -2,7 +2,7 @@
 
 A Kubernetes operator that manages database migrations for OpenFGA deployments. Instead of relying on Helm hooks and init containers, the operator watches OpenFGA Deployments, detects version changes, and orchestrates migrations as regular Jobs.
 
-This Stage 1 implementation focuses solely on migration orchestration.
+This Stage 1 implementation focuses solely on migration orchestration. See [ADR-001](../docs/adr/001-adopt-openfga-operator.md) for the full roadmap.
 
 ## How It Works
 
