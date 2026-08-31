@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,6 +38,8 @@ const (
 	AnnotationDesiredReplicas         = "openfga.dev/desired-replicas"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
 	AnnotationRetryAfter              = "openfga.dev/migration-retry-after"
+	AnnotationRetainUntil             = "openfga.dev/migration-retain-until"
+	AnnotationDesiredVersion          = "openfga.dev/desired-version"
 
 	// Defaults for migration Job configuration.
 	DefaultBackoffLimit            int32 = 3
@@ -107,7 +111,6 @@ func buildMigrationJob(
 	desiredVersion string,
 	backoffLimit int32,
 	activeDeadlineSeconds int64,
-	ttlSecondsAfterFinished int32,
 ) *batchv1.Job {
 	// Determine the migration service account.
 	migrationSA := deployment.Annotations[AnnotationMigrationServiceAccount]
@@ -133,7 +136,7 @@ func buildMigrationJob(
 				"app.kubernetes.io/version": labelVersion,
 			},
 			Annotations: map[string]string{
-				"openfga.dev/desired-version": desiredVersion,
+				AnnotationDesiredVersion: desiredVersion,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -147,9 +150,8 @@ func buildMigrationJob(
 			},
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit:            ptr.To(backoffLimit),
-			ActiveDeadlineSeconds:   ptr.To(activeDeadlineSeconds),
-			TTLSecondsAfterFinished: ptr.To(ttlSecondsAfterFinished),
+			BackoffLimit:          ptr.To(backoffLimit),
+			ActiveDeadlineSeconds: ptr.To(activeDeadlineSeconds),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -166,6 +168,7 @@ func buildMigrationJob(
 						{
 							Name:            "migrate-database",
 							Image:           mainContainer.Image,
+							ImagePullPolicy: mainContainer.ImagePullPolicy,
 							Args:            []string{"migrate"},
 							Env:             mainContainer.Env,
 							EnvFrom:         mainContainer.EnvFrom,
@@ -192,6 +195,7 @@ func updateMigrationStatus(
 	deployment *appsv1.Deployment,
 	version string,
 	jobName string,
+	migratedAt time.Time,
 ) error {
 	cmName := migrationConfigMapName(deployment.Name)
 	cm := &corev1.ConfigMap{
@@ -216,7 +220,7 @@ func updateMigrationStatus(
 		},
 		Data: map[string]string{
 			"version":    version,
-			"migratedAt": time.Now().UTC().Format(time.RFC3339),
+			"migratedAt": migratedAt.UTC().Format(time.RFC3339),
 			"jobName":    jobName,
 		},
 	}
@@ -236,28 +240,169 @@ func updateMigrationStatus(
 	}
 
 	if !isOperatorManaged(existing) {
-		return fmt.Errorf(
-			"migration status ConfigMap %s/%s exists but is not managed by %s",
-			existing.Namespace,
-			existing.Name,
-			LabelManagedByValue,
-		)
+		return migrationStatusConfigMapCollision(existing)
 	}
 
-	// Update existing ConfigMap (including OwnerReferences in case the Deployment
-	// was deleted and recreated with a new UID) without dropping unrelated labels.
+	original := existing.DeepCopy()
 	existing.Data = cm.Data
-	if existing.Labels == nil {
-		existing.Labels = make(map[string]string)
+	if err := reconcileMigrationStatusMetadata(existing, deployment); err != nil {
+		return err
 	}
-	for key, value := range cm.Labels {
-		existing.Labels[key] = value
-	}
-	existing.OwnerReferences = cm.OwnerReferences
-	if updateErr := c.Update(ctx, existing); updateErr != nil {
+	patch := client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})
+	if updateErr := c.Patch(ctx, existing, patch); updateErr != nil {
 		return fmt.Errorf("updating migration status ConfigMap: %w", updateErr)
 	}
 	return nil
+}
+
+func ensureMigrationStatusOwnership(
+	ctx context.Context,
+	c client.Client,
+	deployment *appsv1.Deployment,
+	configMap *corev1.ConfigMap,
+) error {
+	if !isOperatorManaged(configMap) {
+		return migrationStatusConfigMapCollision(configMap)
+	}
+
+	original := configMap.DeepCopy()
+	if err := reconcileMigrationStatusMetadata(configMap, deployment); err != nil {
+		return err
+	}
+	if reflect.DeepEqual(original.Labels, configMap.Labels) &&
+		reflect.DeepEqual(original.OwnerReferences, configMap.OwnerReferences) {
+		return nil
+	}
+
+	patch := client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})
+	if err := c.Patch(ctx, configMap, patch); err != nil {
+		return fmt.Errorf("repairing migration status ConfigMap ownership: %w", err)
+	}
+	return nil
+}
+
+func reconcileMigrationStatusMetadata(
+	configMap *corev1.ConfigMap,
+	deployment *appsv1.Deployment,
+) error {
+	if configMap.Name != migrationConfigMapName(deployment.Name) ||
+		configMap.Namespace != deployment.Namespace {
+		return migrationStatusConfigMapCollision(configMap)
+	}
+
+	if configMap.Labels == nil {
+		configMap.Labels = make(map[string]string)
+	}
+	for key, value := range map[string]string{
+		LabelPartOf:    LabelPartOfValue,
+		LabelComponent: "migration",
+		LabelManagedBy: LabelManagedByValue,
+	} {
+		configMap.Labels[key] = value
+	}
+
+	desiredOwner := migrationStatusOwnerReference(deployment)
+	ownerReferences := make([]metav1.OwnerReference, 0, len(configMap.OwnerReferences)+1)
+	for _, owner := range configMap.OwnerReferences {
+		if ptr.Deref(owner.Controller, false) {
+			if owner.APIVersion != desiredOwner.APIVersion ||
+				owner.Kind != desiredOwner.Kind ||
+				owner.Name != desiredOwner.Name {
+				return fmt.Errorf(
+					"migration status ConfigMap %s/%s is controlled by %s %s",
+					configMap.Namespace,
+					configMap.Name,
+					owner.Kind,
+					owner.Name,
+				)
+			}
+		}
+		if owner.APIVersion == desiredOwner.APIVersion &&
+			owner.Kind == desiredOwner.Kind &&
+			owner.Name == desiredOwner.Name {
+			continue
+		}
+		ownerReferences = append(ownerReferences, owner)
+	}
+	configMap.OwnerReferences = append(ownerReferences, desiredOwner)
+	return nil
+}
+
+func migrationStatusOwnerReference(deployment *appsv1.Deployment) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion:         "apps/v1",
+		Kind:               "Deployment",
+		Name:               deployment.Name,
+		UID:                deployment.UID,
+		Controller:         ptr.To(true),
+		BlockOwnerDeletion: ptr.To(true),
+	}
+}
+
+func migrationStatusConfigMapCollision(configMap *corev1.ConfigMap) error {
+	return fmt.Errorf(
+		"migration status ConfigMap %s/%s exists but is not managed by %s",
+		configMap.Namespace,
+		configMap.Name,
+		LabelManagedByValue,
+	)
+}
+
+func armMigrationJobTTL(
+	ctx context.Context,
+	c client.Client,
+	job *batchv1.Job,
+	ttlSeconds int32,
+	annotations map[string]string,
+) error {
+	changed := job.Spec.TTLSecondsAfterFinished == nil ||
+		*job.Spec.TTLSecondsAfterFinished != ttlSeconds
+	for key, value := range annotations {
+		if job.Annotations[key] != value {
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+
+	original := job.DeepCopy()
+	job.Spec.TTLSecondsAfterFinished = ptr.To(ttlSeconds)
+	if job.Annotations == nil {
+		job.Annotations = make(map[string]string)
+	}
+	for key, value := range annotations {
+		job.Annotations[key] = value
+	}
+	patch := client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})
+	if err := c.Patch(ctx, job, patch); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("arming migration Job TTL: %w", err)
+	}
+	return nil
+}
+
+func disarmMigrationJobTTL(
+	ctx context.Context,
+	c client.Client,
+	job *batchv1.Job,
+) (bool, error) {
+	if job.Spec.TTLSecondsAfterFinished == nil {
+		return false, nil
+	}
+
+	original := job.DeepCopy()
+	job.Spec.TTLSecondsAfterFinished = nil
+	patch := client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})
+	if err := c.Patch(ctx, job, patch); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("disarming unrecorded migration Job TTL: %w", err)
+	}
+	return true, nil
 }
 
 func deleteMigrationJob(ctx context.Context, c client.Client, job *batchv1.Job) error {
@@ -350,13 +495,5 @@ func isLegacyHelmMigrationHook(job *batchv1.Job, deployment *appsv1.Deployment) 
 }
 
 func isOwnedByDeployment(object metav1.Object, deployment *appsv1.Deployment) bool {
-	for _, owner := range object.GetOwnerReferences() {
-		if owner.APIVersion == "apps/v1" &&
-			owner.Kind == "Deployment" &&
-			owner.Name == deployment.Name &&
-			owner.UID == deployment.UID {
-			return true
-		}
-	}
-	return false
+	return metav1.IsControlledBy(object, deployment)
 }
