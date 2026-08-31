@@ -13,7 +13,7 @@ This Stage 1 implementation focuses solely on migration orchestration. See [ADR-
    - Waits for the Job to complete
    - Updates the ConfigMap with the new version
    - Restores the desired replica count when the Deployment is still at zero
-3. On failure, a `MigrationFailed` condition is set on the Deployment and its replica count remains unchanged
+3. On failure, a `MigrationFailed` condition is set on the Deployment and its replica count remains unchanged. The failed Job and its Pods are retained until both the retry cooldown and diagnostic retention window have elapsed.
 
 ## Prerequisites
 
@@ -105,9 +105,9 @@ The operator accepts the following flags:
 | `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace via `POD_NAMESPACE` or the mounted service-account namespace file. Startup fails rather than widening to cluster scope when no namespace is available. |
 | `--metrics-bind-address` | `:8080` | Address the Prometheus metrics endpoint binds to. Change only if the default port conflicts with other containers in the pod. |
 | `--health-probe-bind-address` | `:8081` | Address the Kubernetes liveness and readiness probe endpoints bind to. Change only if the default port conflicts. |
-| `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. After hitting this limit the operator deletes the Job, sets a `MigrationFailed` condition on the Deployment, and retries after a 60-second cooldown. |
+| `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. After hitting this limit the operator sets a `MigrationFailed` condition and retries after the cooldown and diagnostic retention windows have elapsed. |
 | `--active-deadline-seconds` | `300` | Maximum wall-clock seconds a migration Job can run before Kubernetes terminates it. Must be at least 1. Prevents stuck migrations from blocking the pipeline indefinitely. |
-| `--ttl-seconds-after-finished` | `300` | Seconds Kubernetes keeps a completed or failed Job (and its pods) before garbage-collecting them, giving you time to inspect logs. |
+| `--ttl-seconds-after-finished` | `300` | Diagnostic retention in seconds after a migration Job finishes. TTL is armed only after the terminal result is persisted. Failed Jobs are retained until the later of this window and the 60-second retry cooldown. |
 
 When deployed with the Helm subchart, configure supported flag overrides through [`charts/openfga-operator/values.yaml`](../charts/openfga-operator/values.yaml).
 
@@ -118,6 +118,7 @@ The operator reads these annotations from the OpenFGA Deployment:
 | Annotation | Description |
 |------------|-------------|
 | `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. |
+| `openfga.dev/container-name` | Selects the Deployment container whose image and runtime settings are used by the migration Job. Defaults to the container named `openfga`; set this when OpenFGA uses a different container name. |
 | `openfga.dev/desired-replicas` | The replica count to restore after migration succeeds when the Deployment is still at zero replicas. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
 

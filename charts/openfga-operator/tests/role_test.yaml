@@ -1,0 +1,40 @@
+suite: role permissions
+templates:
+  - templates/role.yaml
+tests:
+  - it: grants exact migration lifecycle permissions
+    asserts:
+      - equal:
+          path: rules[2].apiGroups
+          value:
+            - batch
+      - equal:
+          path: rules[2].resources
+          value:
+            - jobs
+      - equal:
+          path: rules[2].verbs
+          value:
+            - get
+            - list
+            - watch
+            - create
+            - delete
+            - patch
+      - equal:
+          path: rules[3].apiGroups
+          value:
+            - ""
+      - equal:
+          path: rules[3].resources
+          value:
+            - configmaps
+      - equal:
+          path: rules[3].verbs
+          value:
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
