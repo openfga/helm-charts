@@ -1,0 +1,25 @@
+{{- $pdb := .Values.podDisruptionBudget | default dict -}}
+{{- if (get $pdb "enabled") -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "openfga-operator.fullname" . }}
+  namespace: {{ include "openfga-operator.namespace" . }}
+  labels:
+    {{- include "openfga-operator.labels" . | nindent 4 }}
+spec:
+  {{- $minAvailable := get $pdb "minAvailable" }}
+  {{- if and (hasKey $pdb "minAvailable") (ne $minAvailable nil) (ne (toString $minAvailable) "") }}
+  minAvailable: {{ $minAvailable }}
+  {{- else }}
+  {{- $maxUnavailable := get $pdb "maxUnavailable" }}
+  {{- if and (hasKey $pdb "maxUnavailable") (ne $maxUnavailable nil) (ne (toString $maxUnavailable) "") }}
+  maxUnavailable: {{ $maxUnavailable }}
+  {{- else }}
+  maxUnavailable: 1
+  {{- end }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "openfga-operator.selectorLabels" . | nindent 6 }}
+{{- end }}

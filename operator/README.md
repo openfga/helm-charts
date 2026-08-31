@@ -19,6 +19,7 @@ This Stage 1 implementation focuses solely on migration orchestration.
 
 - Go 1.26.2+
 - Docker
+- Helm 3.6+
 - A Kubernetes cluster (Rancher Desktop, kind, etc.)
 
 ## Development
@@ -78,6 +79,8 @@ The operator accepts the following flags:
 | `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. After hitting this limit the operator sets a `MigrationFailed` condition and retries after the cooldown and diagnostic retention windows have elapsed. |
 | `--active-deadline-seconds` | `300` | Maximum wall-clock seconds a migration Job can run before Kubernetes terminates it. Must be at least 1. Prevents stuck migrations from blocking the pipeline indefinitely. |
 | `--ttl-seconds-after-finished` | `300` | Diagnostic retention in seconds after a migration Job finishes. TTL is armed only after the terminal result is persisted. Failed Jobs are retained until the later of this window and the 60-second retry cooldown. |
+
+When deployed with the Helm subchart, configure supported flag overrides through [`charts/openfga-operator/values.yaml`](../charts/openfga-operator/values.yaml).
 
 ## Annotations
 

@@ -24,6 +24,7 @@ jobs:
           helm repo add bitnami-legacy https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
           helm dependency build charts/openfga
           helm unittest charts/openfga
+          helm unittest charts/openfga-operator
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -58,6 +59,13 @@ jobs:
       - name: Create kind cluster
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+
+      - name: Build and load operator image into kind
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          version=$(helm show chart charts/openfga-operator | awk '$1 == "appVersion:" { print $2 }')
+          docker build -t ghcr.io/openfga/openfga-operator:${version} operator/
+          kind load docker-image ghcr.io/openfga/openfga-operator:${version} --name chart-testing
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
