@@ -108,6 +108,58 @@ func newLegacyHelmMigrationJob(deployment *appsv1.Deployment, hook string) *batc
 	}
 }
 
+func newMigrationStatusConfigMap(
+	deployment *appsv1.Deployment,
+	version string,
+	ownerUID types.UID,
+) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      migrationConfigMapName(deployment.Name),
+			Namespace: deployment.Namespace,
+			Labels: map[string]string{
+				LabelPartOf:    LabelPartOfValue,
+				LabelComponent: "migration",
+				LabelManagedBy: LabelManagedByValue,
+			},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion:         "apps/v1",
+				Kind:               "Deployment",
+				Name:               deployment.Name,
+				UID:                ownerUID,
+				Controller:         ptr.To(true),
+				BlockOwnerDeletion: ptr.To(true),
+			}},
+		},
+		Data: map[string]string{
+			"version":    version,
+			"migratedAt": "2026-08-30T12:00:00Z",
+			"jobName":    migrationJobName(deployment.Name),
+		},
+	}
+}
+
+func newTerminalMigrationJob(
+	deployment *appsv1.Deployment,
+	version string,
+	conditionType batchv1.JobConditionType,
+	transitionTime time.Time,
+) *batchv1.Job {
+	job := buildMigrationJob(
+		deployment,
+		&deployment.Spec.Template.Spec.Containers[0],
+		version,
+		DefaultBackoffLimit,
+		DefaultActiveDeadlineSeconds,
+	)
+	job.Status.Conditions = []batchv1.JobCondition{{
+		Type:               conditionType,
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: metav1.NewTime(transitionTime),
+	}}
+	return job
+}
+
 func findCondition(conditions []appsv1.DeploymentCondition, condType string) *appsv1.DeploymentCondition {
 	for i := range conditions {
 		if string(conditions[i].Type) == condType {
@@ -190,6 +242,9 @@ func TestReconcile_FirstInstall_CreatesJob(t *testing.T) {
 
 	if job.Spec.Template.Spec.Containers[0].Args[0] != "migrate" {
 		t.Errorf("expected job args [migrate], got %v", job.Spec.Template.Spec.Containers[0].Args)
+	}
+	if job.Spec.TTLSecondsAfterFinished != nil {
+		t.Fatal("expected new migration Job to remain ineligible for TTL cleanup")
 	}
 
 	// Verify all env vars from the main container were passed.
@@ -495,6 +550,7 @@ func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -586,6 +642,7 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -610,18 +667,24 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 	}
 
 	r := newReconciler(dep, job)
+	now := time.Date(2026, 8, 31, 6, 0, 0, 0, time.UTC)
+	r.Now = func() time.Time { return now }
+	job.Status.Conditions[0].LastTransitionTime = metav1.NewTime(now)
+	if err := r.Status().Update(context.Background(), job); err != nil {
+		t.Fatalf("setting Job failure transition time: %v", err)
+	}
 
 	// When: reconciling.
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
 	})
 
-	// Then: no error, but requeue after 60s for retry.
+	// Then: no error, but requeue after the configured diagnostic window.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.RequeueAfter != 60*time.Second {
-		t.Errorf("expected 60s requeue, got %v", result.RequeueAfter)
+	if result.RequeueAfter != 5*time.Minute {
+		t.Errorf("expected 5m requeue, got %v", result.RequeueAfter)
 	}
 
 	// Verify Deployment replicas unchanged (still at 0 from fresh install).
@@ -635,12 +698,20 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 		t.Errorf("expected 0 replicas after failed migration, got %d", *updated.Spec.Replicas)
 	}
 
-	// Verify the failed Job was deleted.
-	deletedJob := &batchv1.Job{}
+	// Verify the failed Job is retained with TTL armed only after persistence.
+	retainedJob := &batchv1.Job{}
 	if getErr := r.Get(context.Background(), types.NamespacedName{
 		Name: "openfga-migrate", Namespace: "default",
-	}, deletedJob); getErr == nil {
-		t.Error("expected failed migration job to be deleted")
+	}, retainedJob); getErr != nil {
+		t.Fatalf("expected failed migration job to be retained: %v", getErr)
+	}
+	if retainedJob.Spec.TTLSecondsAfterFinished == nil ||
+		*retainedJob.Spec.TTLSecondsAfterFinished !=
+			DefaultTTLSecondsAfterFinished+int32(failureTTLDeletionGrace/time.Second) {
+		t.Fatalf(
+			"expected retained Job TTL %d plus deletion grace",
+			DefaultTTLSecondsAfterFinished,
+		)
 	}
 
 	// Verify retry-after annotation was set on the Deployment.
@@ -686,6 +757,7 @@ func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -697,6 +769,8 @@ func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
 	}
 
 	r := newReconciler(dep, job)
+	now := time.Date(2026, 8, 31, 6, 0, 0, 0, time.UTC)
+	r.Now = func() time.Time { return now }
 
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
@@ -704,8 +778,8 @@ func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.RequeueAfter != 60*time.Second {
-		t.Errorf("expected 60s requeue, got %v", result.RequeueAfter)
+	if result.RequeueAfter != 10*time.Second {
+		t.Errorf("expected 10s requeue while JobFailureTarget is not finished, got %v", result.RequeueAfter)
 	}
 
 	updated := &appsv1.Deployment{}
@@ -715,11 +789,11 @@ func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
 		t.Fatalf("getting deployment: %v", getErr)
 	}
 
-	deletedJob := &batchv1.Job{}
+	retainedJob := &batchv1.Job{}
 	if getErr := r.Get(context.Background(), types.NamespacedName{
 		Name: "openfga-migrate", Namespace: "default",
-	}, deletedJob); getErr == nil {
-		t.Error("expected migration job to be deleted on JobFailureTarget")
+	}, retainedJob); getErr != nil {
+		t.Fatalf("expected migration job to be retained on JobFailureTarget: %v", getErr)
 	}
 	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
 		t.Error("expected retry-after annotation to be set")
@@ -738,7 +812,6 @@ func TestReconcile_FailedJob_StatusPatchErrorPreservesJob(t *testing.T) {
 		"v1.14.0",
 		DefaultBackoffLimit,
 		DefaultActiveDeadlineSeconds,
-		DefaultTTLSecondsAfterFinished,
 	)
 	job.Status.Conditions = []batchv1.JobCondition{{
 		Type:   batchv1.JobFailed,
@@ -860,6 +933,7 @@ func TestReconcile_UnknownVersionJob_DeletedNotTrusted(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -1088,6 +1162,45 @@ func TestReconcile_FindContainerByName(t *testing.T) {
 	}
 }
 
+func TestReconcile_ContainerNameAnnotationSelectsNonDefaultContainer(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "sidecar:v1", 0)
+	dep.Annotations[AnnotationContainerName] = "authorization"
+	dep.Spec.Template.Spec.Containers = []corev1.Container{
+		{Name: "sidecar", Image: "sidecar:v1"},
+		{
+			Name:            "authorization",
+			Image:           "openfga/openfga:v1.14.0",
+			ImagePullPolicy: corev1.PullNever,
+			Env: []corev1.EnvVar{
+				{Name: "OPENFGA_DATASTORE_ENGINE", Value: "postgres"},
+			},
+		},
+	}
+	r := newReconciler(dep)
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	}); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+
+	job := &batchv1.Job{}
+	if err := r.Get(
+		context.Background(),
+		types.NamespacedName{Name: migrationJobName(dep.Name), Namespace: dep.Namespace},
+		job,
+	); err != nil {
+		t.Fatalf("getting migration Job: %v", err)
+	}
+	container := job.Spec.Template.Spec.Containers[0]
+	if container.Image != "openfga/openfga:v1.14.0" {
+		t.Fatalf("expected annotated container image, got %q", container.Image)
+	}
+	if container.ImagePullPolicy != corev1.PullNever {
+		t.Fatalf("expected annotated container pull policy Never, got %q", container.ImagePullPolicy)
+	}
+}
+
 func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
 	// Given: a Deployment at v1.15.0 with an existing migration Job for v1.14.0.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
@@ -1110,6 +1223,7 @@ func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -1175,7 +1289,6 @@ func TestReconcile_TerminatingMigrationJob_WaitsWithoutReplacement(t *testing.T)
 		"v1.14.0",
 		DefaultBackoffLimit,
 		DefaultActiveDeadlineSeconds,
-		DefaultTTLSecondsAfterFinished,
 	)
 	now := metav1.Now()
 	job.DeletionTimestamp = &now
@@ -1229,7 +1342,6 @@ func TestReconcile_ExistingJob_RequiresManagedLabelAndDeploymentOwner(t *testing
 		"v1.14.0",
 		DefaultBackoffLimit,
 		DefaultActiveDeadlineSeconds,
-		DefaultTTLSecondsAfterFinished,
 	)
 
 	tests := []struct {
@@ -1286,6 +1398,36 @@ func TestReconcile_ExistingJob_RequiresManagedLabelAndDeploymentOwner(t *testing
 				t.Fatal("expected trusted stale migration job to be deleted")
 			}
 		})
+	}
+}
+
+func TestReconcile_JobWithNonControllerDeploymentReferenceIsRejected(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+	job := buildMigrationJob(
+		dep,
+		&dep.Spec.Template.Spec.Containers[0],
+		"v1.14.0",
+		DefaultBackoffLimit,
+		DefaultActiveDeadlineSeconds,
+	)
+	job.OwnerReferences[0].Controller = ptr.To(false)
+	job.OwnerReferences = append(job.OwnerReferences, metav1.OwnerReference{
+		APIVersion: "v1",
+		Kind:       "ConfigMap",
+		Name:       "foreign-controller",
+		UID:        "foreign-controller-uid",
+		Controller: ptr.To(true),
+	})
+	r := newReconciler(dep, job)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if err == nil || !strings.Contains(err.Error(), "owned by Deployment openfga") {
+		t.Fatalf("expected non-controller Deployment reference to be rejected, got %v", err)
+	}
+	if getErr := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); getErr != nil {
+		t.Fatalf("expected rejected Job to remain untouched: %v", getErr)
 	}
 }
 
@@ -1500,6 +1642,7 @@ func TestReconcile_StaleJob_LabelOnlyFallback_DeletedAndRequeued(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 			// No annotation — forces the label-only fallback path.
@@ -1554,7 +1697,6 @@ func TestReconcile_JobSucceeded_DoesNotOverwriteUnmanagedConfigMap(t *testing.T)
 		"v1.14.0",
 		DefaultBackoffLimit,
 		DefaultActiveDeadlineSeconds,
-		DefaultTTLSecondsAfterFinished,
 	)
 	job.Status.Conditions = []batchv1.JobCondition{
 		{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
@@ -1600,6 +1742,7 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -1626,6 +1769,7 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -1743,6 +1887,7 @@ func TestReconcile_JobInProgress_Requeues(t *testing.T) {
 					Kind:       "Deployment",
 					Name:       "openfga",
 					UID:        "test-uid-123",
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -1784,6 +1929,1111 @@ func TestReconcile_JobInProgress_Requeues(t *testing.T) {
 	}
 	if *updated.Spec.Replicas != 0 {
 		t.Errorf("expected 0 replicas while job in progress, got %d", *updated.Spec.Replicas)
+	}
+}
+
+func TestBuildMigrationJob_CopiesImagePullPolicyAndOmitsTTL(t *testing.T) {
+	tests := []struct {
+		name   string
+		image  string
+		policy corev1.PullPolicy
+	}{
+		{name: "never with latest", image: "openfga/openfga:latest", policy: corev1.PullNever},
+		{name: "always", image: "openfga/openfga:v1.14.0", policy: corev1.PullAlways},
+		{name: "if not present", image: "openfga/openfga:v1.14.0", policy: corev1.PullIfNotPresent},
+		{name: "default", image: "openfga/openfga:v1.14.0", policy: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dep := newTestDeployment("openfga", "default", tt.image, 0)
+			dep.Spec.Template.Spec.Containers[0].ImagePullPolicy = tt.policy
+
+			job := buildMigrationJob(
+				dep,
+				&dep.Spec.Template.Spec.Containers[0],
+				extractImageTag(tt.image),
+				DefaultBackoffLimit,
+				DefaultActiveDeadlineSeconds,
+			)
+
+			if got := job.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != tt.policy {
+				t.Fatalf("expected pull policy %q, got %q", tt.policy, got)
+			}
+			if job.Spec.TTLSecondsAfterFinished != nil {
+				t.Fatal("expected newly built Job to have no TTL before result persistence")
+			}
+		})
+	}
+}
+
+func TestReconcile_VersionMatch_RepairsRecreatedDeploymentOwnershipWithoutRerun(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+	dep.UID = "new-deployment-uid"
+	cm := newMigrationStatusConfigMap(dep, "v1.14.0", "old-deployment-uid")
+	cm.Labels[LabelComponent] = "incorrect"
+	cm.Labels["example.com/preserved"] = "true"
+
+	jobCreates := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, cm).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok {
+					jobCreates++
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	for range 2 {
+		result, err := r.Reconcile(context.Background(), request)
+		if err != nil {
+			t.Fatalf("unexpected reconcile error: %v", err)
+		}
+		if result != (ctrl.Result{}) {
+			t.Fatalf("expected no requeue for current migration status, got %+v", result)
+		}
+	}
+	if jobCreates != 0 {
+		t.Fatalf("expected no migration rerun while repairing ownership, got %d creates", jobCreates)
+	}
+
+	updated := &corev1.ConfigMap{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(cm), updated); err != nil {
+		t.Fatalf("getting repaired ConfigMap: %v", err)
+	}
+	owner := metav1.GetControllerOf(updated)
+	if owner == nil || owner.UID != dep.UID {
+		t.Fatalf("expected current Deployment UID %q, got owner %+v", dep.UID, owner)
+	}
+	if updated.Data["migratedAt"] != cm.Data["migratedAt"] {
+		t.Fatal("expected ownership repair not to rewrite the recorded migration result")
+	}
+	if updated.Labels["example.com/preserved"] != "true" {
+		t.Fatal("expected unrelated ConfigMap labels to survive ownership repair")
+	}
+	if updated.Labels[LabelComponent] != "migration" {
+		t.Fatal("expected required migration identity label to be repaired")
+	}
+}
+
+func TestReconcile_VersionMatch_OwnershipRepairConflictRetries(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+	dep.UID = "new-deployment-uid"
+	cm := newMigrationStatusConfigMap(dep, "v1.14.0", "old-deployment-uid")
+
+	conflictInjected := false
+	jobCreates := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, cm).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if _, ok := obj.(*corev1.ConfigMap); ok && !conflictInjected {
+					latest := &corev1.ConfigMap{}
+					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
+						return err
+					}
+					latest.Labels["example.com/concurrent"] = "preserved"
+					if err := c.Update(ctx, latest); err != nil {
+						return err
+					}
+					conflictInjected = true
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok {
+					jobCreates++
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	if _, err := r.Reconcile(context.Background(), request); !apierrors.IsConflict(err) {
+		t.Fatalf("expected optimistic ownership conflict, got %v", err)
+	}
+	if jobCreates != 0 {
+		t.Fatal("expected no migration Job while ownership repair conflicted")
+	}
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatalf("expected ownership repair retry to succeed: %v", err)
+	}
+
+	updated := &corev1.ConfigMap{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(cm), updated); err != nil {
+		t.Fatalf("getting repaired ConfigMap: %v", err)
+	}
+	if owner := metav1.GetControllerOf(updated); owner == nil || owner.UID != dep.UID {
+		t.Fatalf("expected current Deployment ownership, got %+v", owner)
+	}
+	if updated.Labels["example.com/concurrent"] != "preserved" {
+		t.Fatal("expected concurrent ConfigMap label to be preserved after retry")
+	}
+	if jobCreates != 0 {
+		t.Fatal("expected current migration result not to rerun after repair")
+	}
+}
+
+func TestReconcile_VersionMatch_ForeignControllerOwnerIsCollision(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+	cm := newMigrationStatusConfigMap(dep, "v1.14.0", "other-uid")
+	cm.OwnerReferences[0].Name = "another-deployment"
+	r := newReconciler(dep, cm)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if err == nil || !strings.Contains(err.Error(), "controlled by Deployment another-deployment") {
+		t.Fatalf("expected foreign controller collision, got %v", err)
+	}
+}
+
+func TestReconcile_StaleForeignControlledStatusBlocksMigrationCreation(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	cm := newMigrationStatusConfigMap(dep, "v1.13.0", "other-uid")
+	cm.OwnerReferences[0].Name = "another-deployment"
+	r := newReconciler(dep, cm)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if err == nil || !strings.Contains(err.Error(), "controlled by Deployment another-deployment") {
+		t.Fatalf("expected foreign controller collision, got %v", err)
+	}
+	if getErr := r.Get(
+		context.Background(),
+		types.NamespacedName{Name: migrationJobName(dep.Name), Namespace: dep.Namespace},
+		&batchv1.Job{},
+	); !apierrors.IsNotFound(getErr) {
+		t.Fatalf("expected collision before Job creation, got %v", getErr)
+	}
+}
+
+func TestReconcile_SuccessTTLZeroArmedAfterResultPersistence(t *testing.T) {
+	now := time.Date(2026, 8, 31, 7, 0, 0, 0, time.UTC)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobComplete, now)
+
+	sawTTLPatch := false
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if migrationJob, ok := obj.(*batchv1.Job); ok {
+					status := &corev1.ConfigMap{}
+					if err := c.Get(
+						ctx,
+						types.NamespacedName{
+							Name:      migrationConfigMapName(dep.Name),
+							Namespace: dep.Namespace,
+						},
+						status,
+					); err != nil {
+						t.Fatalf("expected migration result before TTL patch: %v", err)
+					}
+					if status.Data["version"] != "v1.14.0" {
+						t.Fatalf("expected persisted version before TTL patch, got %q", status.Data["version"])
+					}
+					if migrationJob.Spec.TTLSecondsAfterFinished == nil ||
+						*migrationJob.Spec.TTLSecondsAfterFinished != 0 {
+						t.Fatal("expected TTL=0 patch after success persistence")
+					}
+					sawTTLPatch = true
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: 0,
+		Now:                     func() time.Time { return now },
+	}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	}); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+	if !sawTTLPatch {
+		t.Fatal("expected completed Job TTL to be armed")
+	}
+}
+
+func TestReconcile_SuccessTTLPatchConflictRecoversFromCurrentStatus(t *testing.T) {
+	now := time.Date(2026, 8, 31, 7, 15, 0, 0, time.UTC)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobComplete, now)
+
+	conflictInjected := false
+	jobCreates := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok && !conflictInjected {
+					latest := &batchv1.Job{}
+					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
+						return err
+					}
+					latest.Labels["example.com/concurrent"] = "preserved"
+					if err := c.Update(ctx, latest); err != nil {
+						return err
+					}
+					conflictInjected = true
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok {
+					jobCreates++
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: 0,
+		Now:                     func() time.Time { return now },
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	if _, err := r.Reconcile(context.Background(), request); !apierrors.IsConflict(err) {
+		t.Fatalf("expected TTL optimistic-lock conflict, got %v", err)
+	}
+	status := &corev1.ConfigMap{}
+	if err := r.Get(
+		context.Background(),
+		types.NamespacedName{Name: migrationConfigMapName(dep.Name), Namespace: dep.Namespace},
+		status,
+	); err != nil || status.Data["version"] != "v1.14.0" {
+		t.Fatalf("expected migration result to remain persisted after TTL conflict: %v", err)
+	}
+
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatalf("expected current-status retry to arm TTL: %v", err)
+	}
+	updatedJob := &batchv1.Job{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), updatedJob); err != nil {
+		t.Fatalf("getting completed Job: %v", err)
+	}
+	if updatedJob.Spec.TTLSecondsAfterFinished == nil ||
+		*updatedJob.Spec.TTLSecondsAfterFinished != 0 {
+		t.Fatal("expected retry to arm TTL=0")
+	}
+	if updatedJob.Labels["example.com/concurrent"] != "preserved" {
+		t.Fatal("expected concurrent Job update to survive TTL retry")
+	}
+	if jobCreates != 0 {
+		t.Fatalf("expected no migration rerun after persisted success, got %d creates", jobCreates)
+	}
+}
+
+func TestReconcile_FailureTTLZeroArmedAfterDiagnosticsPersistence(t *testing.T) {
+	now := time.Date(2026, 8, 31, 7, 30, 0, 0, time.UTC)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobFailed, now)
+
+	sawTTLPatch := false
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if migrationJob, ok := obj.(*batchv1.Job); ok {
+					updatedDeployment := &appsv1.Deployment{}
+					if err := c.Get(ctx, client.ObjectKeyFromObject(dep), updatedDeployment); err != nil {
+						t.Fatalf("getting persisted failure state: %v", err)
+					}
+					condition := findCondition(updatedDeployment.Status.Conditions, "MigrationFailed")
+					if condition == nil || condition.Status != corev1.ConditionTrue {
+						t.Fatal("expected failure condition before TTL patch")
+					}
+					if updatedDeployment.Annotations[AnnotationRetryAfter] == "" {
+						t.Fatal("expected retry deadline before TTL patch")
+					}
+					if migrationJob.Spec.TTLSecondsAfterFinished == nil ||
+						*migrationJob.Spec.TTLSecondsAfterFinished != int32(
+							(migrationRetryCooldown+failureTTLDeletionGrace)/time.Second,
+						) {
+						t.Fatal("expected TTL=0 failure to retain through retry cooldown")
+					}
+					sawTTLPatch = true
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: 0,
+		Now:                     func() time.Time { return now },
+	}
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+	if result.RequeueAfter != migrationRetryCooldown {
+		t.Fatalf("expected retry cooldown requeue, got %s", result.RequeueAfter)
+	}
+	if !sawTTLPatch {
+		t.Fatal("expected failed Job TTL to be armed after diagnostics persistence")
+	}
+}
+
+func TestReconcile_FailureTTLPatchConflictRetriesDuringCooldown(t *testing.T) {
+	now := time.Date(2026, 8, 31, 7, 45, 0, 0, time.UTC)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobFailed, now)
+
+	conflictInjected := false
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok && !conflictInjected {
+					latest := &batchv1.Job{}
+					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
+						return err
+					}
+					latest.Labels["example.com/concurrent"] = "preserved"
+					if err := c.Update(ctx, latest); err != nil {
+						return err
+					}
+					conflictInjected = true
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: 0,
+		Now:                     func() time.Time { return now },
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	if _, err := r.Reconcile(context.Background(), request); !apierrors.IsConflict(err) {
+		t.Fatalf("expected TTL optimistic-lock conflict, got %v", err)
+	}
+	persistedDeployment := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(dep), persistedDeployment); err != nil {
+		t.Fatalf("getting persisted Deployment: %v", err)
+	}
+	if findCondition(persistedDeployment.Status.Conditions, "MigrationFailed") == nil ||
+		persistedDeployment.Annotations[AnnotationRetryAfter] == "" {
+		t.Fatal("expected failure status and retry deadline to survive TTL conflict")
+	}
+
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("expected TTL retry during cooldown to succeed: %v", err)
+	}
+	if result.RequeueAfter != migrationRetryCooldown {
+		t.Fatalf("expected unchanged cooldown after retry, got %s", result.RequeueAfter)
+	}
+	updatedJob := &batchv1.Job{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), updatedJob); err != nil {
+		t.Fatalf("getting retained Job: %v", err)
+	}
+	if updatedJob.Spec.TTLSecondsAfterFinished == nil ||
+		*updatedJob.Spec.TTLSecondsAfterFinished != int32(
+			(migrationRetryCooldown+failureTTLDeletionGrace)/time.Second,
+		) {
+		t.Fatal("expected TTL retry to retain failed Job through cooldown")
+	}
+	if updatedJob.Labels["example.com/concurrent"] != "preserved" {
+		t.Fatal("expected concurrent Job update to survive TTL retry")
+	}
+}
+
+func TestReconcile_FailedJobRetentionWindowThenForegroundReplacement(t *testing.T) {
+	now := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobFailed, now)
+
+	createCalls := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok {
+					existing := &batchv1.Job{}
+					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), existing); !apierrors.IsNotFound(err) {
+						t.Fatalf("expected prior Job deletion to finish before replacement, got %v", err)
+					}
+					createCalls++
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: 120,
+		Now:                     func() time.Time { return now },
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("recording failure: %v", err)
+	}
+	if result.RequeueAfter != 120*time.Second {
+		t.Fatalf("expected diagnostic retention requeue, got %s", result.RequeueAfter)
+	}
+
+	now = now.Add(119 * time.Second)
+	result, err = r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("reconciling before retention boundary: %v", err)
+	}
+	if result.RequeueAfter != time.Second {
+		t.Fatalf("expected one second remaining, got %s", result.RequeueAfter)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); err != nil {
+		t.Fatalf("expected diagnostics retained before boundary: %v", err)
+	}
+
+	now = now.Add(time.Second)
+	result, err = r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("deleting at retention boundary: %v", err)
+	}
+	if result.RequeueAfter != time.Second {
+		t.Fatalf("expected deletion poll requeue, got %s", result.RequeueAfter)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected retained Job deletion at boundary, got %v", err)
+	}
+	if createCalls != 0 {
+		t.Fatal("expected no replacement in the deletion reconcile")
+	}
+
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatalf("creating replacement after deletion: %v", err)
+	}
+	if createCalls != 1 {
+		t.Fatalf("expected exactly one non-overlapping replacement, got %d", createCalls)
+	}
+	replacement := &batchv1.Job{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), replacement); err != nil {
+		t.Fatalf("getting replacement Job: %v", err)
+	}
+	if replacement.Spec.TTLSecondsAfterFinished != nil {
+		t.Fatal("expected replacement Job not to be TTL-eligible before completion")
+	}
+}
+
+func TestReconcile_UnrecordedLegacyTTLIsDisarmedBeforeSuccessPersistence(t *testing.T) {
+	now := time.Date(2026, 8, 31, 8, 30, 0, 0, time.UTC)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobComplete, now)
+	job.Spec.TTLSecondsAfterFinished = ptr.To[int32](0)
+
+	jobPatches := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opts ...client.PatchOption,
+			) error {
+				migrationJob, ok := obj.(*batchv1.Job)
+				if !ok {
+					return c.Patch(ctx, obj, patch, opts...)
+				}
+				jobPatches++
+				status := &corev1.ConfigMap{}
+				statusErr := c.Get(
+					ctx,
+					types.NamespacedName{
+						Name:      migrationConfigMapName(dep.Name),
+						Namespace: dep.Namespace,
+					},
+					status,
+				)
+				switch jobPatches {
+				case 1:
+					if migrationJob.Spec.TTLSecondsAfterFinished != nil {
+						t.Fatal("expected first patch to disarm legacy TTL")
+					}
+					if !apierrors.IsNotFound(statusErr) {
+						t.Fatalf("expected result to remain unrecorded before disarm, got %v", statusErr)
+					}
+				case 2:
+					if statusErr != nil || status.Data["version"] != "v1.14.0" {
+						t.Fatalf("expected durable result before TTL rearm, got %v", statusErr)
+					}
+					if migrationJob.Spec.TTLSecondsAfterFinished == nil ||
+						*migrationJob.Spec.TTLSecondsAfterFinished != 0 {
+						t.Fatal("expected second patch to rearm configured TTL")
+					}
+				default:
+					t.Fatalf("unexpected Job patch %d", jobPatches)
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: 0,
+		Now:                     func() time.Time { return now },
+	}
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if err != nil {
+		t.Fatalf("persisting result while disarming legacy TTL: %v", err)
+	}
+	if result != (ctrl.Result{}) {
+		t.Fatalf("expected same-reconcile result persistence, got %+v", result)
+	}
+	if jobPatches != 2 {
+		t.Fatalf("expected disarm and rearm patches, got %d", jobPatches)
+	}
+	status := &corev1.ConfigMap{}
+	if err := r.Get(
+		context.Background(),
+		types.NamespacedName{Name: migrationConfigMapName(dep.Name), Namespace: dep.Namespace},
+		status,
+	); err != nil {
+		t.Fatalf("expected result persistence after disarm: %v", err)
+	}
+}
+
+func TestReconcile_FailureTargetRetentionExtendsFromJobFailedTime(t *testing.T) {
+	now := time.Date(2026, 8, 31, 8, 45, 0, 0, time.UTC)
+	startedAt := now
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobFailureTarget, now)
+	r := newReconciler(dep, job)
+	r.TTLSecondsAfterFinished = 120
+	r.Now = func() time.Time { return now }
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("recording failure target: %v", err)
+	}
+	if result.RequeueAfter != 10*time.Second {
+		t.Fatalf("expected JobFailed polling, got %s", result.RequeueAfter)
+	}
+	recordedJob := &batchv1.Job{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), recordedJob); err != nil {
+		t.Fatalf("getting recorded failure target: %v", err)
+	}
+	if recordedJob.Annotations[AnnotationRetainUntil] !=
+		startedAt.Add(migrationRetryCooldown).Format(time.RFC3339) {
+		t.Fatalf("expected provisional retention through retry cooldown, got %q", recordedJob.Annotations[AnnotationRetainUntil])
+	}
+
+	now = startedAt.Add(30 * time.Second)
+	recordedJob.Status.Conditions = append(recordedJob.Status.Conditions, batchv1.JobCondition{
+		Type:               batchv1.JobFailed,
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: metav1.NewTime(now),
+	})
+	if err := r.Status().Update(context.Background(), recordedJob); err != nil {
+		t.Fatalf("recording JobFailed transition: %v", err)
+	}
+
+	result, err = r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("extending retention from JobFailed: %v", err)
+	}
+	if result.RequeueAfter != 120*time.Second {
+		t.Fatalf("expected full post-finish diagnostic retention, got %s", result.RequeueAfter)
+	}
+	extendedJob := &batchv1.Job{}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), extendedJob); err != nil {
+		t.Fatalf("getting extended failed Job: %v", err)
+	}
+	expectedRetainUntil := now.Add(120 * time.Second).Format(time.RFC3339)
+	if extendedJob.Annotations[AnnotationRetainUntil] != expectedRetainUntil {
+		t.Fatalf(
+			"expected retention deadline %q, got %q",
+			expectedRetainUntil,
+			extendedJob.Annotations[AnnotationRetainUntil],
+		)
+	}
+
+	now = startedAt.Add(61 * time.Second)
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatalf("reconciling after original provisional deadline: %v", err)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); err != nil {
+		t.Fatalf("expected Job retained after original deadline: %v", err)
+	}
+}
+
+func TestReconcile_VersionChangeDoesNotBypassRecordedFailureRetention(t *testing.T) {
+	failedAt := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
+	now := failedAt.Add(30 * time.Second)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
+	job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobFailed, failedAt)
+	job.Annotations[AnnotationRetryAfter] = failedAt.Add(60 * time.Second).Format(time.RFC3339)
+	job.Annotations[AnnotationRetainUntil] = failedAt.Add(120 * time.Second).Format(time.RFC3339)
+	job.Spec.TTLSecondsAfterFinished = ptr.To[int32](420)
+	r := newReconciler(dep, job)
+	r.TTLSecondsAfterFinished = 120
+	r.Now = func() time.Time { return now }
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(dep),
+	})
+	if err != nil {
+		t.Fatalf("reconciling retained prior-version failure: %v", err)
+	}
+	if result.RequeueAfter != 90*time.Second {
+		t.Fatalf("expected prior-version diagnostics retention, got %s", result.RequeueAfter)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); err != nil {
+		t.Fatalf("expected prior-version failed Job to remain retained: %v", err)
+	}
+	conditionedDeployment := &appsv1.Deployment{}
+	if err := r.Get(
+		context.Background(),
+		client.ObjectKeyFromObject(dep),
+		conditionedDeployment,
+	); err != nil {
+		t.Fatalf("getting conditioned Deployment: %v", err)
+	}
+	condition := findCondition(conditionedDeployment.Status.Conditions, "MigrationFailed")
+	if condition == nil || !strings.Contains(condition.Message, "v1.14.0") {
+		t.Fatalf("expected retained attempt version in failure condition, got %+v", condition)
+	}
+}
+
+func TestReconcile_CurrentVersionStillCleansRetainedFailedAttempt(t *testing.T) {
+	failedAt := time.Date(2026, 8, 31, 9, 15, 0, 0, time.UTC)
+	now := failedAt.Add(30 * time.Second)
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+	cm := newMigrationStatusConfigMap(dep, "v1.14.0", dep.UID)
+	job := newTerminalMigrationJob(dep, "v1.15.0", batchv1.JobFailed, failedAt)
+	job.Annotations[AnnotationRetryAfter] = failedAt.Add(60 * time.Second).Format(time.RFC3339)
+	job.Annotations[AnnotationRetainUntil] = failedAt.Add(120 * time.Second).Format(time.RFC3339)
+	job.Spec.TTLSecondsAfterFinished = ptr.To[int32](420)
+
+	jobCreates := 0
+	c := fake.NewClientBuilder().
+		WithScheme(newScheme()).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithRuntimeObjects(dep, cm, job).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(
+				ctx context.Context,
+				c client.WithWatch,
+				obj client.Object,
+				opts ...client.CreateOption,
+			) error {
+				if _, ok := obj.(*batchv1.Job); ok {
+					jobCreates++
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: 120,
+		Now:                     func() time.Time { return now },
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("retaining failed upgrade after rollback: %v", err)
+	}
+	if result.RequeueAfter != 90*time.Second {
+		t.Fatalf("expected retained failed attempt, got requeue %s", result.RequeueAfter)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); err != nil {
+		t.Fatalf("expected failed attempt to remain retained: %v", err)
+	}
+
+	now = failedAt.Add(120 * time.Second)
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatalf("deleting retained failed attempt: %v", err)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected retained failed attempt deletion, got %v", err)
+	}
+
+	result, err = r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("reconciling current result after cleanup: %v", err)
+	}
+	if result != (ctrl.Result{}) {
+		t.Fatalf("expected current result not to requeue after cleanup, got %+v", result)
+	}
+	if jobCreates != 0 {
+		t.Fatalf("expected no migration rerun for current version, got %d creates", jobCreates)
+	}
+}
+
+func TestReconcile_CurrentVersionDeletesConflictingJobBeforeScaling(t *testing.T) {
+	now := time.Date(2026, 8, 31, 9, 45, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		condition *batchv1.JobCondition
+	}{
+		{name: "running"},
+		{
+			name: "completed",
+			condition: &batchv1.JobCondition{
+				Type:               batchv1.JobComplete,
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(now),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+			dep.Annotations[AnnotationDesiredReplicas] = "3"
+			cm := newMigrationStatusConfigMap(dep, "v1.14.0", dep.UID)
+			job := buildMigrationJob(
+				dep,
+				&dep.Spec.Template.Spec.Containers[0],
+				"v1.15.0",
+				DefaultBackoffLimit,
+				DefaultActiveDeadlineSeconds,
+			)
+			if tt.condition != nil {
+				job.Status.Conditions = []batchv1.JobCondition{*tt.condition}
+			}
+			r := newReconciler(dep, cm, job)
+			r.Now = func() time.Time { return now }
+			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dep)}
+
+			result, err := r.Reconcile(context.Background(), request)
+			if err != nil {
+				t.Fatalf("deleting conflicting Job: %v", err)
+			}
+			if result.RequeueAfter != time.Second {
+				t.Fatalf("expected deletion requeue, got %s", result.RequeueAfter)
+			}
+			if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); !apierrors.IsNotFound(err) {
+				t.Fatalf("expected conflicting Job deletion, got %v", err)
+			}
+			unchanged := &appsv1.Deployment{}
+			if err := r.Get(context.Background(), client.ObjectKeyFromObject(dep), unchanged); err != nil {
+				t.Fatalf("getting unscaled Deployment: %v", err)
+			}
+			if *unchanged.Spec.Replicas != 0 {
+				t.Fatal("expected current Deployment to remain gated until conflicting Job deletion")
+			}
+
+			if _, err := r.Reconcile(context.Background(), request); err != nil {
+				t.Fatalf("scaling after conflicting Job cleanup: %v", err)
+			}
+			scaled := &appsv1.Deployment{}
+			if err := r.Get(context.Background(), client.ObjectKeyFromObject(dep), scaled); err != nil {
+				t.Fatalf("getting scaled Deployment: %v", err)
+			}
+			if *scaled.Spec.Replicas != 3 {
+				t.Fatalf("expected scale after cleanup, got %d", *scaled.Spec.Replicas)
+			}
+		})
+	}
+}
+
+func TestReconcile_DeploymentStatusPatchesConflictWithoutLosingConcurrentConditions(t *testing.T) {
+	now := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		objects func(*appsv1.Deployment) []runtime.Object
+	}{
+		{
+			name: "current version clear",
+			objects: func(dep *appsv1.Deployment) []runtime.Object {
+				return []runtime.Object{
+					newMigrationStatusConfigMap(dep, "v1.14.0", dep.UID),
+				}
+			},
+		},
+		{
+			name: "successful Job clear",
+			objects: func(dep *appsv1.Deployment) []runtime.Object {
+				return []runtime.Object{
+					newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobComplete, now),
+				}
+			},
+		},
+		{
+			name: "failed Job set",
+			objects: func(dep *appsv1.Deployment) []runtime.Object {
+				dep.Status.Conditions = nil
+				return []runtime.Object{
+					newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobFailed, now),
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+			dep.Status.Conditions = []appsv1.DeploymentCondition{{
+				Type:    "MigrationFailed",
+				Status:  corev1.ConditionTrue,
+				Reason:  "MigrationJobFailed",
+				Message: "Database migration failed for version v1.13.0. Check migration job logs.",
+			}}
+			objects := append([]runtime.Object{dep}, tt.objects(dep)...)
+
+			conflictInjected := false
+			c := fake.NewClientBuilder().
+				WithScheme(newScheme()).
+				WithStatusSubresource(&appsv1.Deployment{}).
+				WithRuntimeObjects(objects...).
+				WithInterceptorFuncs(interceptor.Funcs{
+					SubResourcePatch: func(
+						ctx context.Context,
+						c client.Client,
+						subResourceName string,
+						obj client.Object,
+						patch client.Patch,
+						opts ...client.SubResourcePatchOption,
+					) error {
+						if subResourceName == "status" && !conflictInjected {
+							latest := &appsv1.Deployment{}
+							if err := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
+								return err
+							}
+							latest.Status.Conditions = append(
+								latest.Status.Conditions,
+								appsv1.DeploymentCondition{
+									Type:   appsv1.DeploymentAvailable,
+									Status: corev1.ConditionTrue,
+									Reason: "ConcurrentController",
+								},
+							)
+							if err := c.Status().Update(ctx, latest); err != nil {
+								return err
+							}
+							conflictInjected = true
+						}
+						return c.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+					},
+				}).
+				Build()
+			r := &MigrationReconciler{
+				Client:                  c,
+				BackoffLimit:            DefaultBackoffLimit,
+				ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+				TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+				Now:                     func() time.Time { return now },
+			}
+
+			_, err := r.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(dep),
+			})
+			if !apierrors.IsConflict(err) {
+				t.Fatalf("expected optimistic status conflict, got %v", err)
+			}
+
+			updated := &appsv1.Deployment{}
+			if err := r.Get(context.Background(), client.ObjectKeyFromObject(dep), updated); err != nil {
+				t.Fatalf("getting concurrently updated Deployment: %v", err)
+			}
+			available := findCondition(updated.Status.Conditions, string(appsv1.DeploymentAvailable))
+			if available == nil || available.Reason != "ConcurrentController" {
+				t.Fatal("expected concurrent Deployment condition to be preserved")
+			}
+		})
+	}
+}
+
+func TestReconcile_RequiresBothDiscoveryLabelsForOwnedResourceRequests(t *testing.T) {
+	now := time.Date(2026, 8, 31, 9, 30, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		mutate    func(map[string]string)
+		processed bool
+	}{
+		{
+			name: "missing part-of",
+			mutate: func(labels map[string]string) {
+				delete(labels, LabelPartOf)
+			},
+		},
+		{
+			name: "mismatched part-of",
+			mutate: func(labels map[string]string) {
+				labels[LabelPartOf] = "another-app"
+			},
+		},
+		{
+			name: "missing component",
+			mutate: func(labels map[string]string) {
+				delete(labels, LabelComponent)
+			},
+		},
+		{
+			name: "mismatched component",
+			mutate: func(labels map[string]string) {
+				labels[LabelComponent] = "another-component"
+			},
+		},
+		{
+			name:      "valid labels",
+			mutate:    func(map[string]string) {},
+			processed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 1)
+			tt.mutate(dep.Labels)
+			cm := newMigrationStatusConfigMap(dep, "v1.13.0", dep.UID)
+			job := newTerminalMigrationJob(dep, "v1.14.0", batchv1.JobComplete, now)
+			r := newReconciler(dep, cm, job)
+			r.Now = func() time.Time { return now }
+
+			result, err := r.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(dep),
+			})
+			if err != nil {
+				t.Fatalf("unexpected reconcile error: %v", err)
+			}
+
+			updatedCM := &corev1.ConfigMap{}
+			if err := r.Get(context.Background(), client.ObjectKeyFromObject(cm), updatedCM); err != nil {
+				t.Fatalf("getting migration status: %v", err)
+			}
+			updatedJob := &batchv1.Job{}
+			if err := r.Get(context.Background(), client.ObjectKeyFromObject(job), updatedJob); err != nil {
+				t.Fatalf("getting migration Job: %v", err)
+			}
+			if tt.processed {
+				if updatedCM.Data["version"] != "v1.14.0" {
+					t.Fatal("expected valid labels to permit migration result processing")
+				}
+				if updatedJob.Spec.TTLSecondsAfterFinished == nil {
+					t.Fatal("expected valid labels to permit terminal Job TTL arming")
+				}
+				return
+			}
+
+			if result != (ctrl.Result{}) {
+				t.Fatalf("expected invalid labels not to requeue, got %+v", result)
+			}
+			if updatedCM.Data["version"] != "v1.13.0" {
+				t.Fatal("expected invalid labels not to mutate migration status")
+			}
+			if updatedJob.Spec.TTLSecondsAfterFinished != nil {
+				t.Fatal("expected invalid labels not to mutate owned Job")
+			}
+		})
 	}
 }
 
