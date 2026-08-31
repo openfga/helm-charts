@@ -48,6 +48,35 @@ make -C operator vet
 docker build -t openfga/openfga-operator:dev operator
 ```
 
+## Local Testing
+
+The local integration assets cover these scenarios:
+
+- [Happy path](tests/values-happy-path.yaml): PostgreSQL is available for the operator-managed migration.
+- [Database outage and recovery](tests/values-db-outage.yaml): PostgreSQL starts at zero replicas so recovery can be exercised after it is scaled up.
+- [No database](tests/values-no-db.yaml): the database hostname is unavailable and the operator continues its failure/retry path.
+
+Run this happy-path quick start from the repository root against a kind cluster:
+
+```bash
+make -C operator docker-build IMG=openfga/openfga-operator:dev
+kind load docker-image openfga/openfga-operator:dev
+helm dependency build charts/openfga
+kubectl create namespace openfga-test
+helm install openfga-test charts/openfga \
+  --namespace openfga-test \
+  --values operator/tests/values-happy-path.yaml
+
+kubectl get all,configmap,job --namespace openfga-test
+kubectl logs deployment/openfga-test-openfga-operator \
+  --namespace openfga-test
+
+helm uninstall openfga-test --namespace openfga-test
+kubectl delete namespace openfga-test
+```
+
+The scenario values use `imagePullPolicy: Never`, so load the local image into kind as shown above. Docker Desktop and Rancher Desktop with the dockerd runtime can use the locally built image directly. See the [local integration test guide](tests/README.md) for scenario-specific verification and recovery steps.
+
 ## Project Structure
 
 ```

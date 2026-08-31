@@ -1,0 +1,306 @@
+name: Operator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "operator/**"
+      - "charts/openfga-operator/**"
+      - "charts/openfga/Chart.yaml"
+      - "charts/openfga/Chart.lock"
+      - ".github/workflows/operator.yml"
+  pull_request:
+    paths:
+      - "operator/**"
+      - "charts/openfga-operator/**"
+      - "charts/openfga/Chart.yaml"
+      - "charts/openfga/Chart.lock"
+      - ".github/workflows/operator.yml"
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: "Push the operator image to GHCR"
+        type: boolean
+        default: true
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/openfga-operator
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Validate operator release contract
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          changed_files=$(mktemp)
+          trap 'rm -f "$changed_files"' EXIT
+
+          fail() {
+            printf '::error::%s\n' "$*" >&2
+            exit 1
+          }
+
+          chart_field() {
+            local ref="$1"
+            local path="$2"
+            local field="$3"
+            local content
+            local value
+
+            content=$(git show "${ref}:${path}") ||
+              fail "Unable to read ${path} at ${ref}."
+            value=$(printf '%s\n' "$content" |
+              awk -v key="$field" '$1 == key ":" { gsub(/"/, "", $2); print $2; exit }')
+            [[ -n "$value" ]] ||
+              fail "Unable to parse ${field} from ${path} at ${ref}."
+            printf '%s\n' "$value"
+          }
+
+          operator_dependency_version() {
+            local ref="$1"
+            local path="$2"
+            local content
+            local value
+
+            content=$(git show "${ref}:${path}") ||
+              fail "Unable to read ${path} at ${ref}."
+            value=$(printf '%s\n' "$content" | awk '
+              $1 == "-" && $2 == "name:" {
+                in_operator = ($3 == "openfga-operator")
+                next
+              }
+              in_operator && $1 == "version:" {
+                gsub(/"/, "", $2)
+                print $2
+                exit
+              }
+            ')
+            [[ -n "$value" ]] ||
+              fail "Unable to parse the openfga-operator dependency from ${path} at ${ref}."
+            printf '%s\n' "$value"
+          }
+
+          [[ -n "$BASE_SHA" ]] || fail "The pull request base SHA is empty."
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null ||
+            fail "The pull request base ${BASE_SHA} is unavailable. Ensure checkout uses fetch-depth: 0."
+          git diff --name-only "$BASE_SHA" HEAD -- > "$changed_files"
+
+          runtime_changed=false
+          if awk '
+            /^operator\// &&
+              $0 !~ /^operator\/tests\// &&
+              $0 !~ /(^|\/)testdata\// &&
+              $0 !~ /\.md$/ &&
+              $0 !~ /_test\.go$/ { found = 1 }
+            END { exit !found }
+          ' "$changed_files"; then
+            runtime_changed=true
+          fi
+
+          operator_chart_changed=false
+          if awk '
+            /^charts\/openfga-operator\// &&
+              $0 !~ /^charts\/openfga-operator\/tests\// { found = 1 }
+            END { exit !found }
+          ' "$changed_files"; then
+            operator_chart_changed=true
+          fi
+
+          base_operator_version=$(chart_field "$BASE_SHA" charts/openfga-operator/Chart.yaml version)
+          operator_version=$(chart_field HEAD charts/openfga-operator/Chart.yaml version)
+          base_app_version=$(chart_field "$BASE_SHA" charts/openfga-operator/Chart.yaml appVersion)
+          app_version=$(chart_field HEAD charts/openfga-operator/Chart.yaml appVersion)
+          base_parent_version=$(chart_field "$BASE_SHA" charts/openfga/Chart.yaml version)
+          parent_version=$(chart_field HEAD charts/openfga/Chart.yaml version)
+          base_parent_dependency=$(operator_dependency_version "$BASE_SHA" charts/openfga/Chart.yaml)
+          parent_dependency=$(operator_dependency_version HEAD charts/openfga/Chart.yaml)
+          base_lock_dependency=$(operator_dependency_version "$BASE_SHA" charts/openfga/Chart.lock)
+          lock_dependency=$(operator_dependency_version HEAD charts/openfga/Chart.lock)
+
+          operator_version_changed=false
+          [[ "$operator_version" == "$base_operator_version" ]] ||
+            operator_version_changed=true
+
+          parent_dependency_changed=false
+          [[ "$parent_dependency" == "$base_parent_dependency" ]] ||
+            parent_dependency_changed=true
+
+          lock_dependency_changed=false
+          [[ "$lock_dependency" == "$base_lock_dependency" ]] ||
+            lock_dependency_changed=true
+
+          if [[ "$runtime_changed" == "true" ]]; then
+            [[ "$operator_version_changed" == "true" ]] ||
+              fail "Runtime operator files changed. Bump charts/openfga-operator/Chart.yaml version."
+            [[ "$app_version" != "$base_app_version" ]] ||
+              fail "Runtime operator files changed. Bump charts/openfga-operator/Chart.yaml appVersion."
+          fi
+
+          if [[ "$operator_chart_changed" == "true" ]]; then
+            [[ "$operator_version_changed" == "true" ]] ||
+              fail "Publishable operator chart content changed. Bump charts/openfga-operator/Chart.yaml version."
+          fi
+
+          if [[ "$operator_version_changed" == "true" ||
+                "$parent_dependency_changed" == "true" ||
+                "$lock_dependency_changed" == "true" ]]; then
+            [[ "$parent_dependency" == "$operator_version" ]] ||
+              fail "charts/openfga/Chart.yaml must reference openfga-operator ${operator_version}; found ${parent_dependency}."
+            [[ "$lock_dependency" == "$operator_version" ]] ||
+              fail "charts/openfga/Chart.lock must reference openfga-operator ${operator_version}; found ${lock_dependency}."
+            [[ "$parent_version" != "$base_parent_version" ]] ||
+              fail "Bump charts/openfga/Chart.yaml version when its openfga-operator dependency changes."
+          fi
+
+          if [[ "$operator_version_changed" == "true" ]]; then
+            [[ "$parent_dependency_changed" == "true" ]] ||
+              fail "The openfga-operator dependency version must change with the operator chart version."
+          fi
+
+          printf 'Operator release contract passed: runtime=%s chart=%s operator=%s app=%s parent=%s\n' \
+            "$runtime_changed" "$operator_chart_changed" "$operator_version" \
+            "$app_version" "$parent_version"
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+
+      - name: Run tests
+        working-directory: operator
+        run: go test ./... -v
+
+      - name: Run vet
+        working-directory: operator
+        run: go vet ./...
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from Chart.yaml
+        id: version
+        run: |
+          set -euo pipefail
+          version=$(awk '$1 == "appVersion:" { gsub(/"/, "", $2); print $2; exit }' \
+            charts/openfga-operator/Chart.yaml)
+          [[ -n "$version" ]] || {
+            echo "::error::Unable to parse operator appVersion."
+            exit 1
+          }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          short_sha="${GITHUB_SHA::7}"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "Operator version: ${version} (sha: ${short_sha})"
+
+      - name: Determine image tags and push policy
+        id: tags
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          DISPATCH_PUSH_IMAGE: ${{ inputs.push_image }}
+          OPERATOR_VERSION: ${{ steps.version.outputs.version }}
+          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+
+          [[ -n "$OPERATOR_VERSION" ]] || {
+            echo "::error::Operator appVersion is empty."
+            exit 1
+          }
+          [[ -n "$SHORT_SHA" ]] || {
+            echo "::error::Short commit SHA is empty."
+            exit 1
+          }
+
+          validation_tag="${IMAGE_NAME}:validation-${SHORT_SHA}"
+
+          if [[ "$EVENT_NAME" == "push" && "$REF_NAME" == "refs/heads/main" ]]; then
+            if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0{40}$ ]]; then
+              echo "::notice::The previous main SHA is unavailable; building without publishing mutable tags."
+              echo "tags=${validation_tag}" >> "$GITHUB_OUTPUT"
+              echo "push=false" >> "$GITHUB_OUTPUT"
+            elif ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              echo "::notice::The previous main commit ${BEFORE_SHA} is unavailable; building without publishing mutable tags."
+              echo "tags=${validation_tag}" >> "$GITHUB_OUTPUT"
+              echo "push=false" >> "$GITHUB_OUTPUT"
+            else
+              previous_chart=$(git show "${BEFORE_SHA}:charts/openfga-operator/Chart.yaml" 2>/dev/null || true)
+              previous_version=$(printf '%s\n' "$previous_chart" |
+                awk '$1 == "appVersion:" { gsub(/"/, "", $2); print $2; exit }')
+              if [[ -z "$previous_version" ]]; then
+                echo "::notice::The previous operator appVersion is unavailable; building without publishing mutable tags."
+                echo "tags=${validation_tag}" >> "$GITHUB_OUTPUT"
+                echo "push=false" >> "$GITHUB_OUTPUT"
+              elif [[ "$previous_version" != "$OPERATOR_VERSION" ]]; then
+                echo "tags=${IMAGE_NAME}:${OPERATOR_VERSION},${IMAGE_NAME}:latest,${IMAGE_NAME}:${OPERATOR_VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+                echo "push=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "::notice::Operator appVersion is unchanged at ${OPERATOR_VERSION}; building without publishing mutable tags."
+                echo "tags=${validation_tag}" >> "$GITHUB_OUTPUT"
+                echo "push=false" >> "$GITHUB_OUTPUT"
+              fi
+            fi
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && "$DISPATCH_PUSH_IMAGE" == "true" ]]; then
+            echo "tags=${IMAGE_NAME}:${OPERATOR_VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            # Pull request (or workflow_dispatch with push_image=false):
+            # build both platforms but don't publish; this catches arm64-incompatible
+            # changes (build tags, syscalls, CGO) before they merge.
+            echo "tags=${validation_tag}" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GHCR
+        if: steps.tags.outputs.push == 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and (conditionally) push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: operator
+          push: ${{ steps.tags.outputs.push }}
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=openfga-operator
+            org.opencontainers.image.description=OpenFGA Kubernetes operator for migration orchestration
