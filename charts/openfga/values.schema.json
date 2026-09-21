@@ -120,6 +120,14 @@
             "description": "Specifies the topology spread to control how the pods are spread across your cluster. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/.",
             "default": []
         },
+        "terminationGracePeriodSeconds": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "minimum": 0,
+            "description": "The duration in seconds the pod needs to terminate gracefully. For more information see https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/#hook-handler-execution."
+        },
         "serviceAccount": {
             "type": "object",
             "properties": {
