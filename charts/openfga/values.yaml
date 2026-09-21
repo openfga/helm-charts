@@ -1,5 +1,8 @@
 replicaCount: 3
 
+minReadySeconds:
+deploymentStrategy: {}
+
 image:
   repository: openfga/openfga
   pullPolicy: Always
