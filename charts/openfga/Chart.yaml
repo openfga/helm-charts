@@ -4,7 +4,7 @@ description: A Kubernetes Helm chart for the OpenFGA project.
 
 type: application
 version: 0.4.0
-appVersion: "v1.19.0"
+appVersion: "v1.21.0"
 
 home: "https://openfga.github.io/helm-charts"
 icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
