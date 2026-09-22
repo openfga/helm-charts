@@ -132,3 +132,15 @@ The operator reads these annotations from the OpenFGA Deployment:
 
 - **Mutable image tags:** The operator detects version changes by comparing the container image tag (or digest). If you deploy with a mutable tag like `latest` or reuse the same tag for different builds, the operator will not detect changes and will skip the migration. Use immutable tags (e.g., `v1.14.0`) or pin images by digest for reliable migration triggering.
 - **Migration-specific volumes:** The legacy Helm chart values `migrate.extraVolumes` and `migrate.extraVolumeMounts` have no effect in operator mode. The operator inherits volumes and mounts from the main Deployment pod spec. If you need additional volumes for migrations (e.g., CA bundles or TLS certs), add them to the top-level `extraVolumes` and `extraVolumeMounts` values instead.
+- **`envFrom` datastore detection:** The memory-datastore check inspects only the explicit `env` entries on the container. If `OPENFGA_DATASTORE_ENGINE` is supplied via `envFrom` (a ConfigMap or Secret), the operator cannot read the value and will attempt a migration Job that a memory datastore does not need. The Helm chart sets this variable inline, so chart-managed installs are unaffected.
+- **GitOps and `spec.replicas`:** The operator owns the Deployment's replica count — it scales to `0` for the duration of a migration and restores `openfga.dev/desired-replicas` afterward. Under a GitOps controller the chart's `lookup` of the live replica count returns empty at render time, so the rendered manifest carries `replicas: 0` (see [ADR-002](../docs/adr/002-operator-managed-migrations.md)). If the controller keeps syncing that field it will fight the operator over it, so exclude `spec.replicas` from GitOps reconciliation — the same treatment an HPA-managed Deployment needs:
+  - **ArgoCD** — add to the `Application`:
+    ```yaml
+    spec:
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas
+    ```
+  - **FluxCD** — Flux applies server-side and honors field ownership, so drop `spec.replicas` from the Flux-applied manifest (e.g. a Kustomize patch removing `/spec/replicas`) and let the operator own it.

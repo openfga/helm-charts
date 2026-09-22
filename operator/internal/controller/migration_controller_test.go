@@ -1102,3 +1102,95 @@ func TestExtractImageTag(t *testing.T) {
 		})
 	}
 }
+
+func TestClearMigrationFailedConditionIdempotent(t *testing.T) {
+	// Absent condition: nothing to clear.
+	dep := &appsv1.Deployment{}
+	if clearMigrationFailedCondition(dep) {
+		t.Error("expected no change when the MigrationFailed condition is absent")
+	}
+	if len(dep.Status.Conditions) != 0 {
+		t.Errorf("expected no conditions to be added, got %d", len(dep.Status.Conditions))
+	}
+
+	// Condition present and True: clearing flips it to False (a real change).
+	dep.Status.Conditions = []appsv1.DeploymentCondition{{
+		Type:   "MigrationFailed",
+		Status: corev1.ConditionTrue,
+	}}
+	if !clearMigrationFailedCondition(dep) {
+		t.Error("expected a change when clearing a True MigrationFailed condition")
+	}
+	cond := findCondition(dep.Status.Conditions, "MigrationFailed")
+	if cond == nil || cond.Status != corev1.ConditionFalse {
+		t.Fatalf("expected MigrationFailed=False after clear, got %+v", cond)
+	}
+	transition := cond.LastTransitionTime
+
+	// Already False: clearing again must be a no-op and must not advance
+	// LastTransitionTime — this is what stops the reconcile status write-churn.
+	if clearMigrationFailedCondition(dep) {
+		t.Error("expected no change when the MigrationFailed condition is already False")
+	}
+	cond = findCondition(dep.Status.Conditions, "MigrationFailed")
+	if !cond.LastTransitionTime.Equal(&transition) {
+		t.Error("LastTransitionTime must not change when the condition is already False")
+	}
+}
+
+func TestSetMigrationFailedConditionIdempotent(t *testing.T) {
+	dep := &appsv1.Deployment{}
+
+	// First set appends the condition.
+	if !setMigrationFailedCondition(dep, "v1.14.0") {
+		t.Error("expected a change when setting MigrationFailed on a fresh deployment")
+	}
+	cond := findCondition(dep.Status.Conditions, "MigrationFailed")
+	if cond == nil || cond.Status != corev1.ConditionTrue {
+		t.Fatalf("expected MigrationFailed=True, got %+v", cond)
+	}
+	transition := cond.LastTransitionTime
+
+	// Re-setting for the same version is a no-op: no LastTransitionTime churn.
+	if setMigrationFailedCondition(dep, "v1.14.0") {
+		t.Error("expected no change when re-setting the same MigrationFailed condition")
+	}
+	cond = findCondition(dep.Status.Conditions, "MigrationFailed")
+	if !cond.LastTransitionTime.Equal(&transition) {
+		t.Error("LastTransitionTime must not change when the condition is unchanged")
+	}
+
+	// A different version updates the message but does not transition status,
+	// so LastTransitionTime stays put.
+	if !setMigrationFailedCondition(dep, "v1.15.0") {
+		t.Error("expected a change when the failure message changes")
+	}
+	cond = findCondition(dep.Status.Conditions, "MigrationFailed")
+	if !cond.LastTransitionTime.Equal(&transition) {
+		t.Error("LastTransitionTime must not change without a status transition")
+	}
+}
+
+func TestIsMutableImageReference(t *testing.T) {
+	tests := []struct {
+		image   string
+		mutable bool
+	}{
+		{"openfga/openfga:v1.14.0", false},
+		{"openfga/openfga:1.14.0", false},
+		{"openfga/openfga:v1.14.0-rc1", false},
+		{"openfga/openfga@sha256:abcdef1234567890", false},
+		{"openfga/openfga:latest", true},
+		{"openfga/openfga:v1.14", true},
+		{"openfga/openfga", true},
+		{"registry.example.com:5000/openfga/openfga:v1.14.0", false},
+		{"registry.example.com:5000/openfga/openfga:latest", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			if got := isMutableImageReference(tt.image); got != tt.mutable {
+				t.Errorf("isMutableImageReference(%q) = %v, want %v", tt.image, got, tt.mutable)
+			}
+		})
+	}
+}
