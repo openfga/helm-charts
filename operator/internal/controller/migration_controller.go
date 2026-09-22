@@ -70,6 +70,14 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
+	// Migrations are keyed on the image reference. A mutable tag (e.g. "latest"
+	// or a floating "v1.14") can point at different images over time without the
+	// reference changing, so a rebuild that requires a migration will be missed.
+	if isMutableImageReference(mainContainer.Image) {
+		logger.Info("openfga image is not pinned to an immutable tag or digest; a migration may be silently skipped if the image changes without the tag changing",
+			"image", mainContainer.Image, "version", desiredVersion)
+	}
+
 	// 4. Check current migration status from ConfigMap.
 	configMap := &corev1.ConfigMap{}
 	cmName := migrationConfigMapName(req.Name)
@@ -86,9 +94,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if currentVersion == desiredVersion {
 		logger.V(1).Info("migration up to date", "version", desiredVersion)
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
-		clearMigrationFailedCondition(deployment)
-		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-			logger.Error(patchErr, "failed to clear MigrationFailed condition")
+		if clearMigrationFailedCondition(deployment) {
+			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+				logger.Error(patchErr, "failed to clear MigrationFailed condition")
+			}
 		}
 		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
 			return ctrl.Result{}, scaleErr
@@ -151,7 +160,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// back to label. A Job with neither marker is treated as stale: we cannot
 	// trust its outcome to represent the current desired version, so trusting
 	// JobComplete in step 9 would write a wrong version into the status ConfigMap.
-	jobVersion := job.Annotations["openfga.dev/desired-version"]
+	jobVersion := job.Annotations[AnnotationDesiredVersion]
 	versionMatch := jobVersion == desiredVersion
 	if jobVersion == "" {
 		// Label values have ":" replaced with "_", so sanitize desiredVersion for comparison.
@@ -159,7 +168,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if len(sanitized) > 63 {
 			sanitized = sanitized[:63]
 		}
-		jobVersion = job.Labels["app.kubernetes.io/version"]
+		jobVersion = job.Labels[LabelVersion]
 		versionMatch = jobVersion != "" && jobVersion == sanitized
 	}
 	if !versionMatch {
@@ -179,9 +188,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		// Clear MigrationFailed condition.
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
-		clearMigrationFailedCondition(deployment)
-		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-			logger.Error(patchErr, "failed to clear MigrationFailed condition")
+		if clearMigrationFailedCondition(deployment) {
+			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+				logger.Error(patchErr, "failed to clear MigrationFailed condition")
+			}
 		}
 
 		// Update migration status ConfigMap.
@@ -207,9 +217,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		// Set condition so kubectl describe shows the failure.
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
-		setMigrationFailedCondition(deployment, desiredVersion)
-		if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-			logger.Error(patchErr, "failed to set MigrationFailed condition")
+		if setMigrationFailedCondition(deployment, desiredVersion) {
+			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
+				logger.Error(patchErr, "failed to set MigrationFailed condition")
+			}
 		}
 
 		// Persist a retry-after annotation so the cooldown is honored even
@@ -269,37 +280,58 @@ func isMemoryDatastore(container *corev1.Container) bool {
 	return false
 }
 
-// setMigrationFailedCondition sets a MigrationFailed condition on the Deployment.
-func setMigrationFailedCondition(deployment *appsv1.Deployment, version string) {
-	condition := appsv1.DeploymentCondition{
+// setMigrationFailedCondition sets a MigrationFailed condition on the Deployment
+// and reports whether anything actually changed, so callers can skip a no-op
+// status write. LastTransitionTime only advances on a real status transition.
+//
+// NOTE: this writes a custom condition type onto a built-in Deployment's status.
+// meta.SetStatusCondition cannot be used here because Deployment.Status.Conditions
+// is []appsv1.DeploymentCondition, not []metav1.Condition.
+func setMigrationFailedCondition(deployment *appsv1.Deployment, version string) bool {
+	message := fmt.Sprintf("Database migration failed for version %s. Check migration job logs.", version)
+	for i, c := range deployment.Status.Conditions {
+		if c.Type == "MigrationFailed" {
+			if c.Status == corev1.ConditionTrue && c.Reason == "MigrationJobFailed" && c.Message == message {
+				return false
+			}
+			if c.Status != corev1.ConditionTrue {
+				deployment.Status.Conditions[i].LastTransitionTime = metav1.Now()
+			}
+			deployment.Status.Conditions[i].Status = corev1.ConditionTrue
+			deployment.Status.Conditions[i].Reason = "MigrationJobFailed"
+			deployment.Status.Conditions[i].Message = message
+			return true
+		}
+	}
+	deployment.Status.Conditions = append(deployment.Status.Conditions, appsv1.DeploymentCondition{
 		Type:               "MigrationFailed",
 		Status:             corev1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
 		Reason:             "MigrationJobFailed",
-		Message:            fmt.Sprintf("Database migration failed for version %s. Check migration job logs.", version),
-	}
-
-	// Replace existing MigrationFailed condition if present.
-	for i, c := range deployment.Status.Conditions {
-		if c.Type == "MigrationFailed" {
-			deployment.Status.Conditions[i] = condition
-			return
-		}
-	}
-	deployment.Status.Conditions = append(deployment.Status.Conditions, condition)
+		Message:            message,
+	})
+	return true
 }
 
-// clearMigrationFailedCondition removes or sets the MigrationFailed condition to False.
-func clearMigrationFailedCondition(deployment *appsv1.Deployment) {
+// clearMigrationFailedCondition sets an existing MigrationFailed condition to
+// False and reports whether anything changed. When the condition is absent or
+// already False it is a no-op — this is what stops the reconciler from patching
+// status (and re-enqueueing the Deployment) on every reconcile of a healthy,
+// version-matched Deployment.
+func clearMigrationFailedCondition(deployment *appsv1.Deployment) bool {
 	for i, c := range deployment.Status.Conditions {
 		if c.Type == "MigrationFailed" {
+			if c.Status == corev1.ConditionFalse {
+				return false
+			}
 			deployment.Status.Conditions[i].Status = corev1.ConditionFalse
 			deployment.Status.Conditions[i].LastTransitionTime = metav1.Now()
 			deployment.Status.Conditions[i].Reason = "MigrationSucceeded"
 			deployment.Status.Conditions[i].Message = "Migration completed successfully."
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -322,7 +354,7 @@ func (r *MigrationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				// Only watch ConfigMaps that are migration status ConfigMaps.
 				if obj.GetLabels()[LabelPartOf] != LabelPartOfValue ||
-					obj.GetLabels()["app.kubernetes.io/managed-by"] != "openfga-operator" {
+					obj.GetLabels()[LabelManagedBy] != LabelManagedByValue {
 					return nil
 				}
 				// Map back to the owning Deployment.

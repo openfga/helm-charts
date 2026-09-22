@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -23,10 +24,16 @@ const (
 	LabelPartOfValue    = "openfga"
 	LabelComponentValue = "authorization-controller"
 
+	// Labels set on operator-managed resources (migration Jobs, status ConfigMaps).
+	LabelManagedBy      = "app.kubernetes.io/managed-by"
+	LabelVersion        = "app.kubernetes.io/version"
+	LabelManagedByValue = "openfga-operator"
+
 	// Annotations set on the Deployment by the Helm chart / operator.
 	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
 	AnnotationContainerName           = "openfga.dev/container-name"
 	AnnotationDesiredReplicas         = "openfga.dev/desired-replicas"
+	AnnotationDesiredVersion          = "openfga.dev/desired-version"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
 	AnnotationRetryAfter              = "openfga.dev/migration-retry-after"
 
@@ -35,6 +42,24 @@ const (
 	DefaultActiveDeadlineSeconds   int64 = 300
 	DefaultTTLSecondsAfterFinished int32 = 300
 )
+
+// immutableTag matches a fully-qualified semantic version tag (with an optional
+// leading "v" and optional pre-release/build suffix), which is treated as
+// immutable by convention.
+var immutableTag = regexp.MustCompile(`^v?\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$`)
+
+// isMutableImageReference reports whether an image reference is not pinned to an
+// immutable identifier. Digest references (@sha256:...) are immutable, and a
+// full semantic version tag is treated as immutable by convention. Everything
+// else — "latest", a floating "v1.14", a bare name — is mutable: the same
+// reference can resolve to different images over time, so the operator cannot
+// tell that a rebuilt image needs a migration.
+func isMutableImageReference(image string) bool {
+	if strings.Contains(image, "@") {
+		return false
+	}
+	return !immutableTag.MatchString(extractImageTag(image))
+}
 
 // extractImageTag returns the tag portion of a container image reference.
 // For "openfga/openfga:v1.14.0" it returns "v1.14.0".
@@ -122,11 +147,11 @@ func buildMigrationJob(
 			Labels: map[string]string{
 				LabelPartOf:    LabelPartOfValue,
 				LabelComponent: "migration",
-				"app.kubernetes.io/managed-by": "openfga-operator",
-				"app.kubernetes.io/version":    labelVersion,
+				LabelManagedBy: LabelManagedByValue,
+				LabelVersion:   labelVersion,
 			},
 			Annotations: map[string]string{
-				"openfga.dev/desired-version": desiredVersion,
+				AnnotationDesiredVersion: desiredVersion,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -194,7 +219,7 @@ func updateMigrationStatus(
 			Labels: map[string]string{
 				LabelPartOf:    LabelPartOfValue,
 				LabelComponent: "migration",
-				"app.kubernetes.io/managed-by": "openfga-operator",
+				LabelManagedBy: LabelManagedByValue,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -271,4 +296,3 @@ func ensureDeploymentScaled(ctx context.Context, c client.Client, deployment *ap
 	}
 	return false, nil
 }
-
