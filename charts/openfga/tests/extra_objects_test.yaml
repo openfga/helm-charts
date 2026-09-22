@@ -1,0 +1,18 @@
+suite: extra objects
+templates:
+  - templates/extra-manifests.yaml
+tests:
+  - it: should render a string manifest
+    set:
+      extraObjects:
+        - |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: string-manifest
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: string-manifest

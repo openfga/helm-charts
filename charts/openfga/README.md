@@ -60,7 +60,7 @@ Both guides follow the same pattern: protect the PV (a prerequisite `kubectl pat
 
 ## Customization
 
-If you wish to customize the OpenFGA deployment you may supply paremeters such as the ones listed in the [values.yaml](/charts/openfga/values.yaml).
+If you wish to customize the OpenFGA deployment you may supply parameters such as the ones listed in the [values.yaml](/charts/openfga/values.yaml).
 
 ### Installing with Custom Common Labels
 
