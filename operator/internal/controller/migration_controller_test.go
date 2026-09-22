@@ -83,6 +83,36 @@ func newReconciler(objects ...runtime.Object) *MigrationReconciler {
 	}
 }
 
+func newReconcilerWithStatusPatchError(objects ...runtime.Object) *MigrationReconciler {
+	scheme := newScheme()
+	clientBuilder := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&appsv1.Deployment{})
+	for _, obj := range objects {
+		clientBuilder = clientBuilder.WithRuntimeObjects(obj)
+	}
+	c := clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+		SubResourcePatch: func(
+			ctx context.Context,
+			c client.Client,
+			subResourceName string,
+			obj client.Object,
+			patch client.Patch,
+			opts ...client.SubResourcePatchOption,
+		) error {
+			if subResourceName == "status" {
+				return fmt.Errorf("simulated status patch error")
+			}
+			return c.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+		},
+	}).Build()
+	return &MigrationReconciler{
+		Client:                  c,
+		BackoffLimit:            DefaultBackoffLimit,
+		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
+		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	}
+}
+
 func findCondition(conditions []appsv1.DeploymentCondition, condType string) *appsv1.DeploymentCondition {
 	for i := range conditions {
 		if string(conditions[i].Type) == condType {
@@ -179,6 +209,43 @@ func TestReconcile_VersionMatch_ScalesUp(t *testing.T) {
 	}
 	if *updated.Spec.Replicas != 3 {
 		t.Errorf("expected 3 replicas, got %d", *updated.Spec.Replicas)
+	}
+}
+
+func TestReconcile_VersionMatch_StatusPatchFailureStopsScaleUp(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	dep.Status.Conditions = []appsv1.DeploymentCondition{{
+		Type:   "MigrationFailed",
+		Status: corev1.ConditionTrue,
+	}}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migration-status",
+			Namespace: "default",
+		},
+		Data: map[string]string{"version": "v1.14.0"},
+	}
+	r := newReconcilerWithStatusPatchError(dep, cm)
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	}); err == nil {
+		t.Fatal("expected status patch error")
+	}
+
+	updated := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga", Namespace: "default",
+	}, updated); err != nil {
+		t.Fatalf("getting deployment: %v", err)
+	}
+	if *updated.Spec.Replicas != 0 {
+		t.Errorf("expected replicas to remain at 0, got %d", *updated.Spec.Replicas)
+	}
+	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
+	if cond == nil || cond.Status != corev1.ConditionTrue {
+		t.Fatalf("expected MigrationFailed condition to remain True, got %+v", cond)
 	}
 }
 
@@ -369,6 +436,49 @@ func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
 	}
 	if cond.Reason != "MigrationJobFailed" {
 		t.Errorf("expected reason MigrationJobFailed, got %s", cond.Reason)
+	}
+}
+
+func TestReconcile_JobFailed_StatusPatchFailurePreservesJob(t *testing.T) {
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openfga-migrate",
+			Namespace: "default",
+			Annotations: map[string]string{
+				AnnotationDesiredVersion: "v1.14.0",
+			},
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{{
+				Type:   batchv1.JobFailed,
+				Status: corev1.ConditionTrue,
+			}},
+		},
+	}
+	r := newReconcilerWithStatusPatchError(dep, job)
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	}); err == nil {
+		t.Fatal("expected status patch error")
+	}
+
+	preservedJob := &batchv1.Job{}
+	if err := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, preservedJob); err != nil {
+		t.Fatalf("expected failed Job to remain for retry: %v", err)
+	}
+	updated := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga", Namespace: "default",
+	}, updated); err != nil {
+		t.Fatalf("getting deployment: %v", err)
+	}
+	if _, ok := updated.Annotations[AnnotationRetryAfter]; ok {
+		t.Error("retry-after must not be set when the failure condition was not persisted")
 	}
 }
 
@@ -901,8 +1011,8 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 			Name:      "openfga-migration-status",
 			Namespace: "default",
 			Labels: map[string]string{
-				LabelPartOf:    LabelPartOfValue,
-				LabelComponent: "migration",
+				LabelPartOf:                    LabelPartOfValue,
+				LabelComponent:                 "migration",
 				"app.kubernetes.io/managed-by": "openfga-operator",
 			},
 			OwnerReferences: []metav1.OwnerReference{

@@ -1,0 +1,16 @@
+suite: operator watch namespace RoleBinding
+templates:
+  - templates/rolebinding.yaml
+tests:
+  - it: should bind the operator service account in the watch namespace
+    release:
+      namespace: operator-system
+    set:
+      watchNamespace: openfga-app
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: openfga-app
+      - equal:
+          path: subjects[0].namespace
+          value: operator-system

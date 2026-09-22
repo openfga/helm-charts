@@ -96,7 +96,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
 		if clearMigrationFailedCondition(deployment) {
 			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-				logger.Error(patchErr, "failed to clear MigrationFailed condition")
+				return ctrl.Result{}, fmt.Errorf("clearing MigrationFailed condition: %w", patchErr)
 			}
 		}
 		if _, scaleErr := ensureDeploymentScaled(ctx, r.Client, deployment); scaleErr != nil {
@@ -190,7 +190,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
 		if clearMigrationFailedCondition(deployment) {
 			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-				logger.Error(patchErr, "failed to clear MigrationFailed condition")
+				return ctrl.Result{}, fmt.Errorf("clearing MigrationFailed condition: %w", patchErr)
 			}
 		}
 
@@ -219,7 +219,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		statusPatch := client.MergeFrom(deployment.DeepCopy())
 		if setMigrationFailedCondition(deployment, desiredVersion) {
 			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
-				logger.Error(patchErr, "failed to set MigrationFailed condition")
+				return ctrl.Result{}, fmt.Errorf("setting MigrationFailed condition: %w", patchErr)
 			}
 		}
 

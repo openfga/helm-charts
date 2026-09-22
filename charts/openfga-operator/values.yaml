@@ -44,7 +44,8 @@ securityContext:
 # equals the release namespace, but when `namespaceOverride` puts the
 # operator in a different namespace than the release, the watch follows
 # the pod — not the release. Set this explicitly to watch a specific
-# namespace independent of where the operator runs.
+# namespace independent of where the operator runs. The target namespace
+# must exist before installation so Helm can create the Role and RoleBinding.
 watchNamespace: ""
 
 leaderElection:

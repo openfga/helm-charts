@@ -73,7 +73,7 @@ Replace the Helm hook migration Job and `k8s-wait-for` init container with **ope
 
 The operator runs a **migration controller** that reconciles the OpenFGA Deployment:
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │                  Operator Reconciliation                 │
 │                                                          │
@@ -125,7 +125,7 @@ The Job created by the operator has no Helm hook annotations. It is a standard K
 
 | Failure | Behavior |
 |---------|----------|
-| Job fails | Operator sets `MigrationFailed` condition on Deployment. Does NOT scale up. User inspects Job logs. |
+| Job fails | Operator sets `MigrationFailed` on the Deployment. A fresh installation remains at 0 replicas; an upgrade keeps its existing replicas. |
 | Job hangs | `activeDeadlineSeconds` (default 300s) kills it. Operator sees failure. |
 | Operator crashes | On restart, re-reads ConfigMap and Job status. Resumes from where it left off. |
 | Database unreachable | Job fails to connect. After exhausting `backoffLimit`, operator deletes the failed Job, sets a `retry-after` annotation, and recreates a fresh Job after a fixed 60-second cooldown. Cycle repeats until the database becomes available. |
@@ -134,7 +134,7 @@ The Job created by the operator has no Helm hook annotations. It is a standard K
 
 **Before (Helm hooks):**
 
-```
+```text
 helm install
   ├── Create ServiceAccount, RBAC, Secret, Service
   ├── Create Deployment (with wait-for-migration init container)
@@ -151,7 +151,7 @@ Problems: ArgoCD skips step 4. FluxCD deletes Job in step 4. `--wait` deadlocks 
 
 **After (operator-managed, fresh install):**
 
-```
+```text
 helm install
   ├── Create ServiceAccount (runtime), ServiceAccount (migrator)
   ├── Create Secret, Service
@@ -171,7 +171,7 @@ Operator starts:
 
 **After (operator-managed, upgrade with new image):**
 
-```
+```text
 helm upgrade
   ├── lookup finds existing Deployment at 3 replicas → preserves replicas: 3
   ├── Patches Deployment with new image tag
@@ -212,7 +212,7 @@ Nothing is deleted outright — every change is gated on `operator.enabled` so t
 |--------------|---------|
 | `values.yaml`: `operator.enabled` | Toggle the operator subchart |
 | `values.yaml`: `migration.serviceAccount.*` | Separate ServiceAccount for migration Jobs |
-| `values.yaml`: `migration.backoffLimit`, `activeDeadlineSeconds`, `ttlSecondsAfterFinished` | Migration Job configuration |
+| `values.yaml`: `openfga-operator.migrationJob.*` | Migration Job backoff, deadline, and TTL configuration |
 | `templates/serviceaccount.yaml`: second SA | Migration ServiceAccount |
 | `charts/openfga-operator/` | Operator subchart (conditional dependency) |
 

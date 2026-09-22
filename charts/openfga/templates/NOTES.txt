@@ -1,7 +1,8 @@
-{{- if and .Values.operator.enabled .Values.migration.enabled }}
-NOTE: operator-managed migration is enabled. The OpenFGA Deployment starts at
-0 replicas and is scaled up by the openfga-operator only after the migration
-Job completes successfully.
+{{- if and .Values.operator.enabled .Values.migration.enabled (has .Values.datastore.engine (list "postgres" "mysql")) }}
+NOTE: operator-managed migration is enabled. A fresh installation starts the
+OpenFGA Deployment at 0 replicas, then the operator scales it up after the
+migration Job succeeds. An upgrade preserves the live replica count while the
+migration runs.
 
 If pods don't appear within ~2 minutes, check the operator and the migration
 Job:

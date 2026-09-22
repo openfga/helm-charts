@@ -1,0 +1,13 @@
+suite: operator watch namespace Role
+templates:
+  - templates/role.yaml
+tests:
+  - it: should create managed-resource RBAC in the watch namespace
+    release:
+      namespace: operator-system
+    set:
+      watchNamespace: openfga-app
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: openfga-app

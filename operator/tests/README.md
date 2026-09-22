@@ -40,7 +40,7 @@ helm install openfga-test charts/openfga -n openfga-test \
 |----------|-------|
 | `openfga-test-openfga-operator` | `1/1 Running` |
 | `openfga-test-postgres` | `1/1 Running` |
-| `openfga-test-migrate-xxxxx` | `0/1 Completed` |
+| `openfga-test-migrate` | `0/1 Completed` |
 | `openfga-test` (OpenFGA) | `3/3 Running` |
 
 **Verify:**

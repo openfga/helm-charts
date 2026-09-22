@@ -6,14 +6,14 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 
 ## How It Works
 
-1. The operator watches Deployments **in its own namespace** labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
+1. The operator watches Deployments in its configured namespace, which defaults to the operator pod's namespace, labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
 2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
-   - Keeps the Deployment at 0 replicas
+   - Leaves existing replicas running during upgrades
    - Creates a migration Job running `openfga migrate`
    - Waits for the Job to complete
    - Updates the ConfigMap with the new version
-   - Scales the Deployment up to the desired replica count
-3. On failure, a `MigrationFailed` condition is set on the Deployment and replicas stay at 0
+   - Scales a fresh installation from 0 to the desired replica count
+3. On failure, a `MigrationFailed` condition is set on the Deployment. Fresh installations remain at 0 replicas, while upgrades keep their existing replicas.
 
 ## Prerequisites
 
@@ -87,7 +87,7 @@ See [`tests/README.md`](tests/README.md) for detailed verification steps and all
 
 ## Project Structure
 
-```
+```text
 operator/
 ├── cmd/
 │   └── main.go                          # Entry point, manager setup
@@ -109,7 +109,7 @@ The operator accepts the following flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--leader-elect` | `false` | Enable leader election so only one replica actively reconciles at a time. Required when running multiple operator replicas for high availability; standby pods wait for the leader's Lease to expire before taking over. Not needed for single-replica deployments. |
-| `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). Each operator instance manages only its own namespace, so multiple independent OpenFGA installations can coexist safely. |
+| `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). The chart binds namespaced RBAC in the configured watch namespace, so the operator may run in a different namespace when needed. |
 | `--metrics-bind-address` | `:8080` | Address the Prometheus metrics endpoint binds to. Change only if the default port conflicts with other containers in the pod. |
 | `--health-probe-bind-address` | `:8081` | Address the Kubernetes liveness and readiness probe endpoints bind to. Change only if the default port conflicts. |
 | `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. After hitting this limit the operator deletes the Job, sets a `MigrationFailed` condition on the Deployment, and retries after a 60-second cooldown. |
@@ -133,7 +133,7 @@ The operator reads these annotations from the OpenFGA Deployment:
 - **Mutable image tags:** The operator detects version changes by comparing the container image tag (or digest). If you deploy with a mutable tag like `latest` or reuse the same tag for different builds, the operator will not detect changes and will skip the migration. Use immutable tags (e.g., `v1.14.0`) or pin images by digest for reliable migration triggering.
 - **Migration-specific volumes:** The legacy Helm chart values `migrate.extraVolumes` and `migrate.extraVolumeMounts` have no effect in operator mode. The operator inherits volumes and mounts from the main Deployment pod spec. If you need additional volumes for migrations (e.g., CA bundles or TLS certs), add them to the top-level `extraVolumes` and `extraVolumeMounts` values instead.
 - **`envFrom` datastore detection:** The memory-datastore check inspects only the explicit `env` entries on the container. If `OPENFGA_DATASTORE_ENGINE` is supplied via `envFrom` (a ConfigMap or Secret), the operator cannot read the value and will attempt a migration Job that a memory datastore does not need. The Helm chart sets this variable inline, so chart-managed installs are unaffected.
-- **GitOps and `spec.replicas`:** The operator owns the Deployment's replica count — it scales to `0` for the duration of a migration and restores `openfga.dev/desired-replicas` afterward. Under a GitOps controller the chart's `lookup` of the live replica count returns empty at render time, so the rendered manifest carries `replicas: 0` (see [ADR-002](../docs/adr/002-operator-managed-migrations.md)). If the controller keeps syncing that field it will fight the operator over it, so exclude `spec.replicas` from GitOps reconciliation — the same treatment an HPA-managed Deployment needs:
+- **GitOps and `spec.replicas`:** On a fresh installation, the chart renders `replicas: 0` and the operator sets `openfga.dev/desired-replicas` after migration. During an in-cluster Helm upgrade, `lookup` preserves the live replica count. GitOps renderers cannot perform that lookup, so their manifest still carries `replicas: 0` (see [ADR-002](../docs/adr/002-operator-managed-migrations.md)). Exclude `spec.replicas` from GitOps reconciliation so a later sync does not scale a healthy Deployment back to 0:
   - **ArgoCD** — add to the `Application`:
     ```yaml
     spec:
