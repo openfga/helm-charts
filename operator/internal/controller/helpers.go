@@ -155,12 +155,11 @@ func buildMigrationJob(
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion:         "apps/v1",
-					Kind:               "Deployment",
-					Name:               deployment.Name,
-					UID:                deployment.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       deployment.Name,
+					UID:        deployment.UID,
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -184,6 +183,7 @@ func buildMigrationJob(
 						{
 							Name:            "migrate-database",
 							Image:           mainContainer.Image,
+							ImagePullPolicy: mainContainer.ImagePullPolicy,
 							Args:            []string{"migrate"},
 							Env:             mainContainer.Env,
 							EnvFrom:         mainContainer.EnvFrom,
@@ -223,12 +223,11 @@ func updateMigrationStatus(
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion:         "apps/v1",
-					Kind:               "Deployment",
-					Name:               deployment.Name,
-					UID:                deployment.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       deployment.Name,
+					UID:        deployment.UID,
+					Controller: ptr.To(true),
 				},
 			},
 		},

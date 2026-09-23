@@ -93,7 +93,9 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// 5. If versions match, ensure Deployment is scaled up and return.
 	if currentVersion == desiredVersion {
 		logger.V(1).Info("migration up to date", "version", desiredVersion)
-		statusPatch := client.MergeFrom(deployment.DeepCopy())
+		// Strategic merge patches the condition by type without replacing the whole
+		// conditions list, so it won't clobber Available/Progressing.
+		statusPatch := client.StrategicMergeFrom(deployment.DeepCopy())
 		if clearMigrationFailedCondition(deployment) {
 			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
 				logger.Error(patchErr, "failed to clear MigrationFailed condition")
@@ -187,7 +189,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		logger.Info("migration succeeded", "version", desiredVersion)
 
 		// Clear MigrationFailed condition.
-		statusPatch := client.MergeFrom(deployment.DeepCopy())
+		statusPatch := client.StrategicMergeFrom(deployment.DeepCopy())
 		if clearMigrationFailedCondition(deployment) {
 			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
 				logger.Error(patchErr, "failed to clear MigrationFailed condition")
@@ -215,8 +217,8 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if isJobConditionTrue(job, batchv1.JobFailed) || isJobConditionTrue(job, batchv1.JobFailureTarget) {
 		logger.Info("migration job failed, will delete and retry", "job", jobName, "version", desiredVersion)
 
-		// Set condition so kubectl describe shows the failure.
-		statusPatch := client.MergeFrom(deployment.DeepCopy())
+		// Set MigrationFailed so kubectl describe shows the failure.
+		statusPatch := client.StrategicMergeFrom(deployment.DeepCopy())
 		if setMigrationFailedCondition(deployment, desiredVersion) {
 			if patchErr := r.Status().Patch(ctx, deployment, statusPatch); patchErr != nil {
 				logger.Error(patchErr, "failed to set MigrationFailed condition")

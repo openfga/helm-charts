@@ -138,6 +138,47 @@ func TestReconcile_FirstInstall_CreatesJob(t *testing.T) {
 	}
 }
 
+func TestReconcile_FirstInstall_JobInheritsPullPolicyAndOwnerRef(t *testing.T) {
+	// Given: a Deployment whose OpenFGA container pins an explicit pull policy.
+	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullAlways
+	r := newReconciler(dep)
+
+	// When: reconciling.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	job := &batchv1.Job{}
+	if err := r.Get(context.Background(), types.NamespacedName{
+		Name: "openfga-migrate", Namespace: "default",
+	}, job); err != nil {
+		t.Fatalf("expected migration job to be created: %v", err)
+	}
+
+	// The migration Job must inherit the OpenFGA container's pull policy so it
+	// cannot run a stale cached image while the app pulls a fresh one.
+	if got := job.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != corev1.PullAlways {
+		t.Errorf("expected job pull policy %q, got %q", corev1.PullAlways, got)
+	}
+
+	// Owner reference makes the Job GC with the Deployment, but no blockOwnerDeletion:
+	// that needs the deployments/finalizers subresource the operator isn't granted,
+	// so the create would fail under OwnerReferencesPermissionEnforcement.
+	if len(job.OwnerReferences) != 1 {
+		t.Fatalf("expected exactly one owner reference, got %d", len(job.OwnerReferences))
+	}
+	ref := job.OwnerReferences[0]
+	if ref.Controller == nil || !*ref.Controller {
+		t.Errorf("expected controller owner reference, got %+v", ref)
+	}
+	if ref.BlockOwnerDeletion != nil {
+		t.Errorf("expected blockOwnerDeletion to be unset, got %v", *ref.BlockOwnerDeletion)
+	}
+}
+
 func TestReconcile_VersionMatch_ScalesUp(t *testing.T) {
 	// Given: a Deployment at 0 replicas with matching migration-status ConfigMap.
 	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
@@ -901,8 +942,8 @@ func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
 			Name:      "openfga-migration-status",
 			Namespace: "default",
 			Labels: map[string]string{
-				LabelPartOf:    LabelPartOfValue,
-				LabelComponent: "migration",
+				LabelPartOf:                    LabelPartOfValue,
+				LabelComponent:                 "migration",
 				"app.kubernetes.io/managed-by": "openfga-operator",
 			},
 			OwnerReferences: []metav1.OwnerReference{
