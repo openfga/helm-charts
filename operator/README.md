@@ -1,13 +1,13 @@
 # OpenFGA Operator
 
-A Kubernetes operator that manages database migrations for OpenFGA deployments. Instead of relying on Helm hooks and init containers, the operator watches OpenFGA Deployments, detects version changes, and orchestrates migrations as regular Jobs.
+A Kubernetes operator that manages database migrations for OpenFGA deployments. Instead of relying on Helm hooks and init containers, the operator watches OpenFGA Deployments, detects migration input changes, and orchestrates migrations as regular Jobs.
 
 This is **Stage 1** of the operator — focused solely on migration orchestration. See [ADR-001](../docs/adr/001-adopt-openfga-operator.md) for the full roadmap.
 
 ## How It Works
 
 1. The operator watches Deployments in its configured namespace, which defaults to the operator pod's namespace, labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
-2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
+2. When the desired migration identity changes (comparing the rendered migration Job pod template to the `{name}-migration-status` ConfigMap), the operator:
    - Creates a migration Job running `openfga migrate`
    - Waits for the Job to complete
    - Updates the ConfigMap with the new version
@@ -121,7 +121,7 @@ The operator accepts the following flags:
 | `--health-probe-bind-address` | `:8081` | Address the Kubernetes liveness and readiness probe endpoints bind to. Change only if the default port conflicts. |
 | `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. The operator then sets a `MigrationFailed` condition on the Deployment and replaces the Job 60 seconds after it failed. |
 | `--active-deadline-seconds` | `0` | Maximum wall-clock seconds a migration Job can run before Kubernetes terminates it. `0` means no deadline. A deadline cuts off long migrations, such as index builds or MySQL table rebuilds on large tables, which then start over on the next attempt. |
-| `--ttl-seconds-after-finished` | `300` | Seconds Kubernetes keeps a completed or failed Job (and its pods) before garbage-collecting them, giving you time to inspect logs. |
+| `--ttl-seconds-after-finished` | `300` | Seconds Kubernetes keeps a completed Job and its pod before garbage-collecting them. Failed Jobs do not receive a TTL and remain available for the operator's 60-second retry delay. |
 
 When deployed via the Helm subchart, these are configured through `values.yaml`. See `charts/openfga-operator/values.yaml` for all available options.
 
@@ -134,11 +134,21 @@ The operator reads these annotations from the OpenFGA Deployment:
 | `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `openfga-operator.enabled` and `datastore.applyMigrations` are true and the datastore is Postgres or MySQL. |
 | `openfga.dev/container-name` | The OpenFGA container in the pod spec. Defaults to `openfga`. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
+| `openfga.dev/migration-init-containers` | JSON array of additional init containers for the migration Job. Generated from `migrate.extraInitContainers`. |
+| `openfga.dev/migration-sidecars` | JSON array of additional containers for the migration Job. Generated from `migrate.sidecars`. |
+| `openfga.dev/migration-volumes` | JSON array of additional volumes for the migration Job. Generated from `migrate.extraVolumes`. |
+| `openfga.dev/migration-volume-mounts` | JSON array of additional mounts for the migration container. Generated from `migrate.extraVolumeMounts`. |
+| `openfga.dev/migration-resources` | JSON resource requirements for the migration container. Generated from `datastore.migrations.resources`. |
+| `openfga.dev/migration-timeout` | `OPENFGA_TIMEOUT` for the migration container. Generated from `migrate.timeout`. |
+| `openfga.dev/migration-nonce` | Arbitrary value included in the migration identity. Generated from `migration.nonce`. |
+| `openfga.dev/migration-annotations` | JSON map of non-Helm annotations for the migration Job and pod. Generated from `migrate.annotations`; `helm.sh/*` hook annotations are excluded. |
+| `openfga.dev/migration-labels` | JSON map of additional labels for the migration Job and pod. Generated from `migrate.labels`; operator identity labels take precedence. |
 
 ## Limitations
 
-- **Migrations key only on the image tag:** The operator compares the container image tag (or digest) to the `{name}-migration-status` ConfigMap. A mutable tag like `latest`, or a tag reused for a new build, is not seen as a change, so the migration is skipped — use immutable tags (e.g. `v1.14.0`) or pin by digest. A migration-needing change that keeps the same image — for example repointing `datastore.uri` at a different or restored database — also won't trigger a Job; delete the status ConfigMap (and the `{name}-migrate` Job, if it still exists) to run the migration again.
-- **Legacy migration values:** `migrate.*` (extra volumes and mounts, init containers, sidecars, annotations, labels, timeout) and `datastore.migrations.resources` only apply to the legacy Helm hook Job. The operator's Job copies the OpenFGA container's image, env, volumes, resources, security context and scheduling instead, so put anything the migration needs (e.g. CA bundles) in the top-level `extraVolumes`, `extraVolumeMounts` and `extraEnvVars`.
-- **Single-container migration Job:** The Job runs one container (`openfga migrate`) and injects no sidecars or extra init containers, so databases reached through a sidecar proxy (Cloud SQL Auth Proxy, AlloyDB) aren't supported for operator-managed migrations. A sidecar injected into every pod in the namespace that doesn't exit on its own (e.g. an Istio sidecar) keeps the Job pod running and stops the Job from completing.
+- **Secret contents are not observable:** The migration identity covers the image, environment references, pod configuration, migration-specific containers, and `migration.nonce`. Kubernetes does not expose referenced Secret contents through the Deployment, so change `migration.nonce` when rotating a Secret in place and a migration must rerun.
+- **Mutable image contents are not observable:** Reusing a tag such as `latest` does not change the Deployment's image reference. Use immutable tags or digests, or change `migration.nonce` when deliberately replacing the contents of a mutable tag.
+- **Helm hook metadata:** Operator-managed Jobs ignore `helm.sh/*` entries in `migrate.annotations`. Other migration annotations and labels are forwarded, but cannot override the operator's identity labels.
+- **Sidecar completion:** Containers configured through `migrate.sidecars` must exit after the migration completes. A sidecar that runs indefinitely keeps the Job pod running and prevents the Job from completing.
 - **Job pod labels:** The migration pod is labelled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: migration`, not with the OpenFGA Deployment's `app.kubernetes.io/name`/`instance` labels (which would make it a Service endpoint). A NetworkPolicy that allows database egress only for the OpenFGA pods' labels needs a rule for the migration pod too.
 - **One namespace per operator:** The operator reconciles every opted-in OpenFGA Deployment in its watch namespace. Operators installed by several releases in one namespace share a leader election lease, so only one of them is active at a time.

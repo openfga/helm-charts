@@ -13,6 +13,39 @@ metadata:
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
     openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
     {{- end }}
+    {{- with .Values.migrate.extraInitContainers }}
+    openfga.dev/migration-init-containers: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.sidecars }}
+    openfga.dev/migration-sidecars: {{ include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.extraVolumes }}
+    openfga.dev/migration-volumes: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.extraVolumeMounts }}
+    openfga.dev/migration-volume-mounts: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.datastore.migrations.resources }}
+    openfga.dev/migration-resources: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.timeout }}
+    openfga.dev/migration-timeout: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.migration.nonce }}
+    openfga.dev/migration-nonce: {{ . | quote }}
+    {{- end }}
+    {{- $migrationAnnotations := dict }}
+    {{- range $key, $value := .Values.migrate.annotations }}
+    {{- if not (hasPrefix "helm.sh/" $key) }}
+    {{- $_ := set $migrationAnnotations $key $value }}
+    {{- end }}
+    {{- end }}
+    {{- with $migrationAnnotations }}
+    openfga.dev/migration-annotations: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.labels }}
+    openfga.dev/migration-labels: {{ . | toJson | quote }}
+    {{- end }}
     {{- end }}
     {{- with .Values.annotations }}
     {{- toYaml . | nindent 4 }}

@@ -18,6 +18,62 @@ tests:
           path: metadata.annotations["openfga.dev/migration-service-account"]
           value: RELEASE-NAME-openfga-migration
 
+  - it: should pass migration Job configuration to the operator
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.migrations.resources.requests.cpu: 100m
+      migrate.timeout: 2m
+      migrate.extraInitContainers:
+        - name: prepare-proxy
+          image: busybox:1.36
+      migrate.sidecars:
+        - name: database-proxy
+          image: "{{ .Release.Name }}-proxy:v2"
+      migrate.extraVolumes:
+        - name: proxy-config
+          secret:
+            secretName: database-proxy
+      migrate.extraVolumeMounts:
+        - name: proxy-config
+          mountPath: /credentials
+          readOnly: true
+      migrate.annotations:
+        helm.sh/hook: post-install
+        admission.example.com/inject: enabled
+      migrate.labels:
+        app.kubernetes.io/component: overridden
+        network-policy.example.com/database: allowed
+      migration.nonce: secret-rotation-2
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-init-containers"]
+          value: '[{"image":"busybox:1.36","name":"prepare-proxy"}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-sidecars"]
+          value: '[{"image":"RELEASE-NAME-proxy:v2","name":"database-proxy"}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-volumes"]
+          value: '[{"name":"proxy-config","secret":{"secretName":"database-proxy"}}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-volume-mounts"]
+          value: '[{"mountPath":"/credentials","name":"proxy-config","readOnly":true}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-resources"]
+          value: '{"requests":{"cpu":"100m"}}'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-timeout"]
+          value: 2m
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-nonce"]
+          value: secret-rotation-2
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-annotations"]
+          value: '{"admission.example.com/inject":"enabled"}'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-labels"]
+          value: '{"app.kubernetes.io/component":"overridden","network-policy.example.com/database":"allowed"}'
+
   - it: should not set operator annotations when operator is disabled
     set:
       openfga-operator.enabled: false

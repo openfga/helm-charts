@@ -23,7 +23,7 @@ import (
 const retryDelay = 60 * time.Second
 
 // MigrationReconciler watches OpenFGA Deployments and runs a database
-// migration Job whenever the OpenFGA image version changes.
+// migration Job whenever its image or migration inputs change.
 type MigrationReconciler struct {
 	client.Client
 
@@ -52,14 +52,24 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 	desiredVersion := extractImageTag(container.Image)
+	desiredJob, err := r.buildMigrationJob(deployment, container, desiredVersion)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	desiredPodTemplateHash := desiredJob.Annotations[AnnotationPodTemplateHash]
 
 	status := &corev1.ConfigMap{}
 	err = r.Get(ctx, types.NamespacedName{Name: migrationConfigMapName(req.Name), Namespace: req.Namespace}, status)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("getting migration status: %w", err)
 	}
+	statusOwnedByDeployment := err == nil && metav1.IsControlledBy(status, deployment)
+	if err == nil && !statusOwnedByDeployment && !isOperatorManagedResourceForDeployment(status, deployment) {
+		return ctrl.Result{}, fmt.Errorf("migration status ConfigMap %s/%s already exists and is not managed by this Deployment", status.Namespace, status.Name)
+	}
 	currentVersion := status.Data["version"]
-	if currentVersion == desiredVersion {
+	currentPodTemplateHash := status.Data["podTemplateHash"]
+	if statusOwnedByDeployment && currentVersion == desiredVersion && currentPodTemplateHash == desiredPodTemplateHash {
 		_, err := r.patchCondition(ctx, deployment, clearMigrationFailedCondition)
 		return ctrl.Result{}, err
 	}
@@ -67,7 +77,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	job := &batchv1.Job{}
 	err = r.Get(ctx, types.NamespacedName{Name: migrationJobName(req.Name), Namespace: req.Namespace}, job)
 	if apierrors.IsNotFound(err) {
-		job = r.buildMigrationJob(deployment, container, desiredVersion)
+		job = desiredJob
 		if err := r.Create(ctx, job); err != nil {
 			if apierrors.IsAlreadyExists(err) {
 				// The cache has not caught up with a Job created by an earlier reconcile.
@@ -81,24 +91,27 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
 	}
+	jobOwnedByDeployment := metav1.IsControlledBy(job, deployment)
+	replaceableJob := jobOwnedByDeployment || isOperatorManagedResourceForDeployment(job, deployment) || isLegacyMigrationJob(job)
+	if !replaceableJob {
+		return ctrl.Result{}, fmt.Errorf("migration Job %s/%s already exists and is not managed by this Deployment", job.Namespace, job.Name)
+	}
 
-	// Only a Job this operator created for the desired version is trusted.
+	// Only a Job this operator created for the desired migration inputs is trusted.
 	// Anything else under the same name, such as a Job for a previous image or
 	// the chart's legacy Helm hook Job, is replaced.
 	jobVersion := job.Annotations[AnnotationDesiredVersion]
+	jobPodTemplateHash := job.Annotations[AnnotationPodTemplateHash]
 	complete := isJobConditionTrue(job, batchv1.JobComplete)
 	failedAt, failed := jobFailedAt(job)
-	outdated := jobVersion != desiredVersion
-	// A Job whose pod cannot start (a bad secret reference, an image pull
-	// error, an unschedulable pod) never fails on its own, so rebuild it once
-	// the Deployment's pod template has changed. A Job with a ready pod is left
-	// alone so a running migration is not cut off; one whose pod has just
-	// finished may still be rebuilt, which only re-runs a no-op migration.
-	if !outdated && !complete && !failed && job.Status.Active > 0 && ptr.Deref(job.Status.Ready, 0) == 0 {
-		want := r.buildMigrationJob(deployment, container, desiredVersion)
-		outdated = job.Annotations[AnnotationPodTemplateHash] != want.Annotations[AnnotationPodTemplateHash]
-	}
+	outdated := !jobOwnedByDeployment || jobVersion != desiredVersion || jobPodTemplateHash != desiredPodTemplateHash
 	if outdated {
+		if !complete && !failed && (job.Status.Ready != nil && *job.Status.Ready > 0 || job.Status.Succeeded > 0) {
+			// Never interrupt a migration that has started. Once it reaches a
+			// terminal state, the next reconciliation replaces it with a Job
+			// for the latest desired inputs.
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		logger.Info("replacing migration job", "job", job.Name, "jobVersion", jobVersion, "desiredVersion", desiredVersion)
 		if err := r.deleteJob(ctx, job); err != nil {
 			return ctrl.Result{}, err
@@ -107,7 +120,10 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if complete {
-		if err := updateMigrationStatus(ctx, r.Client, deployment, desiredVersion, job.Name); err != nil {
+		if err := r.setCompletedJobTTL(ctx, job); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := updateMigrationStatus(ctx, r.Client, deployment, desiredVersion, desiredPodTemplateHash, job.Name); err != nil {
 			return ctrl.Result{}, err
 		}
 		logger.Info("migration succeeded", "version", desiredVersion)
@@ -140,8 +156,36 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
+func (r *MigrationReconciler) setCompletedJobTTL(ctx context.Context, job *batchv1.Job) error {
+	if job.Spec.TTLSecondsAfterFinished != nil && *job.Spec.TTLSecondsAfterFinished == r.TTLSecondsAfterFinished {
+		return nil
+	}
+	patch := client.MergeFromWithOptions(job.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	job.Spec.TTLSecondsAfterFinished = ptr.To(r.TTLSecondsAfterFinished)
+	if err := r.Patch(ctx, job, patch); err != nil {
+		return fmt.Errorf("setting completed migration Job TTL: %w", err)
+	}
+	return nil
+}
+
 func (r *MigrationReconciler) deleteJob(ctx context.Context, job *batchv1.Job) error {
-	err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+	options := []client.DeleteOption{client.PropagationPolicy(metav1.DeletePropagationForeground)}
+	preconditions := client.Preconditions{}
+	hasPreconditions := false
+	if job.UID != "" {
+		uid := job.UID
+		preconditions.UID = &uid
+		hasPreconditions = true
+	}
+	if job.ResourceVersion != "" {
+		resourceVersion := job.ResourceVersion
+		preconditions.ResourceVersion = &resourceVersion
+		hasPreconditions = true
+	}
+	if hasPreconditions {
+		options = append(options, preconditions)
+	}
+	err := r.Delete(ctx, job, options...)
 	if client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("deleting migration job %s: %w", job.Name, err)
 	}
@@ -153,7 +197,7 @@ func (r *MigrationReconciler) deleteJob(ctx context.Context, job *batchv1.Job) e
 // merges conditions by type, so the Deployment controller's own conditions are
 // left alone.
 func (r *MigrationReconciler) patchCondition(ctx context.Context, deployment *appsv1.Deployment, update func(*appsv1.Deployment) bool) (bool, error) {
-	patch := client.StrategicMergeFrom(deployment.DeepCopy())
+	patch := client.StrategicMergeFrom(deployment.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	if !update(deployment) {
 		return false, nil
 	}

@@ -1,7 +1,7 @@
 {{- if include "openfga.operatorMigrations" . }}
 NOTE: database migrations are run by the openfga-operator. Whenever the OpenFGA
-image changes it runs the {{ include "openfga.fullname" . }}-migrate Job and records the migrated
-version in the {{ include "openfga.fullname" . }}-migration-status ConfigMap. On a new database the
+image or migration inputs change it runs the {{ include "openfga.fullname" . }}-migrate Job and
+records the migrated identity in the {{ include "openfga.fullname" . }}-migration-status ConfigMap. On a new database the
 OpenFGA pods stay NotReady until the first migration completes.
 
 If the pods do not become ready, check the operator and the migration Job:

@@ -77,10 +77,10 @@ The operator runs a **migration controller** that reconciles the OpenFGA Deploym
 ┌──────────────────────────────────────────────────────────┐
 │                  Operator Reconciliation                 │
 │                                                          │
-│  1. Read Deployment → extract image tag (e.g. v1.14.0)   │
+│  1. Read Deployment and derive migration identity        │
 │  2. Read ConfigMap/openfga-migration-status              │
-│     └── "Last migrated version: v1.13.0"                 │
-│  3. Versions differ → migration needed                   │
+│     └── "Last migrated image and pod template hash"      │
+│  3. Identities differ → migration needed                 │
 │  4. Create Job/openfga-migrate                           │
 │     ├── ServiceAccount: openfga-migrator (DDL perms)     │
 │     ├── Image: openfga/openfga:v1.14.0                   │
@@ -101,12 +101,12 @@ Readiness comes from OpenFGA itself: `IsReady()` reports `NOT_SERVING` while the
 
 **Rejected alternative — let the operator own the replica count:** the chart could omit `spec.replicas` (or render 0) and have the operator scale the Deployment up once the migration succeeds. Testing this showed three problems: switching an existing release to operator mode removes the field, so both Helm's three-way merge and server-side apply reset the Deployment to one replica until the migration finishes; `kubectl scale` and HPAs are overridden by the operator; and the scale-up buys nothing on upgrades, where the readiness check does not hold pods back.
 
-#### Version tracking via ConfigMap
+#### Migration identity tracking via ConfigMap
 
-A ConfigMap (`openfga-migration-status`) records the last successfully migrated version. The operator compares this to the Deployment's image tag to determine if migration is needed. This is:
+A ConfigMap (`openfga-migration-status`) records the last successfully migrated image version and migration Job pod template hash. The operator compares both values to the desired Job, so changes to datastore environment references, volumes, scheduling, init containers, sidecars, and other migration inputs trigger a new migration. Because Secret contents are not present in a Deployment, users can change `migration.nonce` to force a migration after rotating a referenced Secret in place. This is:
 - Simple to inspect (`kubectl get configmap openfga-migration-status -o yaml`)
 - Survives operator restarts
-- Can be manually deleted to force re-migration (once the previous migration Job has been cleaned up)
+- Can be manually deleted to force re-migration once the previous migration Job has been cleaned up
 
 #### Separate ServiceAccount for migrations
 
@@ -206,6 +206,8 @@ Nothing is deleted outright — every change is gated on `openfga-operator.enabl
 | `values.yaml`: `openfga-operator.enabled` | Toggle the operator subchart |
 | `values.yaml`: `openfga-operator.migrationJob.*` | Migration Job backoff, deadline, and TTL configuration |
 | `values.yaml`: `migration.serviceAccount.*` | Separate ServiceAccount for migration Jobs |
+| `values.yaml`: `migration.nonce` | Explicit rerun trigger for referenced Secret data changes |
+| `values.yaml`: migration pod values | `migrate.extraInitContainers`, `migrate.sidecars`, volumes, mounts, resources, timeout, non-hook annotations, and labels are forwarded to operator Jobs |
 | `templates/serviceaccount.yaml`: second SA | Migration ServiceAccount |
 | `charts/openfga-operator/` | Operator subchart (conditional dependency) |
 
@@ -230,5 +232,5 @@ Users on `openfga-operator.enabled: false` (the default) see identical rendered 
 ### Risks
 
 - **Readiness relies on OpenFGA's schema check** — pods on a fresh database are held back only by `MinimumSupportedDatastoreSchemaRevision` in `pkg/storage/sqlcommon/sqlcommon.go`, and upgrades rely on each release working against the previous schema. Both are OpenFGA guarantees the Helm hook flow already depended on.
-- **Migrations run as soon as the image changes** — as with the hook Job, nothing drains traffic first. Some migrations, such as MySQL's `008_collate_identifiers` in v1.18.0, block writes while tables are rebuilt; OpenFGA's runbook recommends draining traffic for those, which stays a manual step.
-- **ConfigMap as state store** — if the ConfigMap is accidentally deleted, the operator records the version again from the completed Job while it exists, or re-runs the migration once it has been cleaned up (which is safe — `openfga migrate` is idempotent).
+- **Migrations run as soon as their inputs change:** As with the hook Job, nothing drains traffic first. Some migrations, such as MySQL's `008_collate_identifiers` in v1.18.0, block writes while tables are rebuilt; OpenFGA's runbook recommends draining traffic for those, which stays a manual step.
+- **ConfigMap as state store:** If the ConfigMap is accidentally deleted, the operator records the migration identity again from the completed Job while it exists, or reruns the migration once the Job has been cleaned up. `openfga migrate` is idempotent.

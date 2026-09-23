@@ -1205,6 +1205,14 @@
                     },
                     "default": {}
                 },
+                "labels": {
+                    "type": "object",
+                    "description": "Map of labels to add to the migration job and pod",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "default": {}
+                },
                 "timeout": {
                     "type": [
                         "string",
@@ -1306,8 +1314,13 @@
         },
         "migration": {
             "type": "object",
-            "description": "Service account for the migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
+            "description": "Configuration for migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
             "properties": {
+                "nonce": {
+                    "type": "string",
+                    "description": "Arbitrary value included in the migration identity. Change it to rerun migrations when referenced Secret data changes without changing its name.",
+                    "default": ""
+                },
                 "serviceAccount": {
                     "type": "object",
                     "properties": {

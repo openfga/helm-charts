@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -33,6 +34,15 @@ const (
 	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
 	AnnotationContainerName           = "openfga.dev/container-name"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
+	AnnotationMigrationInitContainers = "openfga.dev/migration-init-containers"
+	AnnotationMigrationSidecars       = "openfga.dev/migration-sidecars"
+	AnnotationMigrationVolumes        = "openfga.dev/migration-volumes"
+	AnnotationMigrationVolumeMounts   = "openfga.dev/migration-volume-mounts"
+	AnnotationMigrationResources      = "openfga.dev/migration-resources"
+	AnnotationMigrationTimeout        = "openfga.dev/migration-timeout"
+	AnnotationMigrationNonce          = "openfga.dev/migration-nonce"
+	AnnotationMigrationAnnotations    = "openfga.dev/migration-annotations"
+	AnnotationMigrationLabels         = "openfga.dev/migration-labels"
 
 	// Annotations set on migration Jobs: the version the Job migrates to, and a
 	// hash of the pod template it was built from.
@@ -103,57 +113,126 @@ func ownerReference(deployment *appsv1.Deployment) metav1.OwnerReference {
 	}
 }
 
+func isOperatorManagedResourceForDeployment(obj metav1.Object, deployment *appsv1.Deployment) bool {
+	if obj.GetLabels()[LabelManagedBy] != LabelManagedByValue {
+		return false
+	}
+	for _, owner := range obj.GetOwnerReferences() {
+		if ptr.Deref(owner.Controller, false) &&
+			owner.APIVersion == "apps/v1" &&
+			owner.Kind == "Deployment" &&
+			owner.Name == deployment.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func isLegacyMigrationJob(job *batchv1.Job) bool {
+	return job.Labels[LabelManagedBy] == "Helm" && job.Annotations["helm.sh/hook"] != ""
+}
+
 // buildMigrationJob constructs a Job that runs "openfga migrate" with the
 // OpenFGA container's image, environment, volumes and scheduling.
-func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, container *corev1.Container, version string) *batchv1.Job {
+func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, container *corev1.Container, version string) (*batchv1.Job, error) {
 	podSpec := deployment.Spec.Template.Spec
 	serviceAccount := deployment.Annotations[AnnotationMigrationServiceAccount]
 	if serviceAccount == "" {
 		serviceAccount = podSpec.ServiceAccountName
 	}
 
+	initContainers, err := annotationJSON[[]corev1.Container](deployment, AnnotationMigrationInitContainers)
+	if err != nil {
+		return nil, err
+	}
+	sidecars, err := annotationJSON[[]corev1.Container](deployment, AnnotationMigrationSidecars)
+	if err != nil {
+		return nil, err
+	}
+	extraVolumes, err := annotationJSON[[]corev1.Volume](deployment, AnnotationMigrationVolumes)
+	if err != nil {
+		return nil, err
+	}
+	extraVolumeMounts, err := annotationJSON[[]corev1.VolumeMount](deployment, AnnotationMigrationVolumeMounts)
+	if err != nil {
+		return nil, err
+	}
+	migrationAnnotations, err := annotationJSON[map[string]string](deployment, AnnotationMigrationAnnotations)
+	if err != nil {
+		return nil, err
+	}
+	migrationLabels, err := annotationJSON[map[string]string](deployment, AnnotationMigrationLabels)
+	if err != nil {
+		return nil, err
+	}
+
+	resources := container.Resources
+	if deployment.Annotations[AnnotationMigrationResources] != "" {
+		resources, err = annotationJSON[corev1.ResourceRequirements](deployment, AnnotationMigrationResources)
+		if err != nil {
+			return nil, err
+		}
+	}
+	env := append([]corev1.EnvVar(nil), container.Env...)
+	if timeout := deployment.Annotations[AnnotationMigrationTimeout]; timeout != "" && !hasEnvVar(env, "OPENFGA_TIMEOUT") {
+		env = append(env, corev1.EnvVar{Name: "OPENFGA_TIMEOUT", Value: timeout})
+	}
+
+	podAnnotations := mergeStringMaps(migrationAnnotations, nil)
+	delete(podAnnotations, AnnotationMigrationNonce)
+	if nonce := deployment.Annotations[AnnotationMigrationNonce]; nonce != "" {
+		podAnnotations[AnnotationMigrationNonce] = nonce
+	}
+	jobLabels := mergeStringMaps(migrationLabels, map[string]string{
+		LabelPartOf:    LabelPartOfValue,
+		LabelComponent: "migration",
+		LabelManagedBy: LabelManagedByValue,
+	})
+	podLabels := mergeStringMaps(migrationLabels, map[string]string{
+		LabelPartOf:    LabelPartOfValue,
+		LabelComponent: "migration",
+	})
+	jobAnnotations := mergeStringMaps(migrationAnnotations, map[string]string{
+		AnnotationDesiredVersion: version,
+	})
+	containers := append([]corev1.Container{{
+		Name:            "migrate-database",
+		Image:           container.Image,
+		ImagePullPolicy: container.ImagePullPolicy,
+		Args:            []string{"migrate"},
+		Env:             env,
+		EnvFrom:         container.EnvFrom,
+		Resources:       resources,
+		VolumeMounts:    mergeVolumeMounts(container.VolumeMounts, extraVolumeMounts),
+		SecurityContext: container.SecurityContext,
+	}}, sidecars...)
+
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      migrationJobName(deployment.Name),
-			Namespace: deployment.Namespace,
-			Labels: map[string]string{
-				LabelPartOf:    LabelPartOfValue,
-				LabelComponent: "migration",
-				LabelManagedBy: LabelManagedByValue,
-			},
-			Annotations:     map[string]string{AnnotationDesiredVersion: version},
+			Name:            migrationJobName(deployment.Name),
+			Namespace:       deployment.Namespace,
+			Labels:          jobLabels,
+			Annotations:     jobAnnotations,
 			OwnerReferences: []metav1.OwnerReference{ownerReference(deployment)},
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit:            ptr.To(r.BackoffLimit),
-			TTLSecondsAfterFinished: ptr.To(r.TTLSecondsAfterFinished),
+			BackoffLimit: ptr.To(r.BackoffLimit),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						LabelPartOf:    LabelPartOfValue,
-						LabelComponent: "migration",
-					},
+					Labels:      podLabels,
+					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: serviceAccount,
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ImagePullSecrets:   podSpec.ImagePullSecrets,
 					SecurityContext:    podSpec.SecurityContext,
-					Containers: []corev1.Container{{
-						Name:            "migrate-database",
-						Image:           container.Image,
-						ImagePullPolicy: container.ImagePullPolicy,
-						Args:            []string{"migrate"},
-						Env:             container.Env,
-						EnvFrom:         container.EnvFrom,
-						Resources:       container.Resources,
-						VolumeMounts:    container.VolumeMounts,
-						SecurityContext: container.SecurityContext,
-					}},
-					Volumes:      podSpec.Volumes,
-					NodeSelector: podSpec.NodeSelector,
-					Tolerations:  podSpec.Tolerations,
-					Affinity:     podSpec.Affinity,
+					InitContainers:     initContainers,
+					Containers:         containers,
+					Volumes:            mergeVolumes(podSpec.Volumes, extraVolumes),
+					NodeSelector:       podSpec.NodeSelector,
+					Tolerations:        podSpec.Tolerations,
+					Affinity:           podSpec.Affinity,
 				},
 			},
 		},
@@ -162,7 +241,78 @@ func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, c
 		job.Spec.ActiveDeadlineSeconds = ptr.To(r.ActiveDeadlineSeconds)
 	}
 	job.Annotations[AnnotationPodTemplateHash] = podTemplateHash(&job.Spec.Template)
-	return job
+	return job, nil
+}
+
+func annotationJSON[T any](deployment *appsv1.Deployment, annotation string) (T, error) {
+	var value T
+	raw := deployment.Annotations[annotation]
+	if raw == "" {
+		return value, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return value, fmt.Errorf("decoding %s annotation on deployment %s/%s: %w", annotation, deployment.Namespace, deployment.Name, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return value, fmt.Errorf("decoding %s annotation on deployment %s/%s: trailing JSON data", annotation, deployment.Namespace, deployment.Name)
+	}
+	return value, nil
+}
+
+func hasEnvVar(env []corev1.EnvVar, name string) bool {
+	for i := range env {
+		if env[i].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeVolumes(base, extra []corev1.Volume) []corev1.Volume {
+	merged := append([]corev1.Volume(nil), base...)
+	index := make(map[string]int, len(merged))
+	for i := range merged {
+		index[merged[i].Name] = i
+	}
+	for _, volume := range extra {
+		if i, ok := index[volume.Name]; ok {
+			merged[i] = volume
+			continue
+		}
+		index[volume.Name] = len(merged)
+		merged = append(merged, volume)
+	}
+	return merged
+}
+
+func mergeVolumeMounts(base, extra []corev1.VolumeMount) []corev1.VolumeMount {
+	merged := append([]corev1.VolumeMount(nil), base...)
+	index := make(map[string]int, len(merged))
+	for i := range merged {
+		index[merged[i].MountPath] = i
+	}
+	for _, mount := range extra {
+		if i, ok := index[mount.MountPath]; ok {
+			merged[i] = mount
+			continue
+		}
+		index[mount.MountPath] = len(merged)
+		merged = append(merged, mount)
+	}
+	return merged
+}
+
+func mergeStringMaps(base, overrides map[string]string) map[string]string {
+	merged := make(map[string]string, len(base)+len(overrides))
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	return merged
 }
 
 func podTemplateHash(template *corev1.PodTemplateSpec) string {
@@ -173,13 +323,18 @@ func podTemplateHash(template *corev1.PodTemplateSpec) string {
 	return fmt.Sprintf("%x", sha256.Sum256(b))[:16]
 }
 
-// updateMigrationStatus records the migrated version in the status ConfigMap.
-func updateMigrationStatus(ctx context.Context, c client.Client, deployment *appsv1.Deployment, version, jobName string) error {
+// updateMigrationStatus records the migrated version and Job template identity.
+func updateMigrationStatus(ctx context.Context, c client.Client, deployment *appsv1.Deployment, version, podTemplateHash, jobName string) error {
 	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
 		Name:      migrationConfigMapName(deployment.Name),
 		Namespace: deployment.Namespace,
 	}}
 	_, err := controllerutil.CreateOrUpdate(ctx, c, cm, func() error {
+		if cm.ResourceVersion != "" &&
+			!metav1.IsControlledBy(cm, deployment) &&
+			!isOperatorManagedResourceForDeployment(cm, deployment) {
+			return fmt.Errorf("ConfigMap %s/%s already exists and is not managed by the OpenFGA operator", cm.Namespace, cm.Name)
+		}
 		cm.Labels = map[string]string{
 			LabelPartOf:    LabelPartOfValue,
 			LabelComponent: "migration",
@@ -188,9 +343,10 @@ func updateMigrationStatus(ctx context.Context, c client.Client, deployment *app
 		// Reset on every write in case the Deployment was recreated with a new UID.
 		cm.OwnerReferences = []metav1.OwnerReference{ownerReference(deployment)}
 		cm.Data = map[string]string{
-			"version":    version,
-			"migratedAt": time.Now().UTC().Format(time.RFC3339),
-			"jobName":    jobName,
+			"version":         version,
+			"podTemplateHash": podTemplateHash,
+			"migratedAt":      time.Now().UTC().Format(time.RFC3339),
+			"jobName":         jobName,
 		}
 		return nil
 	})

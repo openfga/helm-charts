@@ -408,6 +408,9 @@ openfga-operator:
 # -- Service account for the migration Jobs the operator creates.
 # Only used when openfga-operator.enabled is true.
 migration:
+  # -- Arbitrary value included in the migration identity. Change it to rerun
+  # migrations when referenced Secret data changes without changing its name.
+  nonce: ""
   serviceAccount:
     # -- Create a dedicated service account for migration Jobs.
     # The migration Job inherits env vars (including secretKeyRef) from the OpenFGA container.

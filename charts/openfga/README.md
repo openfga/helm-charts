@@ -153,7 +153,7 @@ datastore:
 
 ### Running migrations with the operator
 
-By default the chart runs database migrations from a Helm hook Job and gates the OpenFGA pods on it with an init container. Helm hooks are not run by Argo CD and conflict with `helm install --wait` and Flux, so the chart can instead install the [openfga-operator](../openfga-operator), which runs `openfga migrate` as a regular Job whenever the OpenFGA image changes:
+By default the chart runs database migrations from a Helm hook Job and gates the OpenFGA pods on it with an init container. Helm hooks are not run by Argo CD and conflict with `helm install --wait` and Flux, so the chart can instead install the [openfga-operator](../openfga-operator), which runs `openfga migrate` as a regular Job whenever the OpenFGA image or migration inputs change:
 
 ```yaml
 openfga-operator:
@@ -164,7 +164,7 @@ datastore:
   uriSecret: my-postgres-secret
 ```
 
-The operator only runs migrations; replicas, autoscaling and the pod template stay under the chart's control. It records the migrated version in the `<release>-migration-status` ConfigMap and sets a `MigrationFailed` condition on the Deployment if a migration fails. The migration Job runs as a dedicated `<release>-migration` service account (`migration.serviceAccount`), which can carry cloud IAM annotations for DDL permissions. Migrations only run when the image tag changes, so pin `image.tag` to a release rather than a floating tag. See the [operator README](../../operator/README.md) for how it works and its limitations.
+The operator only runs migrations; replicas, autoscaling and the pod template stay under the chart's control. It records the migrated image and migration Job template identity in the `<release>-migration-status` ConfigMap and sets a `MigrationFailed` condition on the Deployment if a migration fails. The migration Job runs as a dedicated `<release>-migration` service account (`migration.serviceAccount`), which can carry cloud IAM annotations for DDL permissions. Migration-specific init containers, sidecars, volumes, mounts, resources, timeout, non-hook annotations, and labels are forwarded from `migrate.*` and `datastore.migrations.resources`. Change `migration.nonce` to rerun a migration after rotating referenced Secret data without changing the Secret name. See the [operator README](../../operator/README.md) for how it works and its limitations.
 
 ## Uninstalling the Chart
 

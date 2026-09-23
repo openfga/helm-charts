@@ -66,7 +66,8 @@ migrationJob:
   # 0 disables the deadline. A migration that is cut off, such as an index build
   # on a large table, has to start over on the next attempt.
   activeDeadlineSeconds: 0
-  # -- Seconds to keep completed/failed Job pods for log inspection before garbage collection.
+  # -- Seconds to keep completed Job pods for log inspection before garbage collection.
+  # Failed Jobs are retained for the operator's fixed 60-second retry delay.
   ttlSecondsAfterFinished: 300
 
 resources:
