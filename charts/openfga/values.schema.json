@@ -1326,8 +1326,8 @@
                     "properties": {
                         "create": {
                             "type": "boolean",
-                            "description": "Create a dedicated service account for migration Jobs",
-                            "default": true
+                            "description": "Create a dedicated service account for migration Jobs; otherwise they run as the OpenFGA service account",
+                            "default": false
                         },
                         "annotations": {
                             "type": "object",

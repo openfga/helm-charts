@@ -110,7 +110,7 @@ A ConfigMap (`openfga-migration-status`) records the last successfully migrated 
 
 #### Separate ServiceAccount for migrations
 
-The chart creates a dedicated `{fullname}-migration` ServiceAccount that the operator uses for migration Jobs. Users can annotate it with cloud IAM roles that grant DDL permissions, while the runtime ServiceAccount retains only CRUD permissions.
+Migration Jobs run as the OpenFGA ServiceAccount by default, as the Helm hook Job does. With `migration.serviceAccount.create` the chart creates a dedicated `{fullname}-migration` ServiceAccount instead, which can carry cloud IAM roles that grant DDL permissions while the runtime ServiceAccount keeps only CRUD permissions.
 
 #### Migration Job is a regular resource
 
@@ -207,7 +207,7 @@ Nothing is deleted outright — every change is gated on `openfga-operator.enabl
 |--------------|---------|
 | `values.yaml`: `openfga-operator.enabled` | Toggle the operator subchart |
 | `values.yaml`: `openfga-operator.migrationJob.*` | Migration Job backoff, deadline, and TTL configuration |
-| `values.yaml`: `migration.serviceAccount.*` | Separate ServiceAccount for migration Jobs |
+| `values.yaml`: `migration.serviceAccount.*` | Optional separate ServiceAccount for migration Jobs |
 | `values.yaml`: `migration.trigger` | Explicit rerun trigger for referenced Secret data changes |
 | `values.yaml`: migration pod values | `migrate.extraInitContainers`, `migrate.sidecars`, volumes, mounts, resources, timeout, non-hook annotations, and labels are forwarded to operator Jobs |
 | `templates/serviceaccount.yaml`: second SA | Migration ServiceAccount |

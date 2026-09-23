@@ -14,6 +14,15 @@ tests:
       - equal:
           path: metadata.annotations["openfga.dev/container-name"]
           value: openfga
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+
+  - it: should set the migration service account annotation when the chart creates one
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      migration.serviceAccount.create: true
+    asserts:
       - equal:
           path: metadata.annotations["openfga.dev/migration-service-account"]
           value: RELEASE-NAME-openfga-migration
@@ -159,11 +168,10 @@ tests:
           path: metadata.annotations["openfga.dev/migration-service-account"]
           value: my-custom-sa
 
-  - it: should not set migration-service-account annotation when SA creation is disabled and no name set
+  - it: should not set migration-service-account annotation by default
     set:
       openfga-operator.enabled: true
       datastore.engine: postgres
-      migration.serviceAccount.create: false
     asserts:
       - isNull:
           path: metadata.annotations["openfga.dev/migration-service-account"]

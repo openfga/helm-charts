@@ -416,9 +416,9 @@ migration:
   # changed, e.g. after rotating a Secret to point at a different database.
   trigger: ""
   serviceAccount:
-    # -- Create a dedicated service account for migration Jobs.
-    # The migration Job inherits env vars (including secretKeyRef) from the OpenFGA container.
-    create: true
+    # -- Create a dedicated service account for migration Jobs. By default the
+    # Job runs as the OpenFGA service account, like the Helm hook Job does.
+    create: false
     # -- Annotations to add to the migration service account.
     # Use this to attach cloud IAM roles (e.g., eks.amazonaws.com/role-arn) for DDL permissions.
     annotations: {}

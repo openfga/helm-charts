@@ -81,7 +81,7 @@ Stage 1 has shipped on the `feat/operator-migration` branch. Stages 2-4 are plan
 - Operator packaged as a Helm subchart (`charts/openfga-operator/`) and wired into the main chart via a `condition: openfga-operator.enabled` dependency
 - `openfga-operator.enabled` values toggle (default `false`) that gates all operator-managed behavior
 - Migration reconciler (`migration_controller.go`) that runs migration Jobs when the operator is enabled
-- Separate migration ServiceAccount with IAM-annotation support (`openfga.migrationServiceAccountName` helper), created when the operator is enabled
+- Optional separate migration ServiceAccount with IAM-annotation support (`openfga.migrationServiceAccountName` helper, `migration.serviceAccount.create`)
 
 ### Deferred to later stages
 

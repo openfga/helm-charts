@@ -29,6 +29,10 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template.
   name: ""
 
+rbac:
+  # -- Create the Role and RoleBinding the operator needs in the watched namespace.
+  create: true
+
 podAnnotations: {}
 
 podSecurityContext:
