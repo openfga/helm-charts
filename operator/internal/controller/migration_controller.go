@@ -104,12 +104,15 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	jobPodTemplateHash := job.Annotations[AnnotationPodTemplateHash]
 	complete := isJobConditionTrue(job, batchv1.JobComplete)
 	failedAt, failed := jobFailedAt(job)
+	started := !complete && !failed && (ptr.Deref(job.Status.Ready, 0) > 0 || job.Status.Succeeded > 0)
 	outdated := !jobOwnedByDeployment || jobVersion != desiredVersion || jobPodTemplateHash != desiredPodTemplateHash
 	if outdated {
-		if !complete && !failed && (job.Status.Ready != nil && *job.Status.Ready > 0 || job.Status.Succeeded > 0) {
-			// Never interrupt a migration that has started. Once it reaches a
-			// terminal state, the next reconciliation replaces it with a Job
-			// for the latest desired inputs.
+		// Never interrupt a running migration: a non-transactional step such as
+		// a concurrent index build that is aborted halfway leaves the schema in
+		// a state the next run does not repair. A pod that finished before the
+		// Job condition was written is also left alone.
+		if started {
+			logger.V(1).Info("waiting for started migration job before replacing it", "job", job.Name, "jobVersion", jobVersion, "desiredVersion", desiredVersion)
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 		logger.Info("replacing migration job", "job", job.Name, "jobVersion", jobVersion, "desiredVersion", desiredVersion)

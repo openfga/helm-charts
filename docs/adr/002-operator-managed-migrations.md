@@ -122,6 +122,7 @@ The Job created by the operator has no Helm hook annotations. It is a standard K
 |---------|----------|
 | Job fails | Operator sets `MigrationFailed` on the Deployment, keeps the failed Job for 60 seconds so its logs can be read, then replaces it. On a fresh database the pods stay `NotReady`; on an upgrade they keep serving on the previous schema. |
 | Job pod never starts | A bad secret reference, image pull error or unschedulable pod never fails the Job. Once the Deployment's pod template changes (the fix rolls out), the operator rebuilds a Job whose pod is not running. |
+| Image changes while a Job runs | The running Job is left to finish and then replaced by one for the new image. The hook flow deletes the running hook Job instead (`before-hook-creation`), which can abort a concurrent index build and leave it invalid. |
 | Job hangs | No deadline by default, like the Helm hook Job. `activeDeadlineSeconds` can be set, but a migration cut off halfway (an index build, a MySQL table rebuild) starts over on the next attempt. |
 | Operator crashes | On restart, re-reads the ConfigMap and Job status and resumes. The retry delay is measured from the failed Job's condition, so it survives restarts. |
 | Database unreachable | Job fails to connect. After exhausting `backoffLimit` the cycle above repeats until the database becomes available. |
