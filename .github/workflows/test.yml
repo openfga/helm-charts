@@ -100,7 +100,7 @@ jobs:
 
           # Operator must run the migration Job and write ConfigMap at OLD_VER.
           # Poll because kubectl wait --for=create requires kubectl >=1.31.
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             ver=$(kubectl get configmap "${REL}-migration-status" -n "$NS" \
               -o jsonpath='{.data.version}' 2>/dev/null || true)
             if [ "$ver" = "${OLD_VER}" ]; then
@@ -124,7 +124,7 @@ jobs:
 
           # Operator must detect the version change, delete the stale Job,
           # run a new migration, and update the ConfigMap to NEW_VER.
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             ver=$(kubectl get configmap "${REL}-migration-status" -n "$NS" \
               -o jsonpath='{.data.version}' 2>/dev/null || true)
             if [ "$ver" = "${NEW_VER}" ]; then

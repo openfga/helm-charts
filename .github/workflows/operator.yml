@@ -72,10 +72,10 @@ jobs:
       - name: Determine push policy
         id: policy
         run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
             echo "push=true" >> "$GITHUB_OUTPUT"
             echo "mode=main" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.push_image }}" == "true" ]]; then
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "${{ inputs.push_image }}" == "true" ]]; then
             echo "push=true" >> "$GITHUB_OUTPUT"
             echo "mode=dispatch" >> "$GITHUB_OUTPUT"
           else
