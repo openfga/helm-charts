@@ -38,7 +38,10 @@ jobs:
         id: list-changed
         run: |
           changed=$(ct list-changed --target-branch ${{ github.event.repository.default_branch }})
-          if [[ -n "$changed" ]]; then
+          # Operator code changes are only exercised against a cluster by the
+          # steps below, so treat them as a chart change too.
+          operator=$(git diff --name-only "origin/${{ github.event.repository.default_branch }}...HEAD" -- operator)
+          if [[ -n "$changed" || -n "$operator" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -77,12 +80,13 @@ jobs:
         env:
           NS: openfga-e2e
           REL: openfga
-          # v1.9.5 → v1.14.1 crosses the v1.10.0 "!!REQUIRES MIGRATION!!"
-          # boundary (collation spec change in openfga/openfga#2661).
+          # v1.9.5 predates the v1.10.0 "!!REQUIRES MIGRATION!!" boundary
+          # (collation spec change in openfga/openfga#2661), so upgrading to the
+          # chart's appVersion always crosses at least one migration.
           OLD_VER: v1.9.5
-          NEW_VER: v1.14.1
         run: |
           set -euo pipefail
+          NEW_VER=$(grep '^appVersion:' charts/openfga/Chart.yaml | awk '{print $2}' | tr -d '"')
           kubectl create namespace "$NS"
           helm dependency build charts/openfga
 

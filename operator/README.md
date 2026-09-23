@@ -49,6 +49,13 @@ go vet ./...
 docker build -t openfga/openfga-operator:dev .
 ```
 
+## Releasing
+
+CI publishes `ghcr.io/openfga/openfga-operator:<appVersion>` on the first push to `main` that carries that appVersion and never overwrites it, and chart-releaser likewise skips chart versions that already exist. A change to the operator image (`cmd/`, `internal/`, `go.mod`, `go.sum`, `Dockerfile`) therefore has to bump, in the same PR:
+
+1. `appVersion` and `version` in `charts/openfga-operator/Chart.yaml` (the operator workflow fails the PR otherwise)
+2. the `openfga-operator` dependency version and `version` in `charts/openfga/Chart.yaml`, then `helm dependency update charts/openfga` to refresh `Chart.lock` (`helm dependency build` fails otherwise)
+
 ## Local Testing
 
 Integration test values and instructions are in [`tests/`](tests/). Three scenarios are provided:
