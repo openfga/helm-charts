@@ -111,9 +111,7 @@ jobs:
           done
           test "$ver" = "${OLD_VER}"
 
-          # Operator must scale the openfga Deployment from 0 to 1 ready replica.
-          # condition=Available alone returns true at 0/0 before scale-up;
-          # readyReplicas=1 is the load-bearing signal.
+          # The pod stays NotReady until the migration has run on the new database.
           kubectl wait deployment/"$REL" -n "$NS" \
             --for=jsonpath='{.status.readyReplicas}'=1 --timeout=3m
 

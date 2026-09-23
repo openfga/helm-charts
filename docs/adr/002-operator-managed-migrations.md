@@ -88,49 +88,43 @@ The operator runs a **migration controller** that reconciles the OpenFGA Deploym
 │     └── ttlSecondsAfterFinished: 300                     │
 │  5. Watch Job until succeeded                            │
 │  6. Update ConfigMap → "version: v1.14.0"                │
-│  7. Scale Deployment to desired replicas                 │
-│     (fresh install: default 1 → N; upgrade: unchanged)   │
-│  8. New pods pass readiness, serve requests              │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **Key design decisions within this approach:**
 
-#### Zero-downtime upgrades via omitted replicas and readiness gating
+#### The operator only runs migrations
 
-In operator mode the chart **omits `spec.replicas` entirely** rather than rendering a fixed number. The operator owns the replica count: it scales the Deployment to `openfga.dev/desired-replicas` once the migration Job succeeds. Omitting the field (the same treatment an HPA-managed Deployment gets) means a GitOps controller sees no declared replica count and leaves it unmanaged, so it never fights the operator over the value — no `ignoreDifferences` or field-ownership patch is required.
+The operator creates Jobs and records their outcome; it never changes the Deployment's replica count or pod template. The chart renders `spec.replicas` exactly as in legacy mode (or leaves it to an HPA), so `kubectl scale`, autoscalers and GitOps tools behave the same whether or not the operator is enabled.
 
-On **fresh install**, no `spec.replicas` is set, so Kubernetes applies its default of one replica. That pod starts before the migration has run and is held `NotReady` by OpenFGA's readiness gate (see below), so it serves no traffic. The operator runs the migration Job and then scales the Deployment to the desired replica count.
+Readiness comes from OpenFGA itself: `IsReady()` reports `NOT_SERVING` while the schema revision is below `MinimumSupportedDatastoreSchemaRevision` (4 since v1.3.x). On a **fresh install** the database is empty, so every pod stays `NotReady` until the first migration Job completes, and `helm install --wait` returns once it has. On an **upgrade** the existing schema already meets that minimum, so new pods pass readiness right away and serve on the previous schema while the Job applies the newer migrations. This relies on OpenFGA migrations being backward compatible, which is also what the Helm hook flow has always done: its init container sees the previous release's completed hook Job and lets new pods start before the new hook runs.
 
-On **upgrade**, the field is still absent from the rendered manifest, so Kubernetes preserves the live replica count and starts a rolling update with the new image. OpenFGA has a **built-in schema version gate**: on startup, each instance calls `IsReady()` which checks the database schema revision against `MinimumSupportedDatastoreSchemaRevision` (via goose). If the schema is behind, the gRPC health endpoint returns `NOT_SERVING`, the readiness probe fails, and Kubernetes does not route traffic to the pod. Old pods continue serving on the migrated schema (OpenFGA migrations are additive/backward-compatible — this is how the existing Helm hook flow has operated for years with rolling updates). Once the operator's migration Job completes, new pods pass readiness and the rolling update proceeds.
-
-This matches the existing zero-downtime behavior of the non-operator chart.
-
-**Rejected alternative — pin `replicas: 0` and read the live count via `lookup`:** the chart could render `replicas: 0` on fresh install and use Helm's `lookup` to preserve the live count on upgrade. This is rejected for two reasons. A GitOps controller that reconciles the manifest drives replicas back to 0 on every sync and fights the operator, causing a full outage. And `lookup` returns empty under `helm template` and `--dry-run=client`, so the manifest silently renders `replicas: 0` in CI and dry runs. Omitting the field avoids both problems and needs no cluster lookup.
+**Rejected alternative — let the operator own the replica count:** the chart could omit `spec.replicas` (or render 0) and have the operator scale the Deployment up once the migration succeeds. Testing this showed three problems: switching an existing release to operator mode removes the field, so both Helm's three-way merge and server-side apply reset the Deployment to one replica until the migration finishes; `kubectl scale` and HPAs are overridden by the operator; and the scale-up buys nothing on upgrades, where the readiness check does not hold pods back.
 
 #### Version tracking via ConfigMap
 
 A ConfigMap (`openfga-migration-status`) records the last successfully migrated version. The operator compares this to the Deployment's image tag to determine if migration is needed. This is:
 - Simple to inspect (`kubectl get configmap openfga-migration-status -o yaml`)
 - Survives operator restarts
-- Can be manually deleted to force re-migration
+- Can be manually deleted to force re-migration (once the previous migration Job has been cleaned up)
 
 #### Separate ServiceAccount for migrations
 
-The operator creates a dedicated `openfga-migrator` ServiceAccount for migration Jobs. Users can annotate it with cloud IAM roles that grant DDL permissions, while the runtime ServiceAccount retains only CRUD permissions.
+The chart creates a dedicated `{fullname}-migration` ServiceAccount that the operator uses for migration Jobs. Users can annotate it with cloud IAM roles that grant DDL permissions, while the runtime ServiceAccount retains only CRUD permissions.
 
 #### Migration Job is a regular resource
 
-The Job created by the operator has no Helm hook annotations. It is a standard Kubernetes Job, visible to ArgoCD, FluxCD, and all Kubernetes tooling. It has an owner reference to the operator's managed resource for proper garbage collection.
+The Job created by the operator has no Helm hook annotations. It is a standard Kubernetes Job, visible to ArgoCD, FluxCD, and all Kubernetes tooling. It has an owner reference to the OpenFGA Deployment, so it is garbage collected with it.
 
 #### Failure handling
 
 | Failure | Behavior |
 |---------|----------|
-| Job fails | Operator sets `MigrationFailed` on the Deployment and does not scale it. New pods stay `NotReady` behind the readiness gate; existing pods keep serving. |
-| Job hangs | `activeDeadlineSeconds` (default 300s) kills it. Operator sees failure. |
-| Operator crashes | On restart, re-reads ConfigMap and Job status. Resumes from where it left off. |
-| Database unreachable | Job fails to connect. After exhausting `backoffLimit`, operator deletes the failed Job, sets a `retry-after` annotation, and recreates a fresh Job after a fixed 60-second cooldown. Cycle repeats until the database becomes available. |
+| Job fails | Operator sets `MigrationFailed` on the Deployment, keeps the failed Job for 60 seconds so its logs can be read, then replaces it. On a fresh database the pods stay `NotReady`; on an upgrade they keep serving on the previous schema. |
+| Job pod never starts | A bad secret reference, image pull error or unschedulable pod never fails the Job. Once the Deployment's pod template changes (the fix rolls out), the operator rebuilds a Job whose pod is not running. |
+| Job hangs | No deadline by default, like the Helm hook Job. `activeDeadlineSeconds` can be set, but a migration cut off halfway (an index build, a MySQL table rebuild) starts over on the next attempt. |
+| Operator crashes | On restart, re-reads the ConfigMap and Job status and resumes. The retry delay is measured from the failed Job's condition, so it survives restarts. |
+| Database unreachable | Job fails to connect. After exhausting `backoffLimit` the cycle above repeats until the database becomes available. |
 
 ### Sequence Comparison
 
@@ -157,12 +151,11 @@ Problems: ArgoCD skips step 4. FluxCD deletes Job in step 4. `--wait` deadlocks 
 helm install
   ├── Create ServiceAccount (runtime), ServiceAccount (migrator)
   ├── Create Secret, Service
-  ├── Create Deployment (no spec.replicas, no init containers)
+  ├── Create Deployment (no init containers)
   ├── Create Operator Deployment
   └── [Helm is done — all resources are regular, no hooks]
 
-(Kubernetes starts the Deployment at its default of 1 replica; that pod
-is held NotReady by the readiness gate until the migration completes.)
+(The OpenFGA pods start but stay NotReady: the database has no schema yet.)
 
 Operator starts:
   ├── Detects Deployment image version
@@ -171,30 +164,25 @@ Operator starts:
   │     └── Uses openfga-migrator ServiceAccount
   │     └── Runs openfga migrate → succeeds
   ├── Creates ConfigMap with migrated version
-  └── Scales Deployment to 3 replicas → pods pass readiness
+  └── Pods pass readiness
 ```
 
 **After (operator-managed, upgrade with new image):**
 
 ```text
 helm upgrade
-  ├── no spec.replicas in manifest → Kubernetes keeps the live count (3)
   ├── Patches Deployment with new image tag
   ├── Kubernetes starts rolling update
-  │     ├── New pods (v1.14) start → schema is behind →
-  │     │   readiness fails (gRPC NOT_SERVING) → no traffic routed
-  │     └── Old pods (v1.13) continue serving traffic
+  │     └── New pods (v1.14) pass readiness on the previous schema
   └── [Helm is done]
 
 Operator reconciles:
   ├── Detects image version differs from ConfigMap
   ├── Creates Job/openfga-migrate → runs migration
-  ├── Updates ConfigMap → "version: v1.14.0"
-  └── New pods pass readiness → rolling update completes
-      (operator does NOT scale to zero — zero downtime)
+  └── Updates ConfigMap → "version: v1.14.0"
 ```
 
-No hooks. No init containers. No `k8s-wait-for`. No downtime on upgrade. All resources are regular Kubernetes objects.
+No hooks. No init containers. No `k8s-wait-for`. All resources are regular Kubernetes objects.
 
 ### What Changes in the Helm Chart
 
@@ -209,7 +197,7 @@ Nothing is deleted outright — every change is gated on `operator.enabled` so t
 | `values.yaml`: `initContainer.*` | Unused — `k8s-wait-for` not deployed |
 | `values.yaml`: `datastore.migrationType`, `datastore.waitForMigrations` | Unused — operator always uses a Job and handles ordering |
 | `values.yaml`: `migrate.annotations` | Unused — no Helm hooks |
-| Deployment migration init containers | Skipped — operator manages readiness via replica scaling |
+| Deployment migration init containers | Skipped — OpenFGA's readiness check holds pods until the schema is migrated |
 
 **Added (active only when `operator.enabled: true`):**
 
@@ -237,10 +225,10 @@ Users on `operator.enabled: false` (the default) see identical rendered output t
 ### Negative
 
 - **Operator is a new runtime dependency** — if the operator pod is unavailable, migrations don't run (but existing running pods are unaffected)
-- **Replica count is unmanaged by the chart in operator mode** — because `spec.replicas` is omitted, the rendered manifest no longer declares a desired count; the operator (and, on first install, the Kubernetes default of 1) determines it. A reader inspecting only the chart output cannot see the running replica count.
 - **Two upgrade paths to document** — `operator.enabled: true` (new) vs `operator.enabled: false` (legacy)
 
 ### Risks
 
-- **Readiness gate relies on OpenFGA's built-in schema check** — the zero-downtime upgrade model depends on `MinimumSupportedDatastoreSchemaRevision` in `pkg/storage/sqlcommon/sqlcommon.go` causing `NOT_SERVING` when the schema is behind. If a future OpenFGA release removes or weakens this check, new pods could serve traffic against an unmigrated schema. This coupling should be documented and monitored across OpenFGA releases.
-- **ConfigMap as state store** — if the ConfigMap is accidentally deleted, the operator re-runs migration (which is safe — `openfga migrate` is idempotent). This is a feature, not a bug, but should be documented.
+- **Readiness relies on OpenFGA's schema check** — pods on a fresh database are held back only by `MinimumSupportedDatastoreSchemaRevision` in `pkg/storage/sqlcommon/sqlcommon.go`, and upgrades rely on each release working against the previous schema. Both are OpenFGA guarantees the Helm hook flow already depended on.
+- **Migrations run as soon as the image changes** — as with the hook Job, nothing drains traffic first. Some migrations, such as MySQL's `008_collate_identifiers` in v1.18.0, block writes while tables are rebuilt; OpenFGA's runbook recommends draining traffic for those, which stays a manual step.
+- **ConfigMap as state store** — if the ConfigMap is accidentally deleted, the operator records the version again from the completed Job while it exists, or re-runs the migration once it has been cleaned up (which is safe — `openfga migrate` is idempotent).

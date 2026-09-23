@@ -396,7 +396,7 @@ operator:
 openfga-operator: {}
   # migrationJob:
   #   backoffLimit: 3
-  #   activeDeadlineSeconds: 300
+  #   activeDeadlineSeconds: 0
   #   ttlSecondsAfterFinished: 300
   # leaderElection:
   #   enabled: true
@@ -416,7 +416,6 @@ migration:
   serviceAccount:
     # -- Create a dedicated service account for migration Jobs.
     # The migration Job inherits env vars (including secretKeyRef) from the OpenFGA container.
-    # If your datastore secret has RBAC restrictions, ensure this service account can read it.
     create: true
     # -- Annotations to add to the migration service account.
     # Use this to attach cloud IAM roles (e.g., eks.amazonaws.com/role-arn) for DDL permissions.
@@ -424,6 +423,7 @@ migration:
     # -- The name of the migration service account.
     # If not set and create is true, defaults to {fullname}-migration.
     name: ""
+
 ## Example: Deploy a PostgreSQL instance for dev/test using official Docker images.
 ## For production, use a managed database service or an operator like CloudnativePG.
 ## Configure the chart to use the secret:

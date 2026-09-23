@@ -39,7 +39,7 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&healthProbeAddr, "health-probe-bind-address", ":8081", "The address the health probe endpoint binds to.")
 	flag.IntVar(&backoffLimit, "backoff-limit", int(controller.DefaultBackoffLimit), "BackoffLimit for migration Jobs.")
-	flag.IntVar(&activeDeadline, "active-deadline-seconds", int(controller.DefaultActiveDeadlineSeconds), "ActiveDeadlineSeconds for migration Jobs.")
+	flag.IntVar(&activeDeadline, "active-deadline-seconds", int(controller.DefaultActiveDeadlineSeconds), "ActiveDeadlineSeconds for migration Jobs; 0 means no deadline.")
 	flag.IntVar(&ttlAfterFinished, "ttl-seconds-after-finished", int(controller.DefaultTTLSecondsAfterFinished), "TTLSecondsAfterFinished for migration Jobs.")
 
 	opts := zap.Options{Development: false}

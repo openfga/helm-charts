@@ -1,8 +1,6 @@
-# E2E values consumed by the "operator + postgres E2E" step in test.yml.
-# Not under charts/openfga/ci/ on purpose — chart-testing's helm-test runs
-# a gRPC probe immediately after install, which would race the operator's
-# scale-up. The dedicated workflow step waits for the migration ConfigMap
-# and the scale-up explicitly, then verifies readiness.
+# Values for the operator + Postgres E2E step in .github/workflows/test.yml,
+# which installs one OpenFGA version and then upgrades to a newer one. Kept
+# out of charts/openfga/ci/ because chart-testing only installs one version.
 replicaCount: 1
 
 operator:

@@ -53,7 +53,7 @@ The OpenFGA Helm chart currently handles all lifecycle concerns — deployment, 
 
 We will build an **OpenFGA Kubernetes Operator** that handles:
 
-1. **Database migration orchestration** (Stage 1) — replacing Helm hooks, the `k8s-wait-for` init container, and shared ServiceAccount with operator-managed migration Jobs and deployment readiness gating.
+1. **Database migration orchestration** (Stage 1) — replacing Helm hooks, the `k8s-wait-for` init container, and shared ServiceAccount with operator-managed migration Jobs.
 
 2. **Declarative store lifecycle management** (Stages 2-4) — exposing `FGAStore`, `FGAModel`, and `FGATuples` CRDs for GitOps-native authorization configuration.
 
@@ -80,7 +80,7 @@ Stage 1 has shipped on the `feat/operator-migration` branch. Stages 2-4 are plan
 - Operator Go project under `/operator/`, built with `controller-runtime` and kubebuilder scaffolding
 - Operator packaged as a Helm subchart (`charts/openfga-operator/`) and wired into the main chart via a `condition: operator.enabled` dependency
 - `operator.enabled` values toggle (default `false`) that gates all operator-managed behavior
-- Migration reconciler (`migration_controller.go`) that orchestrates migration Jobs and gates Deployment readiness when the operator is enabled
+- Migration reconciler (`migration_controller.go`) that runs migration Jobs when the operator is enabled
 - Separate migration ServiceAccount with IAM-annotation support (`openfga.migrationServiceAccountName` helper), created when the operator is enabled
 
 ### Deferred to later stages

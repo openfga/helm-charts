@@ -26,7 +26,7 @@ kind load docker-image openfga/openfga-operator:dev
 
 ### 1. Happy Path
 
-Deploys OpenFGA with a Postgres instance. The operator should run the migration and scale OpenFGA up within ~30 seconds.
+Deploys OpenFGA with a Postgres instance. The operator should run the migration and all OpenFGA pods should become ready within ~30 seconds.
 
 ```bash
 kubectl create namespace openfga-test
@@ -89,10 +89,9 @@ helm install openfga-test charts/openfga -n openfga-test \
 - Migration Job runs and fails (each pod times out after ~60s)
 - After 3 failures (backoffLimit), the operator:
   - Sets `MigrationFailed: True` condition on the Deployment
-  - Deletes the failed Job
-  - Creates a fresh Job after a 60-second delay
+  - Keeps the failed Job for 60 seconds, then replaces it with a fresh one
 - This cycle repeats indefinitely
-- OpenFGA stays at 0/1 throughout — the chart omits `spec.replicas`, so one pod starts (the Kubernetes default) but the readiness gate holds it NotReady, serving no traffic while the migration keeps failing
+- OpenFGA stays at 0/3 throughout: the pods cannot reach the database, so they restart and never pass the readiness check
 
 **Watch the failure cycle:**
 
@@ -104,8 +103,8 @@ kubectl get deployment openfga-test -n openfga-test \
 # Watch operator logs for delete/retry cycle
 kubectl logs -n openfga-test deployment/openfga-test-openfga-operator -f
 # Look for:
-#   "migration job failed, will delete and retry"
-#   "deleted failed migration job, will retry"
+#   "migration job failed"
+#   "retrying migration"
 #   "created migration job"
 ```
 
@@ -115,11 +114,11 @@ kubectl logs -n openfga-test deployment/openfga-test-openfga-operator -f
 kubectl scale deployment openfga-test-postgres -n openfga-test --replicas=1
 ```
 
-**Expected recovery (within ~60s of Postgres becoming ready):**
+**Expected recovery:**
 
-- The currently running migration pod connects and succeeds
-- Operator updates the ConfigMap with the new version
-- Operator scales OpenFGA to 3/3 replicas
+- The next migration Job connects and succeeds (within ~60s of Postgres becoming ready)
+- Operator updates the ConfigMap with the new version and sets `MigrationFailed: False`
+- OpenFGA pods become ready once their restart back-off expires (up to 5 minutes)
 - `{"status":"SERVING"}` from the health endpoint
 
 **Verify recovery:**
@@ -159,15 +158,15 @@ helm install openfga-test charts/openfga -n openfga-test \
 
 - Migration Jobs fail repeatedly (DNS resolution fails for `postgres-does-not-exist`)
 - Operator sets `MigrationFailed: True` on the Deployment
-- Operator deletes failed Jobs and retries every ~60 seconds
-- OpenFGA stays at 0/1 indefinitely — the single default pod never passes the readiness gate, so it never serves traffic against an unmigrated database
+- Operator replaces each failed Job 60 seconds after it fails
+- OpenFGA stays at 0/3 indefinitely and never serves traffic
 
 This scenario verifies the operator doesn't crash-loop or consume excessive resources when the database is permanently unavailable.
 
 **Verify:**
 
 ```bash
-# OpenFGA at 0/1 (pod NotReady), operator at 1/1
+# OpenFGA at 0/3 (pods NotReady), operator at 1/1
 kubectl get deployments -n openfga-test
 
 # MigrationFailed condition present

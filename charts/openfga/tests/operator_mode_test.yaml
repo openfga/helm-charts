@@ -7,15 +7,14 @@ tests:
     set:
       operator.enabled: true
       migration.enabled: true
-      replicaCount: 3
       datastore.engine: postgres
     asserts:
       - equal:
           path: metadata.annotations["openfga.dev/migration-enabled"]
           value: "true"
       - equal:
-          path: metadata.annotations["openfga.dev/desired-replicas"]
-          value: "3"
+          path: metadata.annotations["openfga.dev/container-name"]
+          value: openfga
       - equal:
           path: metadata.annotations["openfga.dev/migration-service-account"]
           value: RELEASE-NAME-openfga-migration
@@ -28,19 +27,18 @@ tests:
     asserts:
       - isNull:
           path: metadata.annotations["openfga.dev/migration-enabled"]
-      - isNull:
-          path: metadata.annotations["openfga.dev/desired-replicas"]
+      - equal:
+          path: metadata.annotations.custom
+          value: value
 
-  - it: should set desired-replicas to 1 for memory datastore
+  - it: should not set operator annotations for the memory datastore
     set:
       operator.enabled: true
       migration.enabled: true
-      replicaCount: 5
       datastore.engine: memory
     asserts:
-      - equal:
-          path: metadata.annotations["openfga.dev/desired-replicas"]
-          value: "1"
+      - isNull:
+          path: metadata.annotations
 
   - it: should use custom migration service account name when set
     set:
@@ -64,27 +62,30 @@ tests:
           path: metadata.annotations["openfga.dev/migration-service-account"]
 
   # --- Replica count ---
-  # Operator mode omits spec.replicas so the operator owns it and GitOps treats it
-  # as unmanaged. See ADR-002.
-  - it: should omit replicas in operator mode with a database datastore
+  # The operator never changes the replica count, so it renders as in legacy mode.
+  - it: should set replicas to replicaCount in operator mode
     set:
       operator.enabled: true
       migration.enabled: true
       replicaCount: 3
       datastore.engine: postgres
     asserts:
-      - isNull:
+      - equal:
           path: spec.replicas
+          value: 3
 
-  - it: should omit replicas in operator mode with a memory datastore
+  - it: should leave replicas to the autoscaler in operator mode
     set:
       operator.enabled: true
       migration.enabled: true
-      replicaCount: 5
-      datastore.engine: memory
+      autoscaling.enabled: true
+      datastore.engine: postgres
     asserts:
       - isNull:
           path: spec.replicas
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+          value: "true"
 
   - it: should set replicas to replicaCount when operator is disabled
     set:
@@ -110,17 +111,6 @@ tests:
       - equal:
           path: spec.replicas
           value: 4
-
-  # --- Autoscaling conflict ---
-  - it: should fail when operator and autoscaling are both enabled
-    set:
-      operator.enabled: true
-      migration.enabled: true
-      autoscaling.enabled: true
-      datastore.engine: postgres
-    asserts:
-      - failedTemplate:
-          errorMessage: "operator.enabled and autoscaling.enabled cannot both be true"
 
   # --- initContainers gating ---
   - it: should not render migration initContainers when operator is enabled

@@ -86,6 +86,15 @@ Create the name of the migration service account to use (operator mode only)
 {{- end }}
 
 {{/*
+Return true if the openfga-operator runs the database migrations for this release
+*/}}
+{{- define "openfga.operatorMigrations" -}}
+{{- if and .Values.operator.enabled .Values.migration.enabled .Values.datastore.applyMigrations (has .Values.datastore.engine (list "postgres" "mysql")) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
 Return true if a secret object should be created
 */}}
 {{- define "openfga.createSecret" -}}

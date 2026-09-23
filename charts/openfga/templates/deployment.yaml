@@ -4,13 +4,12 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
-  {{- $hasOperatorAnnotations := and .Values.operator.enabled .Values.migration.enabled .Values.datastore.applyMigrations }}
-  {{- if or $hasOperatorAnnotations .Values.annotations }}
+  {{- $operatorMigrations := include "openfga.operatorMigrations" . }}
+  {{- if or $operatorMigrations .Values.annotations }}
   annotations:
-    {{- if $hasOperatorAnnotations }}
+    {{- if $operatorMigrations }}
     openfga.dev/migration-enabled: "true"
     openfga.dev/container-name: "{{ .Chart.Name }}"
-    openfga.dev/desired-replicas: '{{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}'
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
     openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
     {{- end }}
@@ -20,14 +19,7 @@ metadata:
     {{- end }}
   {{- end }}
 spec:
-  {{- if $hasOperatorAnnotations }}
-  {{- if .Values.autoscaling.enabled }}
-  {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
-  {{- end }}
-  {{- /* Operator mode: omit spec.replicas. The operator owns it (scales up after
-         the migration Job completes) and GitOps controllers treat an absent field
-         as unmanaged, so neither fights the other. See ADR-002. */ -}}
-  {{- else if not .Values.autoscaling.enabled }}
+  {{- if not  .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}
   {{- end }}
   selector:

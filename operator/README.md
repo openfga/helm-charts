@@ -11,10 +11,9 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
    - Creates a migration Job running `openfga migrate`
    - Waits for the Job to complete
    - Updates the ConfigMap with the new version
-   - Scales the Deployment to the desired replica count (`openfga.dev/desired-replicas`)
-3. On failure, a `MigrationFailed` condition is set on the Deployment and the desired replica count is not applied
+3. On failure, a `MigrationFailed` condition is set on the Deployment. The failed Job is kept for 60 seconds so its logs can be inspected, then replaced with a new one.
 
-The operator never scales the Deployment to 0. A pod that starts before the migration completes is held `NotReady` by OpenFGA's readiness gate on `MinimumSupportedDatastoreSchemaRevision`, so it won't serve traffic against an unmigrated schema.
+The operator never changes the Deployment's replica count or pod template. On a new database, OpenFGA's readiness check (`MinimumSupportedDatastoreSchemaRevision`) keeps pods `NotReady` until the first migration has run. On an upgrade the existing schema already meets that minimum, so new pods serve on it while the Job applies the newer migrations, which is the same behaviour as the Helm hook flow.
 
 ## Prerequisites
 
@@ -56,9 +55,9 @@ Integration test values and instructions are in [`tests/`](tests/). Three scenar
 
 | Scenario | Values File | What It Tests |
 |----------|-------------|---------------|
-| Happy path | `tests/values-happy-path.yaml` | Full lifecycle: Postgres up, migration succeeds, OpenFGA scales to 3/3 |
+| Happy path | `tests/values-happy-path.yaml` | Full lifecycle: Postgres up, migration succeeds, OpenFGA ready at 3/3 |
 | DB outage & recovery | `tests/values-db-outage.yaml` | Postgres starts at 0 replicas; scale it up later to verify self-healing |
-| No database | `tests/values-no-db.yaml` | Permanent failure: operator retries without crashing; the app pod stays NotReady (0/1) |
+| No database | `tests/values-no-db.yaml` | Permanent failure: operator retries without crashing; the app pods stay NotReady (0/3) |
 
 Quick start:
 
@@ -96,7 +95,7 @@ operator/
 │   └── controller/
 │       ├── migration_controller.go      # Reconciliation loop
 │       ├── migration_controller_test.go # Unit tests
-│       └── helpers.go                   # Job builder, scaling, ConfigMap helpers
+│       └── helpers.go                   # Job builder, status ConfigMap helpers
 ├── Dockerfile                           # Multi-stage build (distroless runtime)
 ├── Makefile
 ├── go.mod
@@ -113,8 +112,8 @@ The operator accepts the following flags:
 | `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). The chart binds namespaced RBAC in the configured watch namespace, so the operator may run in a different namespace when needed. |
 | `--metrics-bind-address` | `:8080` | Address the Prometheus metrics endpoint binds to. Change only if the default port conflicts with other containers in the pod. |
 | `--health-probe-bind-address` | `:8081` | Address the Kubernetes liveness and readiness probe endpoints bind to. Change only if the default port conflicts. |
-| `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. After hitting this limit the operator deletes the Job, sets a `MigrationFailed` condition on the Deployment, and retries after a 60-second cooldown. |
-| `--active-deadline-seconds` | `300` | Maximum wall-clock seconds a migration Job can run before Kubernetes terminates it. Prevents stuck migrations from blocking the pipeline indefinitely. Increase for very large databases. |
+| `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. The operator then sets a `MigrationFailed` condition on the Deployment and replaces the Job 60 seconds after it failed. |
+| `--active-deadline-seconds` | `0` | Maximum wall-clock seconds a migration Job can run before Kubernetes terminates it. `0` means no deadline. A deadline cuts off long migrations, such as index builds or MySQL table rebuilds on large tables, which then start over on the next attempt. |
 | `--ttl-seconds-after-finished` | `300` | Seconds Kubernetes keeps a completed or failed Job (and its pods) before garbage-collecting them, giving you time to inspect logs. |
 
 When deployed via the Helm subchart, these are configured through `values.yaml`. See `charts/openfga-operator/values.yaml` for all available options.
@@ -125,14 +124,13 @@ The operator reads these annotations from the OpenFGA Deployment:
 
 | Annotation | Description |
 |------------|-------------|
-| `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `operator.enabled`, `migration.enabled`, and `datastore.applyMigrations` are all true. |
-| `openfga.dev/desired-replicas` | The replica count the operator scales the Deployment to once migration succeeds. Set by the Helm chart. |
+| `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `operator.enabled`, `migration.enabled`, and `datastore.applyMigrations` are true and the datastore is Postgres or MySQL. |
+| `openfga.dev/container-name` | The OpenFGA container in the pod spec. Defaults to `openfga`. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
 
 ## Limitations
 
-- **Migrations key only on the image tag:** The operator compares the container image tag (or digest) to the `{name}-migration-status` ConfigMap. A mutable tag like `latest`, or a tag reused for a new build, is not seen as a change, so the migration is skipped — use immutable tags (e.g. `v1.14.0`) or pin by digest. A migration-needing change that keeps the same image — for example repointing `datastore.uri` at a different or restored database — also won't trigger a Job; the readiness gate holds the new pod `NotReady`, but you must migrate manually (bump the image or delete the status ConfigMap).
-- **Migration-specific volumes:** The legacy Helm chart values `migrate.extraVolumes` and `migrate.extraVolumeMounts` have no effect in operator mode. The operator inherits volumes and mounts from the main Deployment pod spec. If you need additional volumes for migrations (e.g., CA bundles or TLS certs), add them to the top-level `extraVolumes` and `extraVolumeMounts` values instead.
-- **Single-container migration Job:** The Job runs one container (`openfga migrate`) with the main container's env, volumes, and scheduling. It injects no sidecars or extra init containers, so databases reached through a sidecar proxy (Cloud SQL Auth Proxy, AlloyDB) aren't supported for operator-managed migrations — a proxy that doesn't exit on its own (e.g. an Istio sidecar) would keep the Job pod running and stop the Job from completing. Connect to such databases directly instead.
-- **`envFrom` datastore detection:** The memory-datastore check inspects only the explicit `env` entries on the container. If `OPENFGA_DATASTORE_ENGINE` is supplied via `envFrom` (a ConfigMap or Secret), the operator cannot read the value and will attempt a migration Job that a memory datastore does not need. The Helm chart sets this variable inline, so chart-managed installs are unaffected.
-- **GitOps and `spec.replicas`:** The operator owns the replica count — it scales to `openfga.dev/desired-replicas` after the migration Job completes (see [ADR-002](../docs/adr/002-operator-managed-migrations.md)). To avoid fighting a GitOps controller over that field, the chart omits `spec.replicas` in operator mode, the same as an HPA-managed Deployment. Argo CD and Flux treat an absent field as unmanaged, so no `ignoreDifferences` or field-ownership patch is needed. A fresh install starts at the Kubernetes default of one replica, held `NotReady` by the readiness gate until the migration finishes, after which the operator scales to the desired count.
+- **Migrations key only on the image tag:** The operator compares the container image tag (or digest) to the `{name}-migration-status` ConfigMap. A mutable tag like `latest`, or a tag reused for a new build, is not seen as a change, so the migration is skipped — use immutable tags (e.g. `v1.14.0`) or pin by digest. A migration-needing change that keeps the same image — for example repointing `datastore.uri` at a different or restored database — also won't trigger a Job; delete the status ConfigMap (and the `{name}-migrate` Job, if it still exists) to run the migration again.
+- **Legacy migration values:** `migrate.*` (extra volumes and mounts, init containers, sidecars, annotations, labels, timeout) and `datastore.migrations.resources` only apply to the legacy Helm hook Job. The operator's Job copies the OpenFGA container's image, env, volumes, resources, security context and scheduling instead, so put anything the migration needs (e.g. CA bundles) in the top-level `extraVolumes`, `extraVolumeMounts` and `extraEnvVars`.
+- **Single-container migration Job:** The Job runs one container (`openfga migrate`) and injects no sidecars or extra init containers, so databases reached through a sidecar proxy (Cloud SQL Auth Proxy, AlloyDB) aren't supported for operator-managed migrations. A sidecar injected into every pod in the namespace that doesn't exit on its own (e.g. an Istio sidecar) keeps the Job pod running and stops the Job from completing.
+- **One namespace per operator:** The operator reconciles every opted-in OpenFGA Deployment in its watch namespace. Operators installed by several releases in one namespace share a leader election lease, so only one of them is active at a time.

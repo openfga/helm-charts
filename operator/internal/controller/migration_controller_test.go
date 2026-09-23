@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,17 +21,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-func newScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = clientgoscheme.AddToScheme(s)
-	return s
-}
+var (
+	deploymentKey = types.NamespacedName{Name: "openfga", Namespace: "default"}
+	jobKey        = types.NamespacedName{Name: "openfga-migrate", Namespace: "default"}
+	statusKey     = types.NamespacedName{Name: "openfga-migration-status", Namespace: "default"}
+)
 
-func newTestDeployment(name, namespace, image string, replicas int32) *appsv1.Deployment {
+func newTestDeployment(image string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      deploymentKey.Name,
+			Namespace: deploymentKey.Namespace,
 			UID:       "test-uid-123",
 			Labels: map[string]string{
 				LabelPartOf:    LabelPartOfValue,
@@ -41,76 +42,101 @@ func newTestDeployment(name, namespace, image string, replicas int32) *appsv1.De
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr.To(replicas),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": "openfga"},
-			},
+			Replicas: ptr.To(int32(3)),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "openfga"}},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "openfga"},
-				},
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "openfga"}},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "openfga",
-					Containers: []corev1.Container{
-						{
-							Name:  "openfga",
-							Image: image,
-							Env: []corev1.EnvVar{
-								{Name: "OPENFGA_DATASTORE_ENGINE", Value: "postgres"},
-								{Name: "OPENFGA_DATASTORE_URI", Value: "postgres://localhost/openfga"},
-								{Name: "OPENFGA_LOG_LEVEL", Value: "info"},
-							},
+					Containers: []corev1.Container{{
+						Name:  "openfga",
+						Image: image,
+						Env: []corev1.EnvVar{
+							{Name: "OPENFGA_DATASTORE_ENGINE", Value: "postgres"},
+							{Name: "OPENFGA_DATASTORE_URI", Value: "postgres://localhost/openfga"},
+							{Name: "OPENFGA_LOG_LEVEL", Value: "info"},
 						},
-					},
+					}},
 				},
 			},
 		},
 	}
 }
 
-func newReconciler(objects ...runtime.Object) *MigrationReconciler {
-	scheme := newScheme()
-	clientBuilder := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&appsv1.Deployment{})
-	for _, obj := range objects {
-		clientBuilder = clientBuilder.WithRuntimeObjects(obj)
+// newTestJob returns the migration Job the operator builds for dep.
+func newTestJob(dep *appsv1.Deployment, conditions ...batchv1.JobCondition) *batchv1.Job {
+	container := &dep.Spec.Template.Spec.Containers[0]
+	job := (&MigrationReconciler{}).buildMigrationJob(dep, container, extractImageTag(container.Image))
+	job.Status.Conditions = conditions
+	return job
+}
+
+func jobCondition(t batchv1.JobConditionType, at time.Time) batchv1.JobCondition {
+	return batchv1.JobCondition{Type: t, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(at)}
+}
+
+func newStatus(version string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: statusKey.Name, Namespace: statusKey.Namespace},
+		Data:       map[string]string{"version": version},
+	}
+}
+
+func newReconciler(t *testing.T, funcs *interceptor.Funcs, objects ...client.Object) *MigrationReconciler {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	b := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&appsv1.Deployment{}).
+		WithObjects(objects...)
+	if funcs != nil {
+		b = b.WithInterceptorFuncs(*funcs)
 	}
 	return &MigrationReconciler{
-		Client:                  clientBuilder.Build(),
+		Client:                  b.Build(),
 		BackoffLimit:            DefaultBackoffLimit,
 		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
 		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
 	}
 }
 
-func newReconcilerWithStatusPatchError(objects ...runtime.Object) *MigrationReconciler {
-	scheme := newScheme()
-	clientBuilder := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&appsv1.Deployment{})
-	for _, obj := range objects {
-		clientBuilder = clientBuilder.WithRuntimeObjects(obj)
+var failStatusPatch = &interceptor.Funcs{
+	SubResourcePatch: func(ctx context.Context, c client.Client, subResource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+		if subResource == "status" {
+			return fmt.Errorf("simulated status patch error")
+		}
+		return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+	},
+}
+
+func reconcileOnce(t *testing.T, r *MigrationReconciler) ctrl.Result {
+	t.Helper()
+	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: deploymentKey})
+	if err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
 	}
-	c := clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
-		SubResourcePatch: func(
-			ctx context.Context,
-			c client.Client,
-			subResourceName string,
-			obj client.Object,
-			patch client.Patch,
-			opts ...client.SubResourcePatchOption,
-		) error {
-			if subResourceName == "status" {
-				return fmt.Errorf("simulated status patch error")
-			}
-			return c.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
-		},
-	}).Build()
-	return &MigrationReconciler{
-		Client:                  c,
-		BackoffLimit:            DefaultBackoffLimit,
-		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
-		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
+	return result
+}
+
+func getDeployment(t *testing.T, r *MigrationReconciler) *appsv1.Deployment {
+	t.Helper()
+	d := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), deploymentKey, d); err != nil {
+		t.Fatalf("getting deployment: %v", err)
 	}
+	return d
+}
+
+func getJob(r *MigrationReconciler) (*batchv1.Job, error) {
+	job := &batchv1.Job{}
+	return job, r.Get(context.Background(), jobKey, job)
+}
+
+func getStatus(r *MigrationReconciler) (*corev1.ConfigMap, error) {
+	cm := &corev1.ConfigMap{}
+	return cm, r.Get(context.Background(), statusKey, cm)
 }
 
 func findCondition(conditions []appsv1.DeploymentCondition, condType string) *appsv1.DeploymentCondition {
@@ -123,1111 +149,361 @@ func findCondition(conditions []appsv1.DeploymentCondition, condType string) *ap
 }
 
 func TestReconcile_FirstInstall_CreatesJob(t *testing.T) {
-	// Given: a Deployment with no migration-status ConfigMap.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	r := newReconciler(dep)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: a migration Job should be created and requeue requested.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected requeue, got none")
-	}
-
-	// Verify the Job was created.
-	job := &batchv1.Job{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, job); err != nil {
-		t.Fatalf("expected migration job to be created: %v", err)
-	}
-
-	if job.Spec.Template.Spec.Containers[0].Image != "openfga/openfga:v1.14.0" {
-		t.Errorf("expected job image openfga/openfga:v1.14.0, got %s", job.Spec.Template.Spec.Containers[0].Image)
-	}
-
-	if job.Spec.Template.Spec.Containers[0].Args[0] != "migrate" {
-		t.Errorf("expected job args [migrate], got %v", job.Spec.Template.Spec.Containers[0].Args)
-	}
-
-	// Verify all env vars from the main container were passed.
-	jobEnvNames := make(map[string]bool)
-	for _, env := range job.Spec.Template.Spec.Containers[0].Env {
-		jobEnvNames[env.Name] = true
-	}
-	for _, expected := range []string{"OPENFGA_DATASTORE_ENGINE", "OPENFGA_DATASTORE_URI", "OPENFGA_LOG_LEVEL"} {
-		if !jobEnvNames[expected] {
-			t.Errorf("expected env var %s to be passed to migration job", expected)
-		}
-	}
-}
-
-func TestReconcile_FirstInstall_JobInheritsPullPolicyAndOwnerRef(t *testing.T) {
-	// Given: a Deployment whose OpenFGA container pins an explicit pull policy.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	dep.Annotations[AnnotationMigrationServiceAccount] = "openfga-migration"
 	dep.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullAlways
-	r := newReconciler(dep)
+	r := newReconciler(t, nil, dep)
 
-	// When: reconciling.
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if result := reconcileOnce(t, r); result.RequeueAfter == 0 {
+		t.Error("expected a requeue to poll the new Job")
 	}
 
-	job := &batchv1.Job{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, job); err != nil {
+	job, err := getJob(r)
+	if err != nil {
 		t.Fatalf("expected migration job to be created: %v", err)
 	}
-
-	// The migration Job must inherit the OpenFGA container's pull policy so it
-	// cannot run a stale cached image while the app pulls a fresh one.
-	if got := job.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != corev1.PullAlways {
-		t.Errorf("expected job pull policy %q, got %q", corev1.PullAlways, got)
+	c := job.Spec.Template.Spec.Containers[0]
+	if c.Image != "openfga/openfga:v1.14.0" || len(c.Args) != 1 || c.Args[0] != "migrate" {
+		t.Errorf("unexpected migrate container: image=%s args=%v", c.Image, c.Args)
 	}
-
-	// Owner reference makes the Job GC with the Deployment, but no blockOwnerDeletion:
-	// that needs the deployments/finalizers subresource the operator isn't granted,
-	// so the create would fail under OwnerReferencesPermissionEnforcement.
-	if len(job.OwnerReferences) != 1 {
-		t.Fatalf("expected exactly one owner reference, got %d", len(job.OwnerReferences))
+	if c.ImagePullPolicy != corev1.PullAlways {
+		t.Errorf("expected the OpenFGA container's pull policy, got %q", c.ImagePullPolicy)
 	}
-	ref := job.OwnerReferences[0]
-	if ref.Controller == nil || !*ref.Controller {
-		t.Errorf("expected controller owner reference, got %+v", ref)
+	if len(c.Env) != 3 {
+		t.Errorf("expected all OpenFGA env vars to be passed through, got %v", c.Env)
 	}
-	if ref.BlockOwnerDeletion != nil {
-		t.Errorf("expected blockOwnerDeletion to be unset, got %v", *ref.BlockOwnerDeletion)
+	if sa := job.Spec.Template.Spec.ServiceAccountName; sa != "openfga-migration" {
+		t.Errorf("expected migration service account, got %q", sa)
+	}
+	if got := job.Annotations[AnnotationDesiredVersion]; got != "v1.14.0" {
+		t.Errorf("expected desired-version annotation v1.14.0, got %q", got)
+	}
+	if job.Spec.ActiveDeadlineSeconds != nil {
+		t.Errorf("expected no deadline by default, got %d", *job.Spec.ActiveDeadlineSeconds)
+	}
+	if len(job.OwnerReferences) != 1 || !ptr.Deref(job.OwnerReferences[0].Controller, false) || job.OwnerReferences[0].BlockOwnerDeletion != nil {
+		t.Errorf("expected a single controller owner reference without blockOwnerDeletion, got %+v", job.OwnerReferences)
+	}
+	if replicas := *getDeployment(t, r).Spec.Replicas; replicas != 3 {
+		t.Errorf("replicas must not be changed, got %d", replicas)
 	}
 }
 
-func TestReconcile_VersionMatch_ScalesUp(t *testing.T) {
-	// Given: a Deployment at 0 replicas with matching migration-status ConfigMap.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
+func TestReconcile_FirstInstall_DeadlineAndDefaultServiceAccount(t *testing.T) {
+	r := newReconciler(t, nil, newTestDeployment("openfga/openfga:v1.14.0"))
+	r.ActiveDeadlineSeconds = 600
+	reconcileOnce(t, r)
 
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migration-status",
-			Namespace: "default",
-		},
-		Data: map[string]string{
-			"version":    "v1.14.0",
-			"migratedAt": "2026-04-06T12:00:00Z",
-			"jobName":    "openfga-migrate",
-		},
-	}
-
-	r := newReconciler(dep, cm)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, no requeue.
+	job, err := getJob(r)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter != 0 {
-		t.Error("expected no requeue when versions match")
-	}
-
-	// Verify Deployment was scaled up.
-	updated := &appsv1.Deployment{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); err != nil {
-		t.Fatalf("getting deployment: %v", err)
-	}
-	if *updated.Spec.Replicas != 3 {
-		t.Errorf("expected 3 replicas, got %d", *updated.Spec.Replicas)
-	}
-}
-
-func TestReconcile_VersionMatch_StatusPatchFailureStopsScaleUp(t *testing.T) {
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-	dep.Status.Conditions = []appsv1.DeploymentCondition{{
-		Type:   "MigrationFailed",
-		Status: corev1.ConditionTrue,
-	}}
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migration-status",
-			Namespace: "default",
-		},
-		Data: map[string]string{"version": "v1.14.0"},
-	}
-	r := newReconcilerWithStatusPatchError(dep, cm)
-
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	}); err == nil {
-		t.Fatal("expected status patch error")
-	}
-
-	updated := &appsv1.Deployment{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); err != nil {
-		t.Fatalf("getting deployment: %v", err)
-	}
-	if *updated.Spec.Replicas != 0 {
-		t.Errorf("expected replicas to remain at 0, got %d", *updated.Spec.Replicas)
-	}
-	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
-	if cond == nil || cond.Status != corev1.ConditionTrue {
-		t.Fatalf("expected MigrationFailed condition to remain True, got %+v", cond)
-	}
-}
-
-func TestReconcile_JobSucceeded_UpdatesConfigMapAndScalesUp(t *testing.T) {
-	// Given: a Deployment at 0 replicas, no ConfigMap, a succeeded migration Job,
-	// and a pre-existing MigrationFailed condition from a prior attempt.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-	dep.Status.Conditions = []appsv1.DeploymentCondition{
-		{
-			Type:    "MigrationFailed",
-			Status:  corev1.ConditionTrue,
-			Reason:  "MigrationJobFailed",
-			Message: "Database migration failed for version v1.13.0.",
-		},
-	}
-
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Annotations: map[string]string{
-				"openfga.dev/desired-version": "v1.14.0",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To(int32(3)),
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers:    []corev1.Container{{Name: "migrate", Image: "openfga/openfga:v1.14.0"}},
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-		Status: batchv1.JobStatus{
-			Succeeded: 1,
-			Conditions: []batchv1.JobCondition{
-				{
-					Type:   batchv1.JobComplete,
-					Status: corev1.ConditionTrue,
-				},
-			},
-		},
-	}
-
-	r := newReconciler(dep, job)
-
-	// When: reconciling.
-	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Verify ConfigMap was created.
-	cm := &corev1.ConfigMap{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migration-status", Namespace: "default",
-	}, cm); err != nil {
-		t.Fatalf("expected ConfigMap to be created: %v", err)
-	}
-	if cm.Data["version"] != "v1.14.0" {
-		t.Errorf("expected version v1.14.0 in ConfigMap, got %s", cm.Data["version"])
-	}
-
-	// Verify Deployment was scaled up.
-	updated := &appsv1.Deployment{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); err != nil {
-		t.Fatalf("getting deployment: %v", err)
-	}
-	if *updated.Spec.Replicas != 3 {
-		t.Errorf("expected 3 replicas, got %d", *updated.Spec.Replicas)
-	}
-
-	// Verify MigrationFailed condition was cleared.
-	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
-	if cond == nil {
-		t.Fatal("expected MigrationFailed condition to exist")
-	}
-	if cond.Status != corev1.ConditionFalse {
-		t.Errorf("expected MigrationFailed status False after success, got %s", cond.Status)
-	}
-	if cond.Reason != "MigrationSucceeded" {
-		t.Errorf("expected reason MigrationSucceeded, got %s", cond.Reason)
-	}
-}
-
-func TestReconcile_JobFailed_SetsRetryAnnotationAndRequeues(t *testing.T) {
-	// Given: a Deployment at 0 replicas and a failed migration Job.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Annotations: map[string]string{
-				"openfga.dev/desired-version": "v1.14.0",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To(int32(3)),
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers:    []corev1.Container{{Name: "migrate", Image: "openfga/openfga:v1.14.0"}},
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-		Status: batchv1.JobStatus{
-			Failed: 3,
-			Conditions: []batchv1.JobCondition{
-				{
-					Type:   batchv1.JobFailed,
-					Status: corev1.ConditionTrue,
-				},
-			},
-		},
-	}
-
-	r := newReconciler(dep, job)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, but requeue after 60s for retry.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter != 60*time.Second {
-		t.Errorf("expected 60s requeue, got %v", result.RequeueAfter)
-	}
-
-	// Verify Deployment replicas unchanged (still at 0 from fresh install).
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
-	}
-	if *updated.Spec.Replicas != 0 {
-		t.Errorf("expected 0 replicas after failed migration, got %d", *updated.Spec.Replicas)
-	}
-
-	// Verify the failed Job was deleted.
-	deletedJob := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, deletedJob); getErr == nil {
-		t.Error("expected failed migration job to be deleted")
-	}
-
-	// Verify retry-after annotation was set on the Deployment.
-	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
-		t.Error("expected retry-after annotation to be set on Deployment")
-	}
-
-	// Verify MigrationFailed condition was set.
-	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
-	if cond == nil {
-		t.Fatal("expected MigrationFailed condition to be set")
-	}
-	if cond.Status != corev1.ConditionTrue {
-		t.Errorf("expected MigrationFailed status True, got %s", cond.Status)
-	}
-	if cond.Reason != "MigrationJobFailed" {
-		t.Errorf("expected reason MigrationJobFailed, got %s", cond.Reason)
-	}
-}
-
-func TestReconcile_JobFailed_StatusPatchFailurePreservesJob(t *testing.T) {
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Annotations: map[string]string{
-				AnnotationDesiredVersion: "v1.14.0",
-			},
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{{
-				Type:   batchv1.JobFailed,
-				Status: corev1.ConditionTrue,
-			}},
-		},
-	}
-	r := newReconcilerWithStatusPatchError(dep, job)
-
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	}); err == nil {
-		t.Fatal("expected status patch error")
-	}
-
-	preservedJob := &batchv1.Job{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, preservedJob); err != nil {
-		t.Fatalf("expected failed Job to remain for retry: %v", err)
-	}
-	updated := &appsv1.Deployment{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); err != nil {
-		t.Fatalf("getting deployment: %v", err)
-	}
-	if _, ok := updated.Annotations[AnnotationRetryAfter]; ok {
-		t.Error("retry-after must not be set when the failure condition was not persisted")
-	}
-}
-
-func TestReconcile_JobFailureTarget_TreatedAsFailed(t *testing.T) {
-	// Given: a Job with only JobFailureTarget=True (no JobFailed yet). The
-	// Job controller sets this as soon as it decides the Job will fail,
-	// before pods finish terminating and JobFailed is recorded. The operator
-	// should treat this as a failure to surface the error in seconds rather
-	// than waiting the full BackoffLimit × ActiveDeadlineSeconds.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Annotations: map[string]string{
-				"openfga.dev/desired-version": "v1.14.0",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{
-				{Type: batchv1.JobFailureTarget, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"},
-			},
-		},
-	}
-
-	r := newReconciler(dep, job)
-
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter != 60*time.Second {
-		t.Errorf("expected 60s requeue, got %v", result.RequeueAfter)
-	}
-
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
-	}
-
-	deletedJob := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, deletedJob); getErr == nil {
-		t.Error("expected migration job to be deleted on JobFailureTarget")
-	}
-	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
-		t.Error("expected retry-after annotation to be set")
-	}
-	cond := findCondition(updated.Status.Conditions, "MigrationFailed")
-	if cond == nil || cond.Status != corev1.ConditionTrue {
-		t.Fatal("expected MigrationFailed condition True")
-	}
-}
-
-func TestReconcile_RetryAfterCooldown_SkipsJobCreation(t *testing.T) {
-	// Given: a Deployment with a retry-after annotation in the future.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-	dep.Annotations[AnnotationRetryAfter] = time.Now().Add(30 * time.Second).UTC().Format(time.RFC3339)
-
-	r := newReconciler(dep)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, requeue with remaining cooldown time.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected requeue during cooldown")
-	}
-	if result.RequeueAfter > 30*time.Second {
-		t.Errorf("expected requeue within 30s, got %v", result.RequeueAfter)
-	}
-
-	// Verify no Job was created.
-	job := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, job); getErr == nil {
-		t.Error("expected no migration job during cooldown")
-	}
-}
-
-func TestReconcile_UnknownVersionJob_DeletedNotTrusted(t *testing.T) {
-	// Given: a Deployment desiring v1.14.0 and a JobComplete migration Job that
-	// carries no version annotation or label (e.g. left over from an older
-	// operator or created by a third-party tool). Trusting its outcome would
-	// write the wrong version into the migration-status ConfigMap.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{
-				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
-			},
-		},
-	}
-
-	r := newReconciler(dep, job)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: the Job is deleted and a requeue is scheduled; the ConfigMap is
-	// NOT created from the unknown-version Job's outcome.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected requeue after deleting unknown-version job")
-	}
-
-	deletedJob := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, deletedJob); getErr == nil {
-		t.Error("expected unknown-version job to be deleted")
-	}
-
-	cm := &corev1.ConfigMap{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migration-status", Namespace: "default",
-	}, cm); getErr == nil {
-		t.Errorf("expected no migration-status ConfigMap; got version=%q", cm.Data["version"])
-	}
-}
-
-func TestReconcile_RetryAfterPersistsOnJobCreateFailure(t *testing.T) {
-	// Given: a Deployment with an elapsed retry-after annotation, and a client
-	// that fails Job creation with a non-AlreadyExists error.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-	dep.Annotations[AnnotationRetryAfter] = time.Now().Add(-1 * time.Second).UTC().Format(time.RFC3339)
-
-	scheme := newScheme()
-	c := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithStatusSubresource(&appsv1.Deployment{}).
-		WithRuntimeObjects(dep).
-		WithInterceptorFuncs(interceptor.Funcs{
-			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-				if _, ok := obj.(*batchv1.Job); ok {
-					return fmt.Errorf("simulated transient API error")
-				}
-				return c.Create(ctx, obj, opts...)
-			},
-		}).
-		Build()
-	r := &MigrationReconciler{
-		Client:                  c,
-		BackoffLimit:            DefaultBackoffLimit,
-		ActiveDeadlineSeconds:   DefaultActiveDeadlineSeconds,
-		TTLSecondsAfterFinished: DefaultTTLSecondsAfterFinished,
-	}
-
-	// When: reconciling.
-	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: an error is returned and the retry-after annotation is preserved
-	// so the next reconcile honors the cooldown.
-	if err == nil {
-		t.Fatal("expected error from failed job creation")
-	}
-
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
-	}
-	if _, ok := updated.Annotations[AnnotationRetryAfter]; !ok {
-		t.Error("expected retry-after annotation to persist after Job creation failure")
-	}
-}
-
-func TestReconcile_RetryAfterClearedAfterJobCreated(t *testing.T) {
-	// Given: a Deployment with an elapsed retry-after annotation.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-	dep.Annotations[AnnotationRetryAfter] = time.Now().Add(-1 * time.Second).UTC().Format(time.RFC3339)
-
-	r := newReconciler(dep)
-
-	// When: reconciling.
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Then: the Job exists and the retry-after annotation has been cleared.
-	job := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, job); getErr != nil {
-		t.Fatalf("expected migration job to be created: %v", getErr)
-	}
-
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
-	}
-	if _, ok := updated.Annotations[AnnotationRetryAfter]; ok {
-		t.Error("expected retry-after annotation to be cleared after Job created")
-	}
-}
-
-func TestReconcile_MemoryDatastore_SkipsMigration(t *testing.T) {
-	// Given: a Deployment using the memory datastore.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "1"
-	dep.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
-		{Name: "OPENFGA_DATASTORE_ENGINE", Value: "memory"},
-	}
-
-	r := newReconciler(dep)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, no requeue.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter != 0 {
-		t.Error("expected no requeue for memory datastore")
-	}
-
-	// Verify Deployment was scaled up (no migration needed).
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
-	}
-	if *updated.Spec.Replicas != 1 {
-		t.Errorf("expected 1 replica, got %d", *updated.Spec.Replicas)
-	}
-
-	// Verify no Job was created.
-	job := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, job); getErr == nil {
-		t.Error("expected no migration job for memory datastore")
-	}
-}
-
-func TestReconcile_DeploymentNotFound_NoError(t *testing.T) {
-	r := newReconciler()
-
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "nonexistent", Namespace: "default"},
-	})
-
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter != 0 {
-		t.Error("expected no requeue for missing deployment")
-	}
-}
-
-func TestReconcile_FindContainerByName(t *testing.T) {
-	// Given: a Deployment with a sidecar before the openfga container.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Spec.Template.Spec.Containers = []corev1.Container{
-		{
-			Name:  "sidecar",
-			Image: "envoyproxy/envoy:v1.30",
-		},
-		{
-			Name:  "openfga",
-			Image: "openfga/openfga:v1.14.0",
-			Env: []corev1.EnvVar{
-				{Name: "OPENFGA_DATASTORE_ENGINE", Value: "postgres"},
-				{Name: "OPENFGA_DATASTORE_URI", Value: "postgres://localhost/openfga"},
-			},
-		},
-	}
-
-	r := newReconciler(dep)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: Job should use the openfga container's image, not the sidecar's.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected requeue, got none")
-	}
-
-	job := &batchv1.Job{}
-	if err := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, job); err != nil {
 		t.Fatalf("expected migration job to be created: %v", err)
 	}
-
-	if job.Spec.Template.Spec.Containers[0].Image != "openfga/openfga:v1.14.0" {
-		t.Errorf("expected job image openfga/openfga:v1.14.0, got %s", job.Spec.Template.Spec.Containers[0].Image)
+	if got := ptr.Deref(job.Spec.ActiveDeadlineSeconds, 0); got != 600 {
+		t.Errorf("expected activeDeadlineSeconds 600, got %d", got)
+	}
+	if sa := job.Spec.Template.Spec.ServiceAccountName; sa != "openfga" {
+		t.Errorf("expected the Deployment's service account, got %q", sa)
 	}
 }
 
-func TestReconcile_StaleJob_DeletedAndRequeued(t *testing.T) {
-	// Given: a Deployment at v1.15.0 with an existing migration Job for v1.14.0.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
-
-	staleJob := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Labels: map[string]string{
-				"app.kubernetes.io/version": "v1.14.0",
-			},
-			Annotations: map[string]string{
-				"openfga.dev/desired-version": "v1.14.0",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
+func TestReconcile_JobAlreadyExistsOnCreate_Requeues(t *testing.T) {
+	r := newReconciler(t, &interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			return apierrors.NewAlreadyExists(batchv1.Resource("jobs"), obj.GetName())
 		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To(int32(3)),
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers:    []corev1.Container{{Name: "migrate", Image: "openfga/openfga:v1.14.0"}},
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-		Status: batchv1.JobStatus{
-			Succeeded: 1,
-			Conditions: []batchv1.JobCondition{
-				{
-					Type:   batchv1.JobComplete,
-					Status: corev1.ConditionTrue,
-				},
-			},
-		},
-	}
+	}, newTestDeployment("openfga/openfga:v1.14.0"))
 
-	r := newReconciler(dep, staleJob)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, requeue to recreate with correct version.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected requeue after deleting stale job")
-	}
-
-	// Verify the stale Job was deleted.
-	deletedJob := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, deletedJob); getErr == nil {
-		t.Error("expected stale migration job to be deleted")
-	}
-
-	// Verify ConfigMap was NOT updated (migration didn't actually run for v1.15.0).
-	cm := &corev1.ConfigMap{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migration-status", Namespace: "default",
-	}, cm); getErr == nil {
-		if cm.Data["version"] == "v1.15.0" {
-			t.Error("ConfigMap should not be updated to v1.15.0 from a stale v1.14.0 job")
-		}
+	if result := reconcileOnce(t, r); result.RequeueAfter == 0 {
+		t.Error("expected a requeue when the Job already exists")
 	}
 }
 
-func TestReconcile_MigrationNotEnabled_Skips(t *testing.T) {
-	// Given: a Deployment without the migration-enabled annotation.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 3)
-	delete(dep.Annotations, AnnotationMigrationEnabled)
+func TestReconcile_VersionMatch_ClearsFailedCondition(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	dep.Status.Conditions = []appsv1.DeploymentCondition{{Type: "MigrationFailed", Status: corev1.ConditionTrue}}
+	r := newReconciler(t, nil, dep, newStatus("v1.14.0"))
 
-	r := newReconciler(dep)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, no requeue, no Job created, replicas unchanged.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if result := reconcileOnce(t, r); result.RequeueAfter != 0 {
+		t.Errorf("expected no requeue when versions match, got %v", result.RequeueAfter)
 	}
-	if result.RequeueAfter != 0 {
-		t.Error("expected no requeue when migration is not enabled")
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Errorf("expected no migration job, got err=%v", err)
 	}
-
-	// Verify no Job was created.
-	job := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, job); getErr == nil {
-		t.Error("expected no migration job when migration is not enabled")
-	}
-
-	// Verify replicas unchanged.
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
+	updated := getDeployment(t, r)
+	if cond := findCondition(updated.Status.Conditions, "MigrationFailed"); cond == nil || cond.Status != corev1.ConditionFalse {
+		t.Errorf("expected MigrationFailed=False, got %+v", cond)
 	}
 	if *updated.Spec.Replicas != 3 {
-		t.Errorf("expected 3 replicas unchanged, got %d", *updated.Spec.Replicas)
+		t.Errorf("replicas must not be changed, got %d", *updated.Spec.Replicas)
 	}
 }
 
-func TestReconcile_StaleJob_LabelOnlyFallback_DeletedAndRequeued(t *testing.T) {
-	// Given: a Deployment at v1.15.0 with an existing Job that only has a label (no annotation).
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.15.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
+func TestReconcile_VersionMatch_StatusPatchError(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	dep.Status.Conditions = []appsv1.DeploymentCondition{{Type: "MigrationFailed", Status: corev1.ConditionTrue}}
+	r := newReconciler(t, failStatusPatch, dep, newStatus("v1.14.0"))
 
-	staleJob := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Labels: map[string]string{
-				"app.kubernetes.io/version": "v1.14.0",
-			},
-			// No annotation — forces the label-only fallback path.
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To(int32(3)),
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers:    []corev1.Container{{Name: "migrate", Image: "openfga/openfga:v1.14.0"}},
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-	}
-
-	r := newReconciler(dep, staleJob)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: stale Job should be deleted and requeue requested.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected requeue after deleting stale job")
-	}
-
-	deletedJob := &batchv1.Job{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migrate", Namespace: "default",
-	}, deletedJob); getErr == nil {
-		t.Error("expected stale migration job to be deleted")
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: deploymentKey}); err == nil {
+		t.Fatal("expected the status patch error to be returned")
 	}
 }
 
-func TestReconcile_JobSucceeded_UpdatesExistingConfigMap(t *testing.T) {
-	// Given: a Deployment with a pre-existing ConfigMap from v1.13.0 and a succeeded Job for v1.14.0.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
+func TestReconcile_JobSucceeded_CreatesStatus(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	dep.Status.Conditions = []appsv1.DeploymentCondition{{Type: "MigrationFailed", Status: corev1.ConditionTrue, Reason: "MigrationJobFailed"}}
+	r := newReconciler(t, nil, dep, newTestJob(dep, jobCondition(batchv1.JobComplete, time.Now())))
 
-	existingCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migration-status",
-			Namespace: "default",
-			Labels: map[string]string{
-				LabelPartOf:                    LabelPartOfValue,
-				LabelComponent:                 "migration",
-				"app.kubernetes.io/managed-by": "openfga-operator",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Data: map[string]string{
-			"version":    "v1.13.0",
-			"migratedAt": "2026-04-01T12:00:00Z",
-			"jobName":    "openfga-migrate",
-		},
+	if result := reconcileOnce(t, r); result.RequeueAfter != 0 {
+		t.Errorf("expected no requeue after success, got %v", result.RequeueAfter)
 	}
-
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Annotations: map[string]string{
-				"openfga.dev/desired-version": "v1.14.0",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To(int32(3)),
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers:    []corev1.Container{{Name: "migrate", Image: "openfga/openfga:v1.14.0"}},
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-		Status: batchv1.JobStatus{
-			Succeeded: 1,
-			Conditions: []batchv1.JobCondition{
-				{
-					Type:   batchv1.JobComplete,
-					Status: corev1.ConditionTrue,
-				},
-			},
-		},
-	}
-
-	r := newReconciler(dep, existingCM, job)
-
-	// When: reconciling.
-	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error.
+	cm, err := getStatus(r)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("expected migration status ConfigMap: %v", err)
 	}
+	if cm.Data["version"] != "v1.14.0" || cm.Data["jobName"] != jobKey.Name {
+		t.Errorf("unexpected status data: %v", cm.Data)
+	}
+	if len(cm.OwnerReferences) != 1 || cm.OwnerReferences[0].UID != "test-uid-123" {
+		t.Errorf("expected the Deployment to own the status ConfigMap, got %+v", cm.OwnerReferences)
+	}
+	cond := findCondition(getDeployment(t, r).Status.Conditions, "MigrationFailed")
+	if cond == nil || cond.Status != corev1.ConditionFalse || cond.Reason != "MigrationSucceeded" {
+		t.Errorf("expected MigrationFailed=False/MigrationSucceeded, got %+v", cond)
+	}
+}
 
-	// Verify ConfigMap was updated to v1.14.0.
-	cm := &corev1.ConfigMap{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga-migration-status", Namespace: "default",
-	}, cm); getErr != nil {
-		t.Fatalf("expected ConfigMap to exist: %v", getErr)
+func TestReconcile_JobSucceeded_UpdatesStatus(t *testing.T) {
+	status := newStatus("v1.13.0")
+	status.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "openfga", UID: "old-uid"}}
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	r := newReconciler(t, nil, dep, status, newTestJob(dep, jobCondition(batchv1.JobComplete, time.Now())))
+
+	reconcileOnce(t, r)
+
+	cm, err := getStatus(r)
+	if err != nil {
+		t.Fatalf("expected migration status ConfigMap: %v", err)
 	}
 	if cm.Data["version"] != "v1.14.0" {
-		t.Errorf("expected version v1.14.0 in ConfigMap, got %s", cm.Data["version"])
+		t.Errorf("expected version v1.14.0, got %q", cm.Data["version"])
 	}
-}
-
-func TestReconcile_MigrationNeeded_DoesNotScaleToZero(t *testing.T) {
-	// Given: a Deployment with replicas > 0 and no migration-status ConfigMap.
-	// The operator should create the migration Job WITHOUT scaling to zero,
-	// relying on OpenFGA's built-in schema version check to gate readiness.
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 3)
-	dep.Annotations = map[string]string{
-		AnnotationMigrationEnabled: "true",
-		AnnotationDesiredReplicas:  "3",
-	}
-
-	r := newReconciler(dep)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, Job created.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected requeue after creating job")
-	}
-
-	// Verify Deployment replicas were NOT changed — pods keep running during migration.
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
-	}
-	if *updated.Spec.Replicas != 3 {
-		t.Errorf("expected replicas to remain at 3, got %d", *updated.Spec.Replicas)
+	if cm.OwnerReferences[0].UID != "test-uid-123" {
+		t.Errorf("expected owner reference to be reset to the current Deployment, got %+v", cm.OwnerReferences)
 	}
 }
 
 func TestReconcile_JobInProgress_Requeues(t *testing.T) {
-	// Given: a Deployment with a running Job (no conditions set yet).
-	dep := newTestDeployment("openfga", "default", "openfga/openfga:v1.14.0", 0)
-	dep.Annotations[AnnotationDesiredReplicas] = "3"
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	r := newReconciler(t, nil, dep, newTestJob(dep))
 
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openfga-migrate",
-			Namespace: "default",
-			Annotations: map[string]string{
-				"openfga.dev/desired-version": "v1.14.0",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "openfga",
-					UID:        "test-uid-123",
-				},
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To(int32(3)),
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers:    []corev1.Container{{Name: "migrate", Image: "openfga/openfga:v1.14.0"}},
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-		Status: batchv1.JobStatus{
-			Active: 1,
-		},
+	if result := reconcileOnce(t, r); result.RequeueAfter != 10*time.Second {
+		t.Errorf("expected 10s requeue for an in-progress job, got %v", result.RequeueAfter)
+	}
+	if _, err := getStatus(r); !apierrors.IsNotFound(err) {
+		t.Errorf("expected no status ConfigMap while the job runs, got err=%v", err)
+	}
+}
+
+func TestReconcile_JobFailed_KeepsJobUntilRetryDelay(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	r := newReconciler(t, nil, dep, newTestJob(dep, jobCondition(batchv1.JobFailed, time.Now().Add(-10*time.Second))))
+
+	result := reconcileOnce(t, r)
+	if result.RequeueAfter <= 0 || result.RequeueAfter > retryDelay-10*time.Second {
+		t.Errorf("expected a requeue for the rest of the retry delay, got %v", result.RequeueAfter)
+	}
+	if _, err := getJob(r); err != nil {
+		t.Errorf("expected the failed job to be kept during the retry delay: %v", err)
+	}
+	cond := findCondition(getDeployment(t, r).Status.Conditions, "MigrationFailed")
+	if cond == nil || cond.Status != corev1.ConditionTrue || cond.Reason != "MigrationJobFailed" {
+		t.Errorf("expected MigrationFailed=True, got %+v", cond)
+	}
+}
+
+func TestReconcile_JobFailed_RetriesAfterDelay(t *testing.T) {
+	for _, condType := range []batchv1.JobConditionType{batchv1.JobFailed, batchv1.JobFailureTarget} {
+		t.Run(string(condType), func(t *testing.T) {
+			dep := newTestDeployment("openfga/openfga:v1.14.0")
+			r := newReconciler(t, nil, dep, newTestJob(dep, jobCondition(condType, time.Now().Add(-2*retryDelay))))
+
+			reconcileOnce(t, r)
+			if _, err := getJob(r); !apierrors.IsNotFound(err) {
+				t.Fatalf("expected the failed job to be deleted, got err=%v", err)
+			}
+			if cond := findCondition(getDeployment(t, r).Status.Conditions, "MigrationFailed"); cond == nil || cond.Status != corev1.ConditionTrue {
+				t.Errorf("expected MigrationFailed=True, got %+v", cond)
+			}
+
+			reconcileOnce(t, r)
+			job, err := getJob(r)
+			if err != nil {
+				t.Fatalf("expected a new migration job: %v", err)
+			}
+			if len(job.Status.Conditions) != 0 {
+				t.Errorf("expected a fresh job, got conditions %+v", job.Status.Conditions)
+			}
+		})
+	}
+}
+
+func TestReconcile_JobFailed_StatusPatchErrorKeepsJob(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	r := newReconciler(t, failStatusPatch, dep, newTestJob(dep, jobCondition(batchv1.JobFailed, time.Now().Add(-2*retryDelay))))
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: deploymentKey}); err == nil {
+		t.Fatal("expected the status patch error to be returned")
+	}
+	if _, err := getJob(r); err != nil {
+		t.Errorf("the failed job must be kept until the failure is recorded: %v", err)
+	}
+}
+
+func TestReconcile_JobForOtherVersion_Replaced(t *testing.T) {
+	r := newReconciler(t, nil, newTestDeployment("openfga/openfga:v1.15.0"),
+		newTestJob(newTestDeployment("openfga/openfga:v1.14.0"), jobCondition(batchv1.JobComplete, time.Now())))
+
+	if result := reconcileOnce(t, r); result.RequeueAfter == 0 {
+		t.Error("expected a requeue after deleting the stale job")
+	}
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Errorf("expected the stale job to be deleted, got err=%v", err)
+	}
+	if _, err := getStatus(r); !apierrors.IsNotFound(err) {
+		t.Errorf("a job for another version must not be recorded as migrated, got err=%v", err)
+	}
+}
+
+func TestReconcile_PendingJobWithOutdatedTemplate_Replaced(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	job := newTestJob(dep)
+	job.Status.Active = 1
+	job.Status.Ready = ptr.To(int32(0))
+	dep.Spec.Template.Spec.Containers[0].Env[1].Value = "postgres://db.example.com/openfga"
+	r := newReconciler(t, nil, dep, job)
+
+	reconcileOnce(t, r)
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected the job built from the old pod template to be deleted, got err=%v", err)
 	}
 
-	r := newReconciler(dep, job)
-
-	// When: reconciling.
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "openfga", Namespace: "default"},
-	})
-
-	// Then: no error, requeue after 10s to poll progress.
+	reconcileOnce(t, r)
+	rebuilt, err := getJob(r)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("expected a new migration job: %v", err)
 	}
-	if result.RequeueAfter != 10*time.Second {
-		t.Errorf("expected 10s requeue for in-progress job, got %v", result.RequeueAfter)
+	if uri := rebuilt.Spec.Template.Spec.Containers[0].Env[1].Value; uri != "postgres://db.example.com/openfga" {
+		t.Errorf("expected the new job to use the updated env, got %q", uri)
+	}
+}
+
+func TestReconcile_StartedJobWithOutdatedTemplate_Kept(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		status batchv1.JobStatus
+	}{
+		{"pod running", batchv1.JobStatus{Active: 1, Ready: ptr.To(int32(1))}},
+		{"pod finished before the job is marked complete", batchv1.JobStatus{Succeeded: 1, Ready: ptr.To(int32(0))}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dep := newTestDeployment("openfga/openfga:v1.14.0")
+			job := newTestJob(dep)
+			job.Status = tt.status
+			dep.Spec.Template.Spec.Containers[0].Env[1].Value = "postgres://db.example.com/openfga"
+			r := newReconciler(t, nil, dep, job)
+
+			if result := reconcileOnce(t, r); result.RequeueAfter != 10*time.Second {
+				t.Errorf("expected the job to be polled, got %v", result.RequeueAfter)
+			}
+			if _, err := getJob(r); err != nil {
+				t.Errorf("a started migration must not be replaced: %v", err)
+			}
+		})
+	}
+}
+
+// The legacy chart's Helm hook Job has the same name and carries the chart's
+// app.kubernetes.io/version label, which is the chart appVersion rather than
+// the image it ran. It must never be taken as proof of a migration.
+func TestReconcile_LegacyHookJob_NotTrusted(t *testing.T) {
+	legacy := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobKey.Name,
+			Namespace: jobKey.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/version":    "v1.14.0",
+				"app.kubernetes.io/managed-by": "Helm",
+			},
+			Annotations: map[string]string{"helm.sh/hook": "post-install, post-upgrade, post-rollback, post-delete"},
+		},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{jobCondition(batchv1.JobComplete, time.Now())}},
+	}
+	r := newReconciler(t, nil, newTestDeployment("openfga/openfga:v1.14.0"), legacy)
+
+	reconcileOnce(t, r)
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Errorf("expected the legacy hook job to be deleted, got err=%v", err)
+	}
+	if _, err := getStatus(r); !apierrors.IsNotFound(err) {
+		t.Errorf("the legacy hook job must not be recorded as a migration, got err=%v", err)
 	}
 
-	// Verify Deployment still at 0 replicas.
-	updated := &appsv1.Deployment{}
-	if getErr := r.Get(context.Background(), types.NamespacedName{
-		Name: "openfga", Namespace: "default",
-	}, updated); getErr != nil {
-		t.Fatalf("getting deployment: %v", getErr)
+	reconcileOnce(t, r)
+	job, err := getJob(r)
+	if err != nil {
+		t.Fatalf("expected a new migration job: %v", err)
 	}
-	if *updated.Spec.Replicas != 0 {
-		t.Errorf("expected 0 replicas while job in progress, got %d", *updated.Spec.Replicas)
+	if job.Annotations[AnnotationDesiredVersion] != "v1.14.0" {
+		t.Errorf("expected the new job to target v1.14.0, got %v", job.Annotations)
+	}
+}
+
+func TestReconcile_MigrationNotEnabled_Skips(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	delete(dep.Annotations, AnnotationMigrationEnabled)
+	r := newReconciler(t, nil, dep)
+
+	if result := reconcileOnce(t, r); result.RequeueAfter != 0 {
+		t.Errorf("expected no requeue, got %v", result.RequeueAfter)
+	}
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Errorf("expected no migration job, got err=%v", err)
+	}
+}
+
+func TestReconcile_DeploymentNotFound_NoError(t *testing.T) {
+	r := newReconciler(t, nil)
+	if result := reconcileOnce(t, r); result.RequeueAfter != 0 {
+		t.Errorf("expected no requeue, got %v", result.RequeueAfter)
+	}
+}
+
+func TestReconcile_ContainerFromAnnotation(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	dep.Annotations[AnnotationContainerName] = "server"
+	dep.Spec.Template.Spec.Containers = []corev1.Container{
+		{Name: "sidecar", Image: "envoyproxy/envoy:v1.30.0"},
+		{Name: "server", Image: "openfga/openfga:v1.14.0"},
+	}
+	r := newReconciler(t, nil, dep)
+	reconcileOnce(t, r)
+
+	job, err := getJob(r)
+	if err != nil {
+		t.Fatalf("expected migration job to be created: %v", err)
+	}
+	if image := job.Spec.Template.Spec.Containers[0].Image; image != "openfga/openfga:v1.14.0" {
+		t.Errorf("expected the annotated container's image, got %s", image)
+	}
+}
+
+func TestReconcile_ContainerNotFound_ReturnsError(t *testing.T) {
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	dep.Spec.Template.Spec.Containers[0].Name = "server"
+	r := newReconciler(t, nil, dep)
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: deploymentKey}); err == nil {
+		t.Fatal("expected an error when the OpenFGA container is missing")
 	}
 }
 
@@ -1239,15 +515,16 @@ func TestExtractImageTag(t *testing.T) {
 		{"openfga/openfga:v1.14.0", "v1.14.0"},
 		{"openfga/openfga:latest", "latest"},
 		{"openfga/openfga", "latest"},
+		{"openfga", "latest"},
 		{"ghcr.io/openfga/openfga:v1.14.0", "v1.14.0"},
 		{"registry.example.com:5000/openfga/openfga:v1.14.0", "v1.14.0"},
+		{"registry.example.com:5000/openfga/openfga", "latest"},
 		{"openfga/openfga@sha256:abcdef1234567890", "sha256:abcdef1234567890"},
+		{"openfga/openfga:v1.14.0@sha256:abcdef1234567890", "sha256:abcdef1234567890"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.image, func(t *testing.T) {
-			got := extractImageTag(tt.image)
-			if got != tt.expected {
+			if got := extractImageTag(tt.image); got != tt.expected {
 				t.Errorf("extractImageTag(%q) = %q, want %q", tt.image, got, tt.expected)
 			}
 		})
@@ -1255,7 +532,6 @@ func TestExtractImageTag(t *testing.T) {
 }
 
 func TestClearMigrationFailedConditionIdempotent(t *testing.T) {
-	// Absent condition: nothing to clear.
 	dep := &appsv1.Deployment{}
 	if clearMigrationFailedCondition(dep) {
 		t.Error("expected no change when the MigrationFailed condition is absent")
@@ -1264,11 +540,7 @@ func TestClearMigrationFailedConditionIdempotent(t *testing.T) {
 		t.Errorf("expected no conditions to be added, got %d", len(dep.Status.Conditions))
 	}
 
-	// Condition present and True: clearing flips it to False (a real change).
-	dep.Status.Conditions = []appsv1.DeploymentCondition{{
-		Type:   "MigrationFailed",
-		Status: corev1.ConditionTrue,
-	}}
+	dep.Status.Conditions = []appsv1.DeploymentCondition{{Type: "MigrationFailed", Status: corev1.ConditionTrue}}
 	if !clearMigrationFailedCondition(dep) {
 		t.Error("expected a change when clearing a True MigrationFailed condition")
 	}
@@ -1278,21 +550,16 @@ func TestClearMigrationFailedConditionIdempotent(t *testing.T) {
 	}
 	transition := cond.LastTransitionTime
 
-	// Already False: clearing again must be a no-op and must not advance
-	// LastTransitionTime — this is what stops the reconcile status write-churn.
 	if clearMigrationFailedCondition(dep) {
 		t.Error("expected no change when the MigrationFailed condition is already False")
 	}
-	cond = findCondition(dep.Status.Conditions, "MigrationFailed")
-	if !cond.LastTransitionTime.Equal(&transition) {
+	if cond := findCondition(dep.Status.Conditions, "MigrationFailed"); !cond.LastTransitionTime.Equal(&transition) {
 		t.Error("LastTransitionTime must not change when the condition is already False")
 	}
 }
 
 func TestSetMigrationFailedConditionIdempotent(t *testing.T) {
 	dep := &appsv1.Deployment{}
-
-	// First set appends the condition.
 	if !setMigrationFailedCondition(dep, "v1.14.0") {
 		t.Error("expected a change when setting MigrationFailed on a fresh deployment")
 	}
@@ -1302,46 +569,13 @@ func TestSetMigrationFailedConditionIdempotent(t *testing.T) {
 	}
 	transition := cond.LastTransitionTime
 
-	// Re-setting for the same version is a no-op: no LastTransitionTime churn.
 	if setMigrationFailedCondition(dep, "v1.14.0") {
 		t.Error("expected no change when re-setting the same MigrationFailed condition")
 	}
-	cond = findCondition(dep.Status.Conditions, "MigrationFailed")
-	if !cond.LastTransitionTime.Equal(&transition) {
-		t.Error("LastTransitionTime must not change when the condition is unchanged")
-	}
-
-	// A different version updates the message but does not transition status,
-	// so LastTransitionTime stays put.
 	if !setMigrationFailedCondition(dep, "v1.15.0") {
 		t.Error("expected a change when the failure message changes")
 	}
-	cond = findCondition(dep.Status.Conditions, "MigrationFailed")
-	if !cond.LastTransitionTime.Equal(&transition) {
+	if cond := findCondition(dep.Status.Conditions, "MigrationFailed"); !cond.LastTransitionTime.Equal(&transition) {
 		t.Error("LastTransitionTime must not change without a status transition")
-	}
-}
-
-func TestIsMutableImageReference(t *testing.T) {
-	tests := []struct {
-		image   string
-		mutable bool
-	}{
-		{"openfga/openfga:v1.14.0", false},
-		{"openfga/openfga:1.14.0", false},
-		{"openfga/openfga:v1.14.0-rc1", false},
-		{"openfga/openfga@sha256:abcdef1234567890", false},
-		{"openfga/openfga:latest", true},
-		{"openfga/openfga:v1.14", true},
-		{"openfga/openfga", true},
-		{"registry.example.com:5000/openfga/openfga:v1.14.0", false},
-		{"registry.example.com:5000/openfga/openfga:latest", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.image, func(t *testing.T) {
-			if got := isMutableImageReference(tt.image); got != tt.mutable {
-				t.Errorf("isMutableImageReference(%q) = %v, want %v", tt.image, got, tt.mutable)
-			}
-		})
 	}
 }

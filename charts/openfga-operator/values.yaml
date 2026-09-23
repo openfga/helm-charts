@@ -59,7 +59,9 @@ migrationJob:
   # -- Number of pod failures before a migration Job is considered failed.
   backoffLimit: 3
   # -- Maximum wall-clock seconds a migration Job can run before being terminated.
-  activeDeadlineSeconds: 300
+  # 0 disables the deadline. A migration that is cut off, such as an index build
+  # on a large table, has to start over on the next attempt.
+  activeDeadlineSeconds: 0
   # -- Seconds to keep completed/failed Job pods for log inspection before garbage collection.
   ttlSecondsAfterFinished: 300
 

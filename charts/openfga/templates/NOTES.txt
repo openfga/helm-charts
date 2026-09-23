@@ -1,20 +1,17 @@
-{{- if and .Values.operator.enabled .Values.migration.enabled .Values.datastore.applyMigrations (has .Values.datastore.engine (list "postgres" "mysql")) }}
-NOTE: operator-managed migration is enabled. The chart does not set spec.replicas
-in this mode — the operator scales the Deployment to the desired count once the
-migration Job succeeds. A fresh install begins at the Kubernetes default of one
-replica (held NotReady by the readiness gate until migration finishes); an
-upgrade preserves the live replica count while the migration runs.
+{{- if include "openfga.operatorMigrations" . }}
+NOTE: database migrations are run by the openfga-operator. Whenever the OpenFGA
+image changes it runs the {{ include "openfga.fullname" . }}-migrate Job and records the migrated
+version in the {{ include "openfga.fullname" . }}-migration-status ConfigMap. On a new database the
+OpenFGA pods stay NotReady until the first migration completes.
 
-If pods don't appear within ~2 minutes, check the operator and the migration
-Job:
+If the pods do not become ready, check the operator and the migration Job:
 
-  kubectl get deployment -A -l app.kubernetes.io/name=openfga-operator
   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=openfga-operator --tail=100
   kubectl get job/{{ include "openfga.fullname" . }}-migrate -n {{ .Release.Namespace }} -o yaml
   kubectl describe deployment/{{ include "openfga.fullname" . }} -n {{ .Release.Namespace }}
 
-A `MigrationFailed` condition on the Deployment indicates the migration Job
-failed; the operator will retry every 60s once the underlying issue is fixed.
+A `MigrationFailed` condition on the Deployment means the migration Job failed;
+the operator retries it every 60s.
 
 {{ end -}}
 1. Get the application URL by running these commands:

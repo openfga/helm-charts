@@ -2,9 +2,9 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -26,63 +27,39 @@ const (
 
 	// Labels set on operator-managed resources (migration Jobs, status ConfigMaps).
 	LabelManagedBy      = "app.kubernetes.io/managed-by"
-	LabelVersion        = "app.kubernetes.io/version"
 	LabelManagedByValue = "openfga-operator"
 
-	// Annotations set on the Deployment by the Helm chart / operator.
+	// Annotations read from the Deployment (set by the Helm chart).
 	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
 	AnnotationContainerName           = "openfga.dev/container-name"
-	AnnotationDesiredReplicas         = "openfga.dev/desired-replicas"
-	AnnotationDesiredVersion          = "openfga.dev/desired-version"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
-	AnnotationRetryAfter              = "openfga.dev/migration-retry-after"
 
-	// Defaults for migration Job configuration.
+	// Annotations set on migration Jobs: the version the Job migrates to, and a
+	// hash of the pod template it was built from.
+	AnnotationDesiredVersion  = "openfga.dev/desired-version"
+	AnnotationPodTemplateHash = "openfga.dev/pod-template-hash"
+
+	// Defaults for migration Job configuration. An ActiveDeadlineSeconds of 0
+	// leaves the Job without a deadline.
 	DefaultBackoffLimit            int32 = 3
-	DefaultActiveDeadlineSeconds   int64 = 300
+	DefaultActiveDeadlineSeconds   int64 = 0
 	DefaultTTLSecondsAfterFinished int32 = 300
 )
-
-// immutableTag matches a fully-qualified semantic version tag (with an optional
-// leading "v" and optional pre-release/build suffix), which is treated as
-// immutable by convention.
-var immutableTag = regexp.MustCompile(`^v?\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$`)
-
-// isMutableImageReference reports whether an image reference is not pinned to an
-// immutable identifier. Digest references (@sha256:...) are immutable, and a
-// full semantic version tag is treated as immutable by convention. Everything
-// else — "latest", a floating "v1.14", a bare name — is mutable: the same
-// reference can resolve to different images over time, so the operator cannot
-// tell that a rebuilt image needs a migration.
-func isMutableImageReference(image string) bool {
-	if strings.Contains(image, "@") {
-		return false
-	}
-	return !immutableTag.MatchString(extractImageTag(image))
-}
 
 // extractImageTag returns the tag portion of a container image reference.
 // For "openfga/openfga:v1.14.0" it returns "v1.14.0".
 // For "openfga/openfga@sha256:abc..." it returns the digest.
 // If there is no tag or digest, it returns "latest".
 func extractImageTag(image string) string {
-	// Handle digest references.
 	if idx := strings.LastIndex(image, "@"); idx != -1 {
 		return image[idx+1:]
 	}
 
-	// Handle tag references — be careful not to split on the port in a registry URL.
-	// Find the last '/' to isolate the image name from the registry.
-	lastSlash := strings.LastIndex(image, "/")
-	nameAndTag := image
-	if lastSlash != -1 {
-		nameAndTag = image[lastSlash+1:]
-	}
-
+	// Only look for ":" after the last "/" so a registry port is not mistaken for a tag.
+	nameAndTag := image[strings.LastIndex(image, "/")+1:]
 	if idx := strings.LastIndex(nameAndTag, ":"); idx != -1 {
 		return nameAndTag[idx+1:]
 	}
-
 	return "latest"
 }
 
@@ -96,20 +73,14 @@ func migrationJobName(deploymentName string) string {
 	return deploymentName + "-migrate"
 }
 
-// findOpenFGAContainer finds the OpenFGA container in the Deployment's pod spec.
-// It checks the openfga.dev/container-name annotation first, then looks for a
-// container named "openfga". Returns an error if no containers exist or the
-// target container is not found.
+// findOpenFGAContainer returns the container named by the openfga.dev/container-name
+// annotation, or the container named "openfga" when the annotation is absent.
 func findOpenFGAContainer(deployment *appsv1.Deployment) (*corev1.Container, error) {
-	containers := deployment.Spec.Template.Spec.Containers
-	if len(containers) == 0 {
-		return nil, fmt.Errorf("deployment %s/%s has no containers", deployment.Namespace, deployment.Name)
-	}
-
 	targetName := deployment.Annotations[AnnotationContainerName]
 	if targetName == "" {
 		targetName = "openfga"
 	}
+	containers := deployment.Spec.Template.Spec.Containers
 	for i := range containers {
 		if containers[i].Name == targetName {
 			return &containers[i], nil
@@ -118,29 +89,30 @@ func findOpenFGAContainer(deployment *appsv1.Deployment) (*corev1.Container, err
 	return nil, fmt.Errorf("container %q not found in deployment %s/%s", targetName, deployment.Namespace, deployment.Name)
 }
 
-// buildMigrationJob constructs a migration Job for the given Deployment.
-func buildMigrationJob(
-	deployment *appsv1.Deployment,
-	mainContainer *corev1.Container,
-	desiredVersion string,
-	backoffLimit int32,
-	activeDeadlineSeconds int64,
-	ttlSecondsAfterFinished int32,
-) *batchv1.Job {
-	// Determine the migration service account.
-	migrationSA := deployment.Annotations[AnnotationMigrationServiceAccount]
-	if migrationSA == "" {
-		migrationSA = deployment.Spec.Template.Spec.ServiceAccountName
+// ownerReference makes the Deployment the controller of a migration Job or
+// status ConfigMap so both are garbage collected with it. BlockOwnerDeletion
+// is left unset: it needs update on deployments/finalizers, which the
+// operator is not granted.
+func ownerReference(deployment *appsv1.Deployment) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: "apps/v1",
+		Kind:       "Deployment",
+		Name:       deployment.Name,
+		UID:        deployment.UID,
+		Controller: ptr.To(true),
+	}
+}
+
+// buildMigrationJob constructs a Job that runs "openfga migrate" with the
+// OpenFGA container's image, environment, volumes and scheduling.
+func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, container *corev1.Container, version string) *batchv1.Job {
+	podSpec := deployment.Spec.Template.Spec
+	serviceAccount := deployment.Annotations[AnnotationMigrationServiceAccount]
+	if serviceAccount == "" {
+		serviceAccount = podSpec.ServiceAccountName
 	}
 
-	// Sanitize version for use as a label value (must match [a-zA-Z0-9._-], max 63 chars).
-	// The full version is stored in an annotation for accurate comparison.
-	labelVersion := strings.ReplaceAll(desiredVersion, ":", "_")
-	if len(labelVersion) > 63 {
-		labelVersion = labelVersion[:63]
-	}
-
-	return &batchv1.Job{
+	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      migrationJobName(deployment.Name),
 			Namespace: deployment.Namespace,
@@ -148,25 +120,13 @@ func buildMigrationJob(
 				LabelPartOf:    LabelPartOfValue,
 				LabelComponent: "migration",
 				LabelManagedBy: LabelManagedByValue,
-				LabelVersion:   labelVersion,
 			},
-			Annotations: map[string]string{
-				AnnotationDesiredVersion: desiredVersion,
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       deployment.Name,
-					UID:        deployment.UID,
-					Controller: ptr.To(true),
-				},
-			},
+			Annotations:     map[string]string{AnnotationDesiredVersion: version},
+			OwnerReferences: []metav1.OwnerReference{ownerReference(deployment)},
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit:            ptr.To(backoffLimit),
-			ActiveDeadlineSeconds:   ptr.To(activeDeadlineSeconds),
-			TTLSecondsAfterFinished: ptr.To(ttlSecondsAfterFinished),
+			BackoffLimit:            ptr.To(r.BackoffLimit),
+			TTLSecondsAfterFinished: ptr.To(r.TTLSecondsAfterFinished),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -175,123 +135,67 @@ func buildMigrationJob(
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: migrationSA,
+					ServiceAccountName: serviceAccount,
 					RestartPolicy:      corev1.RestartPolicyNever,
-					ImagePullSecrets:   deployment.Spec.Template.Spec.ImagePullSecrets,
-					SecurityContext:    deployment.Spec.Template.Spec.SecurityContext,
-					Containers: []corev1.Container{
-						{
-							Name:            "migrate-database",
-							Image:           mainContainer.Image,
-							ImagePullPolicy: mainContainer.ImagePullPolicy,
-							Args:            []string{"migrate"},
-							Env:             mainContainer.Env,
-							EnvFrom:         mainContainer.EnvFrom,
-							Resources:       mainContainer.Resources,
-							VolumeMounts:    mainContainer.VolumeMounts,
-							SecurityContext: mainContainer.SecurityContext,
-						},
-					},
-					// Inherit volumes and scheduling constraints from the parent Deployment.
-					Volumes:      deployment.Spec.Template.Spec.Volumes,
-					NodeSelector: deployment.Spec.Template.Spec.NodeSelector,
-					Tolerations:  deployment.Spec.Template.Spec.Tolerations,
-					Affinity:     deployment.Spec.Template.Spec.Affinity,
+					ImagePullSecrets:   podSpec.ImagePullSecrets,
+					SecurityContext:    podSpec.SecurityContext,
+					Containers: []corev1.Container{{
+						Name:            "migrate-database",
+						Image:           container.Image,
+						ImagePullPolicy: container.ImagePullPolicy,
+						Args:            []string{"migrate"},
+						Env:             container.Env,
+						EnvFrom:         container.EnvFrom,
+						Resources:       container.Resources,
+						VolumeMounts:    container.VolumeMounts,
+						SecurityContext: container.SecurityContext,
+					}},
+					Volumes:      podSpec.Volumes,
+					NodeSelector: podSpec.NodeSelector,
+					Tolerations:  podSpec.Tolerations,
+					Affinity:     podSpec.Affinity,
 				},
 			},
 		},
 	}
+	if r.ActiveDeadlineSeconds > 0 {
+		job.Spec.ActiveDeadlineSeconds = ptr.To(r.ActiveDeadlineSeconds)
+	}
+	job.Annotations[AnnotationPodTemplateHash] = podTemplateHash(&job.Spec.Template)
+	return job
 }
 
-// updateMigrationStatus creates or updates the migration-status ConfigMap.
-func updateMigrationStatus(
-	ctx context.Context,
-	c client.Client,
-	deployment *appsv1.Deployment,
-	version string,
-	jobName string,
-) error {
-	cmName := migrationConfigMapName(deployment.Name)
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cmName,
-			Namespace: deployment.Namespace,
-			Labels: map[string]string{
-				LabelPartOf:    LabelPartOfValue,
-				LabelComponent: "migration",
-				LabelManagedBy: LabelManagedByValue,
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       deployment.Name,
-					UID:        deployment.UID,
-					Controller: ptr.To(true),
-				},
-			},
-		},
-		Data: map[string]string{
+func podTemplateHash(template *corev1.PodTemplateSpec) string {
+	b, err := json.Marshal(template)
+	if err != nil {
+		panic(err) // a PodTemplateSpec always marshals
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(b))[:16]
+}
+
+// updateMigrationStatus records the migrated version in the status ConfigMap.
+func updateMigrationStatus(ctx context.Context, c client.Client, deployment *appsv1.Deployment, version, jobName string) error {
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+		Name:      migrationConfigMapName(deployment.Name),
+		Namespace: deployment.Namespace,
+	}}
+	_, err := controllerutil.CreateOrUpdate(ctx, c, cm, func() error {
+		cm.Labels = map[string]string{
+			LabelPartOf:    LabelPartOfValue,
+			LabelComponent: "migration",
+			LabelManagedBy: LabelManagedByValue,
+		}
+		// Reset on every write in case the Deployment was recreated with a new UID.
+		cm.OwnerReferences = []metav1.OwnerReference{ownerReference(deployment)}
+		cm.Data = map[string]string{
 			"version":    version,
 			"migratedAt": time.Now().UTC().Format(time.RFC3339),
 			"jobName":    jobName,
-		},
-	}
-
-	// Try to get existing ConfigMap first.
-	existing := &corev1.ConfigMap{}
-	err := c.Get(ctx, client.ObjectKeyFromObject(cm), existing)
-	if err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return fmt.Errorf("getting migration status ConfigMap: %w", err)
-		}
-		// ConfigMap doesn't exist — create it.
-		if createErr := c.Create(ctx, cm); createErr != nil {
-			return fmt.Errorf("creating migration status ConfigMap: %w", createErr)
 		}
 		return nil
-	}
-
-	// Update existing ConfigMap (including OwnerReferences in case the Deployment
-	// was deleted and recreated with a new UID).
-	existing.Data = cm.Data
-	existing.Labels = cm.Labels
-	existing.OwnerReferences = cm.OwnerReferences
-	if updateErr := c.Update(ctx, existing); updateErr != nil {
-		return fmt.Errorf("updating migration status ConfigMap: %w", updateErr)
+	})
+	if err != nil {
+		return fmt.Errorf("updating migration status ConfigMap: %w", err)
 	}
 	return nil
-}
-
-// ensureDeploymentScaled ensures the Deployment is scaled to the desired replica count.
-// The desired count is read from the AnnotationDesiredReplicas annotation.
-// Returns true if the Deployment was already at the desired scale.
-func ensureDeploymentScaled(ctx context.Context, c client.Client, deployment *appsv1.Deployment) (bool, error) {
-	desiredStr, ok := deployment.Annotations[AnnotationDesiredReplicas]
-	if !ok || desiredStr == "" {
-		// No annotation — nothing to do. The Deployment may not have been scaled down yet.
-		return true, nil
-	}
-
-	desired, err := strconv.ParseInt(desiredStr, 10, 32)
-	if err != nil {
-		return false, fmt.Errorf("parsing desired replicas annotation: %w", err)
-	}
-
-	desiredInt32 := int32(desired)
-	current := int32(1)
-	if deployment.Spec.Replicas != nil {
-		current = *deployment.Spec.Replicas
-	}
-
-	if current == desiredInt32 {
-		return true, nil
-	}
-
-	patch := client.MergeFrom(deployment.DeepCopy())
-	deployment.Spec.Replicas = ptr.To(desiredInt32)
-	if patchErr := c.Patch(ctx, deployment, patch); patchErr != nil {
-		return false, fmt.Errorf("scaling deployment to %d replicas: %w", desiredInt32, patchErr)
-	}
-	return false, nil
 }
