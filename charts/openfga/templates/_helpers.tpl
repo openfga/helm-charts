@@ -86,14 +86,17 @@ Create the name of the migration service account to use (operator mode only)
 {{- end }}
 
 {{/*
-Identity of the non-secret datastore configuration the operator migrates.
-The Job template already covers rendered environment references. The explicit
-migration.trigger handles changes the chart cannot safely expose, such as a
-Secret value rotated under the same name.
+Identity of the datastore the operator migrates. The operator runs the migration
+again whenever this changes, e.g. when the chart points at a different database
+with the same OpenFGA image. Credentials in the URI are left out, so a password
+change does not count and no secret goes into the hash. migration.trigger is any
+user-chosen string that forces another run, for changes the chart cannot see
+such as a Secret rotated under the same name.
 */}}
 {{- define "openfga.migrationTrigger" -}}
 {{- $ds := .Values.datastore -}}
-{{- dict "engine" $ds.engine "uriSecret" $ds.uriSecret "existingSecret" $ds.existingSecret "secretKeys" $ds.secretKeys "trigger" .Values.migration.trigger | toJson | sha256sum | trunc 16 -}}
+{{- $uri := regexReplaceAll "^([a-z0-9+.-]+://)?[^@/]*@" (toString (default "" $ds.uri)) "${1}" -}}
+{{- dict "engine" $ds.engine "uri" $uri "username" $ds.username "uriSecret" $ds.uriSecret "existingSecret" $ds.existingSecret "secretKeys" $ds.secretKeys "trigger" .Values.migration.trigger | toJson | sha256sum | trunc 16 -}}
 {{- end -}}
 
 {{/*

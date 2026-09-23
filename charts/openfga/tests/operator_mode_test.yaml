@@ -90,7 +90,7 @@ tests:
       - isNull:
           path: metadata.annotations
 
-  - it: should derive the migration trigger from non-secret datastore settings
+  - it: should derive the migration trigger from the datastore settings
     set:
       openfga-operator.enabled: true
       datastore.engine: postgres
@@ -100,20 +100,27 @@ tests:
           path: metadata.annotations["openfga.dev/migration-trigger"]
           pattern: ^[0-9a-f]{16}$
 
-  - it: should change the migration trigger when migration.trigger changes
+  - it: should change the migration trigger when the database or migration.trigger changes
     set:
       openfga-operator.enabled: true
       datastore.engine: postgres
       datastore.uri: postgres://b/openfga
       migration.trigger: "2"
     asserts:
-      - matchRegex:
-          path: metadata.annotations["openfga.dev/migration-trigger"]
-          pattern: ^[0-9a-f]{16}$
       - notEqual:
           path: metadata.annotations["openfga.dev/migration-trigger"]
-          # value for the previous case with no explicit trigger
-          value: 8162fda31ac344d7
+          # value for postgres://a/openfga with no explicit trigger, from the case above
+          value: 791636a2daefd486
+
+  - it: should not change the migration trigger when only the database password changes
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: postgres://openfga:other-password@a/openfga
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-trigger"]
+          value: 791636a2daefd486
 
   - it: should forward migrate labels and non-hook annotations to the operator
     set:

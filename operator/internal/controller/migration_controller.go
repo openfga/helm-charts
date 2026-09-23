@@ -24,7 +24,7 @@ import (
 const retryDelay = 60 * time.Second
 
 // MigrationReconciler watches OpenFGA Deployments and runs a database
-// migration Job whenever its image or migration inputs change.
+// migration Job whenever the OpenFGA image or the datastore trigger changes.
 type MigrationReconciler struct {
 	client.Client
 	Recorder record.EventRecorder
@@ -58,7 +58,6 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	desired.PodTemplateHash = desiredJob.Annotations[AnnotationPodTemplateHash]
 
 	status := &corev1.ConfigMap{}
 	err = r.Get(ctx, types.NamespacedName{Name: migrationConfigMapName(req.Name), Namespace: req.Namespace}, status)
@@ -120,8 +119,17 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// the chart's legacy Helm hook Job, is replaced.
 	complete := isJobConditionTrue(job, batchv1.JobComplete)
 	failedAt, failed := jobFailedAt(job)
-	started := !complete && !failed && (job.Status.Active > 0 || ptr.Deref(job.Status.Ready, 0) > 0 || job.Status.Succeeded > 0)
+	// A pod that is Ready is running the migration; one that already succeeded
+	// finished before the Job condition was written. A pod that merely exists
+	// (Active) may be stuck in Pending and has not started anything.
+	started := !complete && !failed && (ptr.Deref(job.Status.Ready, 0) > 0 || job.Status.Succeeded > 0)
 	outdated := !jobOwnedByDeployment || jobIdentity(job) != desired
+	// A Job whose pod cannot start (a bad secret reference, an image pull
+	// error, an unschedulable pod) never fails on its own, so rebuild it once
+	// the Deployment's pod template has changed.
+	if !outdated && !complete && !failed && !started {
+		outdated = job.Annotations[AnnotationPodTemplateHash] != desiredJob.Annotations[AnnotationPodTemplateHash]
+	}
 	if outdated {
 		// Never interrupt a running migration: a non-transactional step such as
 		// a concurrent index build that is aborted halfway leaves the schema in

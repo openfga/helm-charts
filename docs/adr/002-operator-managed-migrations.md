@@ -79,7 +79,7 @@ The operator runs a **migration controller** that reconciles the OpenFGA Deploym
 │                                                          │
 │  1. Read Deployment and derive migration identity        │
 │  2. Read ConfigMap/openfga-migration-status              │
-│     └── "Last migrated image and pod template hash"      │
+│     └── "Last migrated image and datastore trigger"      │
 │  3. Identities differ → migration needed                 │
 │  4. Create Job/openfga-migrate                           │
 │     ├── ServiceAccount: openfga-migrator (DDL perms)     │
@@ -103,7 +103,7 @@ Readiness comes from OpenFGA itself: `IsReady()` reports `NOT_SERVING` while the
 
 #### Migration identity tracking via ConfigMap
 
-A ConfigMap (`openfga-migration-status`) records the last successfully migrated image version, migration trigger, and Job pod-template hash. The operator compares these values to the desired Job, so changes to datastore configuration, volumes, scheduling, init containers, sidecars, and other migration inputs trigger a new migration. Because Secret contents are not present in a Deployment, users can change `migration.trigger` to force a migration after rotating a referenced Secret in place. This is:
+A ConfigMap (`openfga-migration-status`) records the last successfully migrated identity: the image version and the datastore trigger the chart derives from the connection settings (without credentials). The operator compares this to the Deployment to determine if migration is needed. This is:
 - Simple to inspect (`kubectl get configmap openfga-migration-status -o yaml`)
 - Survives operator restarts
 - Can be manually deleted to force re-migration once the previous migration Job has been cleaned up

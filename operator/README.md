@@ -1,13 +1,13 @@
 # OpenFGA Operator
 
-A Kubernetes operator that manages database migrations for OpenFGA deployments. Instead of relying on Helm hooks and init containers, the operator watches OpenFGA Deployments, detects migration input changes, and orchestrates migrations as regular Jobs.
+A Kubernetes operator that manages database migrations for OpenFGA deployments. Instead of relying on Helm hooks and init containers, the operator watches OpenFGA Deployments, detects image and datastore changes, and orchestrates migrations as regular Jobs.
 
 This is **Stage 1** of the operator — focused solely on migration orchestration. See [ADR-001](../docs/adr/001-adopt-openfga-operator.md) for the full roadmap.
 
 ## How It Works
 
 1. The operator watches Deployments in its configured namespace, which defaults to the operator pod's namespace, labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
-2. When the desired migration identity changes (the image, migration trigger, or rendered Job pod template differs from the `{name}-migration-status` ConfigMap), the operator:
+2. When the migration identity changes (the container image tag plus the `openfga.dev/migration-trigger` annotation, compared to the `{name}-migration-status` ConfigMap), the operator:
    - Creates a migration Job running `openfga migrate`, using the Deployment's image, environment, pod scheduling, init containers, and other containers as [native sidecars](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/)
    - Applies migration-specific containers, volumes, mounts, resources, timeout, labels, and annotations from the Deployment annotations rendered by the chart
    - Waits for the Job to complete
@@ -151,7 +151,7 @@ The operator reads these annotations from the OpenFGA Deployment:
 
 ## Limitations
 
-- **Secret contents are not observable:** The migration identity covers the image, rendered datastore settings, environment references, and pod configuration. Kubernetes does not expose referenced Secret contents through the Deployment, so change `migration.trigger` when rotating a Secret in place and a migration must rerun.
+- **Secret contents are not observable:** The trigger covers the datastore settings the chart renders (engine, database host and name, Secret names and keys) but not the contents of a Secret that changes under the same name; set `migration.trigger` to a new value in that case. Credentials in the URI are never part of the trigger.
 - **Mutable image contents are not observable:** Reusing a tag such as `latest` does not change the Deployment's image reference. Use immutable tags or digests, or change `migration.trigger` when deliberately replacing the contents of a mutable tag.
 - **Helm hook metadata:** Operator-managed Jobs ignore `helm.sh/*` entries in `migrate.annotations`. Other migration annotations and labels are forwarded, but cannot override the operator's identity labels.
 - **Injected sidecars:** Containers injected by a webhook are not part of the Deployment's pod spec and cannot be converted to native sidecars. Disable injection for the migration pod with `migrate.annotations` if the injected container does not exit.

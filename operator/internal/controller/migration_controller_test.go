@@ -93,9 +93,8 @@ func newStatus(dep *appsv1.Deployment) *corev1.ConfigMap {
 			},
 		},
 		Data: map[string]string{
-			"version":         job.Annotations[AnnotationDesiredVersion],
-			"trigger":         job.Annotations[AnnotationMigrationTrigger],
-			"podTemplateHash": job.Annotations[AnnotationPodTemplateHash],
+			"version": job.Annotations[AnnotationDesiredVersion],
+			"trigger": job.Annotations[AnnotationMigrationTrigger],
 		},
 	}
 }
@@ -298,7 +297,7 @@ func TestReconcile_JobSucceeded_CreatesStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected migration status ConfigMap: %v", err)
 	}
-	if cm.Data["version"] != "v1.14.0" || cm.Data["podTemplateHash"] != job.Annotations[AnnotationPodTemplateHash] || cm.Data["jobName"] != jobKey.Name {
+	if cm.Data["version"] != "v1.14.0" || cm.Data["jobName"] != jobKey.Name {
 		t.Errorf("unexpected status data: %v", cm.Data)
 	}
 	if len(cm.OwnerReferences) != 1 || cm.OwnerReferences[0].UID != "test-uid-123" {
@@ -394,9 +393,6 @@ func TestReconcile_JobSucceeded_UpdatesStatus(t *testing.T) {
 	}
 	if cm.Data["version"] != "v1.14.0" {
 		t.Errorf("expected version v1.14.0, got %q", cm.Data["version"])
-	}
-	if cm.Data["podTemplateHash"] != job.Annotations[AnnotationPodTemplateHash] {
-		t.Errorf("expected the completed Job's pod template hash, got %q", cm.Data["podTemplateHash"])
 	}
 	if cm.OwnerReferences[0].UID != "test-uid-123" {
 		t.Errorf("expected owner reference to be reset to the current Deployment, got %+v", cm.OwnerReferences)
@@ -509,6 +505,9 @@ func TestReconcile_JobForOtherVersion_Replaced(t *testing.T) {
 func TestReconcile_UnstartedJobWithOutdatedTemplate_Replaced(t *testing.T) {
 	dep := newTestDeployment("openfga/openfga:v1.14.0")
 	job := newTestJob(dep)
+	// The pod exists but cannot start, e.g. CreateContainerConfigError.
+	job.Status.Active = 1
+	job.Status.Ready = ptr.To(int32(0))
 	dep.Spec.Template.Spec.Containers[0].Env[1].Value = "postgres://db.example.com/openfga"
 	r := newReconciler(t, nil, dep, job)
 
@@ -527,59 +526,67 @@ func TestReconcile_UnstartedJobWithOutdatedTemplate_Replaced(t *testing.T) {
 	}
 }
 
-func TestReconcile_StatusWithOutdatedMigrationInputs_Reruns(t *testing.T) {
-	tests := []struct {
-		name   string
-		change func(*appsv1.Deployment)
-	}{
-		{
-			name: "datastore URI",
-			change: func(dep *appsv1.Deployment) {
-				dep.Spec.Template.Spec.Containers[0].Env[1].Value = "postgres://other.example.com/openfga"
-			},
-		},
-		{
-			name: "migration trigger",
-			change: func(dep *appsv1.Deployment) {
-				dep.Annotations[AnnotationMigrationTrigger] = "secret-rotation-2"
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dep := newTestDeployment("openfga/openfga:v1.14.0")
-			status := newStatus(dep)
-			tt.change(dep)
-			r := newReconciler(t, nil, dep, status)
-
-			reconcileOnce(t, r)
-			job, err := getJob(r)
-			if err != nil {
-				t.Fatalf("expected changed migration inputs to create a Job: %v", err)
-			}
-			if job.Annotations[AnnotationPodTemplateHash] == status.Data["podTemplateHash"] {
-				t.Error("expected changed migration inputs to produce a new identity")
-			}
-		})
-	}
-}
-
-func TestReconcile_VersionOnlyStatus_Reruns(t *testing.T) {
+func TestReconcile_StatusWithOtherTrigger_Reruns(t *testing.T) {
 	dep := newTestDeployment("openfga/openfga:v1.14.0")
-	status := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            statusKey.Name,
-			Namespace:       statusKey.Namespace,
-			Labels:          map[string]string{LabelManagedBy: LabelManagedByValue},
-			OwnerReferences: []metav1.OwnerReference{ownerReference(dep)},
-		},
-		Data: map[string]string{"version": "v1.14.0"},
-	}
+	status := newStatus(dep)
+	dep.Annotations[AnnotationMigrationTrigger] = "secret-rotation-2"
 	r := newReconciler(t, nil, dep, status)
 
 	reconcileOnce(t, r)
+	job, err := getJob(r)
+	if err != nil {
+		t.Fatalf("expected a changed trigger to create a Job: %v", err)
+	}
+	if job.Annotations[AnnotationMigrationTrigger] != "secret-rotation-2" {
+		t.Errorf("expected the Job to carry the new trigger, got %q", job.Annotations[AnnotationMigrationTrigger])
+	}
+}
+
+func TestReconcile_UpToDate_IgnoresPodTemplateChanges(t *testing.T) {
+	// The recorded identity is the image and the trigger. A change to the pod
+	// template alone, such as a log level or resource limits, is not a reason
+	// to run the migration again.
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	status := newStatus(dep)
+	dep.Spec.Template.Spec.Containers[0].Env[2].Value = "debug"
+	r := newReconciler(t, nil, dep, status)
+
+	if result := reconcileOnce(t, r); result.RequeueAfter != 0 {
+		t.Errorf("expected no requeue for an up-to-date migration, got %v", result.RequeueAfter)
+	}
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Errorf("a pod template change must not run a migration, got err=%v", err)
+	}
+}
+
+func TestReconcile_VersionOnlyStatus(t *testing.T) {
+	// A status written before the trigger existed has no trigger key. It still
+	// matches a Deployment without a trigger, and mismatches one with a trigger.
+	versionOnly := func(dep *appsv1.Deployment) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            statusKey.Name,
+				Namespace:       statusKey.Namespace,
+				Labels:          map[string]string{LabelManagedBy: LabelManagedByValue},
+				OwnerReferences: []metav1.OwnerReference{ownerReference(dep)},
+			},
+			Data: map[string]string{"version": "v1.14.0"},
+		}
+	}
+
+	dep := newTestDeployment("openfga/openfga:v1.14.0")
+	r := newReconciler(t, nil, dep, versionOnly(dep))
+	reconcileOnce(t, r)
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Errorf("no trigger on either side must not run a migration, got err=%v", err)
+	}
+
+	dep = newTestDeployment("openfga/openfga:v1.14.0")
+	dep.Annotations[AnnotationMigrationTrigger] = "abc"
+	r = newReconciler(t, nil, dep, versionOnly(dep))
+	reconcileOnce(t, r)
 	if _, err := getJob(r); err != nil {
-		t.Fatalf("expected legacy version-only status to be migrated to the new identity: %v", err)
+		t.Errorf("a Deployment with a trigger must migrate over a version-only status: %v", err)
 	}
 }
 
@@ -617,7 +624,6 @@ func TestReconcile_StartedJobWithOutdatedTemplate_Kept(t *testing.T) {
 		name   string
 		status batchv1.JobStatus
 	}{
-		{"active pod not ready", batchv1.JobStatus{Active: 1}},
 		{"pod running", batchv1.JobStatus{Active: 1, Ready: ptr.To(int32(1))}},
 		{"pod finished before the job is marked complete", batchv1.JobStatus{Succeeded: 1, Ready: ptr.To(int32(0))}},
 	} {

@@ -59,9 +59,8 @@ const (
 // migration has to run: the OpenFGA image version plus the trigger the chart
 // derives from the datastore configuration.
 type migrationIdentity struct {
-	Version         string
-	Trigger         string
-	PodTemplateHash string
+	Version string
+	Trigger string
 }
 
 func desiredIdentity(deployment *appsv1.Deployment, container *corev1.Container) migrationIdentity {
@@ -73,9 +72,8 @@ func desiredIdentity(deployment *appsv1.Deployment, container *corev1.Container)
 
 func jobIdentity(job *batchv1.Job) migrationIdentity {
 	return migrationIdentity{
-		Version:         job.Annotations[AnnotationDesiredVersion],
-		Trigger:         job.Annotations[AnnotationMigrationTrigger],
-		PodTemplateHash: job.Annotations[AnnotationPodTemplateHash],
+		Version: job.Annotations[AnnotationDesiredVersion],
+		Trigger: job.Annotations[AnnotationMigrationTrigger],
 	}
 }
 
@@ -85,11 +83,7 @@ func recordedIdentity(cm *corev1.ConfigMap, deployment *appsv1.Deployment) migra
 	if !metav1.IsControlledBy(cm, deployment) {
 		return migrationIdentity{}
 	}
-	return migrationIdentity{
-		Version:         cm.Data["version"],
-		Trigger:         cm.Data["trigger"],
-		PodTemplateHash: cm.Data["podTemplateHash"],
-	}
+	return migrationIdentity{Version: cm.Data["version"], Trigger: cm.Data["trigger"]}
 }
 
 // extractImageTag returns the tag portion of a container image reference.
@@ -421,11 +415,10 @@ func updateMigrationStatus(ctx context.Context, c client.Client, deployment *app
 		}
 		cm.OwnerReferences = []metav1.OwnerReference{ownerReference(deployment)}
 		cm.Data = map[string]string{
-			"version":         identity.Version,
-			"trigger":         identity.Trigger,
-			"podTemplateHash": identity.PodTemplateHash,
-			"migratedAt":      time.Now().UTC().Format(time.RFC3339),
-			"jobName":         jobName,
+			"version":    identity.Version,
+			"trigger":    identity.Trigger,
+			"migratedAt": time.Now().UTC().Format(time.RFC3339),
+			"jobName":    jobName,
 		}
 		return nil
 	})
