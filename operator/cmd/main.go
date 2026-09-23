@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/openfga/openfga-operator/internal/controller"
+	"github.com/openfga/helm-charts/operator/internal/controller"
 )
 
 var scheme = runtime.NewScheme()
