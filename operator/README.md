@@ -18,7 +18,7 @@ The operator never scales the Deployment to 0. A pod that starts before the migr
 
 ## Prerequisites
 
-- Go 1.26.2+
+- Go 1.26.8+
 - Docker
 - Helm 3.6+
 - A Kubernetes cluster (Rancher Desktop, kind, etc.)

@@ -1,5 +1,5 @@
-# pinned multi-arch index for golang:1.26.2 (linux/amd64, linux/arm64, ...)
-FROM --platform=$BUILDPLATFORM golang:1.26.2@sha256:5f3787b7f902c07c7ec4f3aa91a301a3eda8133aa32661a3b3a3a86ab3a68a36 AS builder
+# pinned multi-arch index for golang:1.26.8 (linux/amd64, linux/arm64, ...)
+FROM --platform=$BUILDPLATFORM golang:1.26.8@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9 AS builder
 
 # buildx provides these automatically; declare so Go cross-compiles to the
 # requested target instead of the build host's arch.
