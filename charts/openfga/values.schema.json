@@ -1314,11 +1314,11 @@
         },
         "migration": {
             "type": "object",
-            "description": "Configuration for migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
+            "description": "Settings for the migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
             "properties": {
-                "nonce": {
+                "trigger": {
                     "type": "string",
-                    "description": "Arbitrary value included in the migration identity. Change it to rerun migrations when referenced Secret data changes without changing its name.",
+                    "description": "Change to any new value to run the migration again without changing the image or datastore settings",
                     "default": ""
                 },
                 "serviceAccount": {

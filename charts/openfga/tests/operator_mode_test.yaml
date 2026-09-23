@@ -44,7 +44,6 @@ tests:
       migrate.labels:
         app.kubernetes.io/component: overridden
         network-policy.example.com/database: allowed
-      migration.nonce: secret-rotation-2
     asserts:
       - equal:
           path: metadata.annotations["openfga.dev/migration-init-containers"]
@@ -64,9 +63,6 @@ tests:
       - equal:
           path: metadata.annotations["openfga.dev/migration-timeout"]
           value: 2m
-      - equal:
-          path: metadata.annotations["openfga.dev/migration-nonce"]
-          value: secret-rotation-2
       - equal:
           path: metadata.annotations["openfga.dev/migration-annotations"]
           value: '{"admission.example.com/inject":"enabled"}'
@@ -93,6 +89,58 @@ tests:
     asserts:
       - isNull:
           path: metadata.annotations
+
+  - it: should derive the migration trigger from non-secret datastore settings
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: postgres://a/openfga
+    asserts:
+      - matchRegex:
+          path: metadata.annotations["openfga.dev/migration-trigger"]
+          pattern: ^[0-9a-f]{16}$
+
+  - it: should change the migration trigger when migration.trigger changes
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: postgres://b/openfga
+      migration.trigger: "2"
+    asserts:
+      - matchRegex:
+          path: metadata.annotations["openfga.dev/migration-trigger"]
+          pattern: ^[0-9a-f]{16}$
+      - notEqual:
+          path: metadata.annotations["openfga.dev/migration-trigger"]
+          # value for the previous case with no explicit trigger
+          value: 8162fda31ac344d7
+
+  - it: should forward migrate labels and non-hook annotations to the operator
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      migrate.labels:
+        team: auth
+      migrate.annotations:
+        helm.sh/hook: post-install
+        sidecar.istio.io/inject: "false"
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-labels"]
+          value: '{"team":"auth"}'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-annotations"]
+          value: '{"sidecar.istio.io/inject":"false"}'
+
+  - it: should not emit migration metadata annotations for hook-only annotations
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-labels"]
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-annotations"]
 
   - it: should use custom migration service account name when set
     set:

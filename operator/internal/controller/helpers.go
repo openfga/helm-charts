@@ -34,18 +34,17 @@ const (
 	AnnotationMigrationEnabled        = "openfga.dev/migration-enabled"
 	AnnotationContainerName           = "openfga.dev/container-name"
 	AnnotationMigrationServiceAccount = "openfga.dev/migration-service-account"
+	AnnotationMigrationTrigger        = "openfga.dev/migration-trigger"
 	AnnotationMigrationInitContainers = "openfga.dev/migration-init-containers"
 	AnnotationMigrationSidecars       = "openfga.dev/migration-sidecars"
 	AnnotationMigrationVolumes        = "openfga.dev/migration-volumes"
 	AnnotationMigrationVolumeMounts   = "openfga.dev/migration-volume-mounts"
 	AnnotationMigrationResources      = "openfga.dev/migration-resources"
 	AnnotationMigrationTimeout        = "openfga.dev/migration-timeout"
-	AnnotationMigrationNonce          = "openfga.dev/migration-nonce"
 	AnnotationMigrationAnnotations    = "openfga.dev/migration-annotations"
 	AnnotationMigrationLabels         = "openfga.dev/migration-labels"
 
-	// Annotations set on migration Jobs: the version the Job migrates to, and a
-	// hash of the pod template it was built from.
+	// Annotations set on migration Jobs.
 	AnnotationDesiredVersion  = "openfga.dev/desired-version"
 	AnnotationPodTemplateHash = "openfga.dev/pod-template-hash"
 
@@ -55,6 +54,43 @@ const (
 	DefaultActiveDeadlineSeconds   int64 = 0
 	DefaultTTLSecondsAfterFinished int32 = 300
 )
+
+// migrationIdentity is what the operator compares to decide whether a
+// migration has to run: the OpenFGA image version plus the trigger the chart
+// derives from the datastore configuration.
+type migrationIdentity struct {
+	Version         string
+	Trigger         string
+	PodTemplateHash string
+}
+
+func desiredIdentity(deployment *appsv1.Deployment, container *corev1.Container) migrationIdentity {
+	return migrationIdentity{
+		Version: extractImageTag(container.Image),
+		Trigger: deployment.Annotations[AnnotationMigrationTrigger],
+	}
+}
+
+func jobIdentity(job *batchv1.Job) migrationIdentity {
+	return migrationIdentity{
+		Version:         job.Annotations[AnnotationDesiredVersion],
+		Trigger:         job.Annotations[AnnotationMigrationTrigger],
+		PodTemplateHash: job.Annotations[AnnotationPodTemplateHash],
+	}
+}
+
+// recordedIdentity returns the identity stored in the status ConfigMap, or the
+// zero value when the ConfigMap is missing or not owned by this Deployment.
+func recordedIdentity(cm *corev1.ConfigMap, deployment *appsv1.Deployment) migrationIdentity {
+	if !metav1.IsControlledBy(cm, deployment) {
+		return migrationIdentity{}
+	}
+	return migrationIdentity{
+		Version:         cm.Data["version"],
+		Trigger:         cm.Data["trigger"],
+		PodTemplateHash: cm.Data["podTemplateHash"],
+	}
+}
 
 // extractImageTag returns the tag portion of a container image reference.
 // For "openfga/openfga:v1.14.0" it returns "v1.14.0".
@@ -133,19 +169,21 @@ func isLegacyMigrationJob(job *batchv1.Job) bool {
 }
 
 // buildMigrationJob constructs a Job that runs "openfga migrate" with the
-// OpenFGA container's image, environment, volumes and scheduling.
-func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, container *corev1.Container, version string) (*batchv1.Job, error) {
+// OpenFGA container's image and environment, the Deployment's pod scheduling,
+// and chart-provided migration-specific configuration. Other Deployment
+// containers and migration sidecars run as native sidecars.
+func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, container *corev1.Container, desired migrationIdentity) (*batchv1.Job, error) {
 	podSpec := deployment.Spec.Template.Spec
 	serviceAccount := deployment.Annotations[AnnotationMigrationServiceAccount]
 	if serviceAccount == "" {
 		serviceAccount = podSpec.ServiceAccountName
 	}
 
-	initContainers, err := annotationJSON[[]corev1.Container](deployment, AnnotationMigrationInitContainers)
+	migrationInitContainers, err := annotationJSON[[]corev1.Container](deployment, AnnotationMigrationInitContainers)
 	if err != nil {
 		return nil, err
 	}
-	sidecars, err := annotationJSON[[]corev1.Container](deployment, AnnotationMigrationSidecars)
+	migrationSidecars, err := annotationJSON[[]corev1.Container](deployment, AnnotationMigrationSidecars)
 	if err != nil {
 		return nil, err
 	}
@@ -178,11 +216,9 @@ func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, c
 		env = append(env, corev1.EnvVar{Name: "OPENFGA_TIMEOUT", Value: timeout})
 	}
 
-	podAnnotations := mergeStringMaps(migrationAnnotations, nil)
-	delete(podAnnotations, AnnotationMigrationNonce)
-	if nonce := deployment.Annotations[AnnotationMigrationNonce]; nonce != "" {
-		podAnnotations[AnnotationMigrationNonce] = nonce
-	}
+	podAnnotations := mergeStringMaps(migrationAnnotations, map[string]string{
+		AnnotationMigrationTrigger: desired.Trigger,
+	})
 	jobLabels := mergeStringMaps(migrationLabels, map[string]string{
 		LabelPartOf:    LabelPartOfValue,
 		LabelComponent: "migration",
@@ -193,9 +229,30 @@ func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, c
 		LabelComponent: "migration",
 	})
 	jobAnnotations := mergeStringMaps(migrationAnnotations, map[string]string{
-		AnnotationDesiredVersion: version,
+		AnnotationDesiredVersion:   desired.Version,
+		AnnotationMigrationTrigger: desired.Trigger,
 	})
-	containers := append([]corev1.Container{{
+
+	// Native sidecars start before regular init containers and stop when the
+	// migration container exits.
+	var runtimeSidecars []corev1.Container
+	for i := range podSpec.Containers {
+		if podSpec.Containers[i].Name == container.Name {
+			continue
+		}
+		sidecar := *podSpec.Containers[i].DeepCopy()
+		runtimeSidecars = append(runtimeSidecars, sidecar)
+	}
+	sidecars := mergeContainers(runtimeSidecars, migrationSidecars)
+	var initContainers []corev1.Container
+	for i := range sidecars {
+		sidecar := *sidecars[i].DeepCopy()
+		sidecar.RestartPolicy = ptr.To(corev1.ContainerRestartPolicyAlways)
+		initContainers = append(initContainers, sidecar)
+	}
+	initContainers = append(initContainers, mergeContainers(podSpec.InitContainers, migrationInitContainers)...)
+
+	containers := []corev1.Container{{
 		Name:            "migrate-database",
 		Image:           container.Image,
 		ImagePullPolicy: container.ImagePullPolicy,
@@ -205,7 +262,7 @@ func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, c
 		Resources:       resources,
 		VolumeMounts:    mergeVolumeMounts(container.VolumeMounts, extraVolumeMounts),
 		SecurityContext: container.SecurityContext,
-	}}, sidecars...)
+	}}
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -240,6 +297,11 @@ func (r *MigrationReconciler) buildMigrationJob(deployment *appsv1.Deployment, c
 	if r.ActiveDeadlineSeconds > 0 {
 		job.Spec.ActiveDeadlineSeconds = ptr.To(r.ActiveDeadlineSeconds)
 	}
+	if job.Annotations == nil {
+		job.Annotations = map[string]string{}
+	}
+	job.Annotations[AnnotationDesiredVersion] = desired.Version
+	job.Annotations[AnnotationMigrationTrigger] = desired.Trigger
 	job.Annotations[AnnotationPodTemplateHash] = podTemplateHash(&job.Spec.Template)
 	return job, nil
 }
@@ -287,6 +349,23 @@ func mergeVolumes(base, extra []corev1.Volume) []corev1.Volume {
 	return merged
 }
 
+func mergeContainers(base, overrides []corev1.Container) []corev1.Container {
+	merged := append([]corev1.Container(nil), base...)
+	index := make(map[string]int, len(merged))
+	for i := range merged {
+		index[merged[i].Name] = i
+	}
+	for _, container := range overrides {
+		if i, ok := index[container.Name]; ok {
+			merged[i] = container
+			continue
+		}
+		index[container.Name] = len(merged)
+		merged = append(merged, container)
+	}
+	return merged
+}
+
 func mergeVolumeMounts(base, extra []corev1.VolumeMount) []corev1.VolumeMount {
 	merged := append([]corev1.VolumeMount(nil), base...)
 	index := make(map[string]int, len(merged))
@@ -323,8 +402,8 @@ func podTemplateHash(template *corev1.PodTemplateSpec) string {
 	return fmt.Sprintf("%x", sha256.Sum256(b))[:16]
 }
 
-// updateMigrationStatus records the migrated version and Job template identity.
-func updateMigrationStatus(ctx context.Context, c client.Client, deployment *appsv1.Deployment, version, podTemplateHash, jobName string) error {
+// updateMigrationStatus records the migrated identity in the status ConfigMap.
+func updateMigrationStatus(ctx context.Context, c client.Client, deployment *appsv1.Deployment, identity migrationIdentity, jobName string) error {
 	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
 		Name:      migrationConfigMapName(deployment.Name),
 		Namespace: deployment.Namespace,
@@ -340,11 +419,11 @@ func updateMigrationStatus(ctx context.Context, c client.Client, deployment *app
 			LabelComponent: "migration",
 			LabelManagedBy: LabelManagedByValue,
 		}
-		// Reset on every write in case the Deployment was recreated with a new UID.
 		cm.OwnerReferences = []metav1.OwnerReference{ownerReference(deployment)}
 		cm.Data = map[string]string{
-			"version":         version,
-			"podTemplateHash": podTemplateHash,
+			"version":         identity.Version,
+			"trigger":         identity.Trigger,
+			"podTemplateHash": identity.PodTemplateHash,
 			"migratedAt":      time.Now().UTC().Format(time.RFC3339),
 			"jobName":         jobName,
 		}

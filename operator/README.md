@@ -7,10 +7,11 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 ## How It Works
 
 1. The operator watches Deployments in its configured namespace, which defaults to the operator pod's namespace, labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
-2. When the desired migration identity changes (comparing the rendered migration Job pod template to the `{name}-migration-status` ConfigMap), the operator:
-   - Creates a migration Job running `openfga migrate`
+2. When the desired migration identity changes (the image, migration trigger, or rendered Job pod template differs from the `{name}-migration-status` ConfigMap), the operator:
+   - Creates a migration Job running `openfga migrate`, using the Deployment's image, environment, pod scheduling, init containers, and other containers as [native sidecars](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/)
+   - Applies migration-specific containers, volumes, mounts, resources, timeout, labels, and annotations from the Deployment annotations rendered by the chart
    - Waits for the Job to complete
-   - Updates the ConfigMap with the new version
+   - Records the identity in the ConfigMap and applies `ttlSecondsAfterFinished` so Kubernetes cleans the Job up
 3. On failure, a `MigrationFailed` condition is set on the Deployment. The failed Job is kept for 60 seconds so its logs can be inspected, then replaced with a new one.
 
 A running migration is never interrupted. If the image changes again while a Job's pod is running (a rollback, or two upgrades in a row), the operator waits for that Job to finish and then runs the migration for the new image. Aborting a non-transactional step such as Postgres's concurrent index build in migration 006 leaves an invalid index that the next run skips. To abort a migration that is stuck, delete the Job or set `migrationJob.activeDeadlineSeconds`.
@@ -22,7 +23,7 @@ The operator never changes the Deployment's replica count or pod template. On a 
 - Go 1.26.8+
 - Docker
 - Helm 3.6+
-- A Kubernetes cluster (Rancher Desktop, kind, etc.)
+- A Kubernetes cluster (Rancher Desktop, kind, etc.), 1.29 or newer when the OpenFGA pod has sidecars
 
 ## Development
 
@@ -55,8 +56,10 @@ docker build -t openfga/openfga-operator:dev .
 
 CI publishes `ghcr.io/openfga/openfga-operator:<appVersion>` on the first push to `main` that carries that appVersion and never overwrites it, and chart-releaser likewise skips chart versions that already exist. A change to the operator image (`cmd/`, `internal/`, `go.mod`, `go.sum`, `Dockerfile`) therefore has to bump, in the same PR:
 
-1. `appVersion` and `version` in `charts/openfga-operator/Chart.yaml` (the operator workflow fails the PR otherwise)
-2. the `openfga-operator` dependency version and `version` in `charts/openfga/Chart.yaml`, then `helm dependency update charts/openfga` to refresh `Chart.lock` (`helm dependency build` fails otherwise)
+1. `appVersion` and `version` in `charts/openfga-operator/Chart.yaml`
+2. the `openfga-operator` dependency version and `version` in `charts/openfga/Chart.yaml`, then `helm dependency update charts/openfga` to refresh `Chart.lock`
+
+`.github/scripts/check-operator-release.sh origin/main` checks the first two files and runs on every PR; `helm dependency build` fails when `Chart.lock` is stale.
 
 ## Local Testing
 
@@ -135,22 +138,23 @@ The operator reads these annotations from the OpenFGA Deployment:
 |------------|-------------|
 | `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `openfga-operator.enabled` and `datastore.applyMigrations` are true and the datastore is Postgres or MySQL. |
 | `openfga.dev/container-name` | The OpenFGA container in the pod spec. Defaults to `openfga`. |
+| `openfga.dev/migration-trigger` | Any string that is part of the migration identity alongside the image tag; a change runs the migration again. The chart derives it from the datastore settings and `migration.trigger`. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
 | `openfga.dev/migration-init-containers` | JSON array of additional init containers for the migration Job. Generated from `migrate.extraInitContainers`. |
-| `openfga.dev/migration-sidecars` | JSON array of additional containers for the migration Job. Generated from `migrate.sidecars`. |
+| `openfga.dev/migration-sidecars` | JSON array of additional native sidecars for the migration Job. Generated from `migrate.sidecars`. |
 | `openfga.dev/migration-volumes` | JSON array of additional volumes for the migration Job. Generated from `migrate.extraVolumes`. |
 | `openfga.dev/migration-volume-mounts` | JSON array of additional mounts for the migration container. Generated from `migrate.extraVolumeMounts`. |
 | `openfga.dev/migration-resources` | JSON resource requirements for the migration container. Generated from `datastore.migrations.resources`. |
 | `openfga.dev/migration-timeout` | `OPENFGA_TIMEOUT` for the migration container. Generated from `migrate.timeout`. |
-| `openfga.dev/migration-nonce` | Arbitrary value included in the migration identity. Generated from `migration.nonce`. |
 | `openfga.dev/migration-annotations` | JSON map of non-Helm annotations for the migration Job and pod. Generated from `migrate.annotations`; `helm.sh/*` hook annotations are excluded. |
 | `openfga.dev/migration-labels` | JSON map of additional labels for the migration Job and pod. Generated from `migrate.labels`; operator identity labels take precedence. |
 
 ## Limitations
 
-- **Secret contents are not observable:** The migration identity covers the image, environment references, pod configuration, migration-specific containers, and `migration.nonce`. Kubernetes does not expose referenced Secret contents through the Deployment, so change `migration.nonce` when rotating a Secret in place and a migration must rerun.
-- **Mutable image contents are not observable:** Reusing a tag such as `latest` does not change the Deployment's image reference. Use immutable tags or digests, or change `migration.nonce` when deliberately replacing the contents of a mutable tag.
+- **Secret contents are not observable:** The migration identity covers the image, rendered datastore settings, environment references, and pod configuration. Kubernetes does not expose referenced Secret contents through the Deployment, so change `migration.trigger` when rotating a Secret in place and a migration must rerun.
+- **Mutable image contents are not observable:** Reusing a tag such as `latest` does not change the Deployment's image reference. Use immutable tags or digests, or change `migration.trigger` when deliberately replacing the contents of a mutable tag.
 - **Helm hook metadata:** Operator-managed Jobs ignore `helm.sh/*` entries in `migrate.annotations`. Other migration annotations and labels are forwarded, but cannot override the operator's identity labels.
-- **Sidecar completion:** Containers configured through `migrate.sidecars` must exit after the migration completes. A sidecar that runs indefinitely keeps the Job pod running and prevents the Job from completing.
+- **Injected sidecars:** Containers injected by a webhook are not part of the Deployment's pod spec and cannot be converted to native sidecars. Disable injection for the migration pod with `migrate.annotations` if the injected container does not exit.
 - **Job pod labels:** The migration pod is labelled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: migration`, not with the OpenFGA Deployment's `app.kubernetes.io/name`/`instance` labels (which would make it a Service endpoint). A NetworkPolicy that allows database egress only for the OpenFGA pods' labels needs a rule for the migration pod too.
+- **Same-name resources:** The operator only replaces a `{name}-migrate` Job it created itself or the chart's legacy hook Job, and only trusts a `{name}-migration-status` ConfigMap owned by the Deployment. Anything else with those names blocks the migration with a `MigrationJobConflict` event until it is removed.
 - **One namespace per operator:** The operator reconciles every opted-in OpenFGA Deployment in its watch namespace. Operators installed by several releases in one namespace share a leader election lease, so only one of them is active at a time.

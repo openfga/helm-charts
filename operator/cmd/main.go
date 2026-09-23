@@ -97,6 +97,7 @@ func main() {
 
 	reconciler := &controller.MigrationReconciler{
 		Client:                  mgr.GetClient(),
+		Recorder:                mgr.GetEventRecorderFor("openfga-operator"),
 		BackoffLimit:            int32(backoffLimit),
 		ActiveDeadlineSeconds:   int64(activeDeadline),
 		TTLSecondsAfterFinished: int32(ttlAfterFinished),

@@ -10,6 +10,7 @@ metadata:
     {{- if $operatorMigrations }}
     openfga.dev/migration-enabled: "true"
     openfga.dev/container-name: "{{ .Chart.Name }}"
+    openfga.dev/migration-trigger: {{ include "openfga.migrationTrigger" . | quote }}
     {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
     openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
     {{- end }}
@@ -31,20 +32,12 @@ metadata:
     {{- with .Values.migrate.timeout }}
     openfga.dev/migration-timeout: {{ . | quote }}
     {{- end }}
-    {{- with .Values.migration.nonce }}
-    openfga.dev/migration-nonce: {{ . | quote }}
-    {{- end }}
-    {{- $migrationAnnotations := dict }}
-    {{- range $key, $value := .Values.migrate.annotations }}
-    {{- if not (hasPrefix "helm.sh/" $key) }}
-    {{- $_ := set $migrationAnnotations $key $value }}
-    {{- end }}
-    {{- end }}
-    {{- with $migrationAnnotations }}
-    openfga.dev/migration-annotations: {{ . | toJson | quote }}
-    {{- end }}
     {{- with .Values.migrate.labels }}
-    openfga.dev/migration-labels: {{ . | toJson | quote }}
+    openfga.dev/migration-labels: {{ toJson . | quote }}
+    {{- end }}
+    {{- $migrationAnnotations := include "openfga.migrationAnnotations" . }}
+    {{- if ne $migrationAnnotations "{}" }}
+    openfga.dev/migration-annotations: {{ $migrationAnnotations | quote }}
     {{- end }}
     {{- end }}
     {{- with .Values.annotations }}

@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -26,12 +27,13 @@ const retryDelay = 60 * time.Second
 // migration Job whenever its image or migration inputs change.
 type MigrationReconciler struct {
 	client.Client
+	Recorder record.EventRecorder
 
 	// BackoffLimit for migration Jobs.
 	BackoffLimit int32
 	// ActiveDeadlineSeconds for migration Jobs; 0 means no deadline.
 	ActiveDeadlineSeconds int64
-	// TTLSecondsAfterFinished for migration Jobs.
+	// TTLSecondsAfterFinished is applied to migration Jobs once they succeed.
 	TTLSecondsAfterFinished int32
 }
 
@@ -51,12 +53,12 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	desiredVersion := extractImageTag(container.Image)
-	desiredJob, err := r.buildMigrationJob(deployment, container, desiredVersion)
+	desired := desiredIdentity(deployment, container)
+	desiredJob, err := r.buildMigrationJob(deployment, container, desired)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	desiredPodTemplateHash := desiredJob.Annotations[AnnotationPodTemplateHash]
+	desired.PodTemplateHash = desiredJob.Annotations[AnnotationPodTemplateHash]
 
 	status := &corev1.ConfigMap{}
 	err = r.Get(ctx, types.NamespacedName{Name: migrationConfigMapName(req.Name), Namespace: req.Namespace}, status)
@@ -67,16 +69,28 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err == nil && !statusOwnedByDeployment && !isOperatorManagedResourceForDeployment(status, deployment) {
 		return ctrl.Result{}, fmt.Errorf("migration status ConfigMap %s/%s already exists and is not managed by this Deployment", status.Namespace, status.Name)
 	}
-	currentVersion := status.Data["version"]
-	currentPodTemplateHash := status.Data["podTemplateHash"]
-	if statusOwnedByDeployment && currentVersion == desiredVersion && currentPodTemplateHash == desiredPodTemplateHash {
+	current := recordedIdentity(status, deployment)
+
+	job := &batchv1.Job{}
+	err = r.Get(ctx, types.NamespacedName{Name: migrationJobName(req.Name), Namespace: req.Namespace}, job)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
+	}
+	if err != nil {
+		job = nil
+	}
+
+	if current == desired {
+		if job != nil && metav1.IsControlledBy(job, deployment) && isJobConditionTrue(job, batchv1.JobComplete) {
+			if err := r.setCompletedJobTTL(ctx, job); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 		_, err := r.patchCondition(ctx, deployment, clearMigrationFailedCondition)
 		return ctrl.Result{}, err
 	}
 
-	job := &batchv1.Job{}
-	err = r.Get(ctx, types.NamespacedName{Name: migrationJobName(req.Name), Namespace: req.Namespace}, job)
-	if apierrors.IsNotFound(err) {
+	if job == nil {
 		job = desiredJob
 		if err := r.Create(ctx, job); err != nil {
 			if apierrors.IsAlreadyExists(err) {
@@ -85,37 +99,39 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 			return ctrl.Result{}, fmt.Errorf("creating migration job: %w", err)
 		}
-		logger.Info("created migration job", "job", job.Name, "currentVersion", currentVersion, "desiredVersion", desiredVersion)
+		logger.Info("created migration job", "job", job.Name, "currentVersion", current.Version, "desiredVersion", desired.Version)
+		r.Recorder.Eventf(deployment, corev1.EventTypeNormal, "MigrationStarted", "Created migration job %s for version %s", job.Name, desired.Version)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("getting migration job: %w", err)
+
+	if job.DeletionTimestamp != nil {
+		// Foreground deletion in progress: the name frees up once the pods are gone.
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 	jobOwnedByDeployment := metav1.IsControlledBy(job, deployment)
 	replaceableJob := jobOwnedByDeployment || isOperatorManagedResourceForDeployment(job, deployment) || isLegacyMigrationJob(job)
 	if !replaceableJob {
+		r.Recorder.Eventf(deployment, corev1.EventTypeWarning, "MigrationJobConflict", "Job %s exists but was not created by the operator or the chart; delete or rename it to let the migration run", job.Name)
 		return ctrl.Result{}, fmt.Errorf("migration Job %s/%s already exists and is not managed by this Deployment", job.Namespace, job.Name)
 	}
 
-	// Only a Job this operator created for the desired migration inputs is trusted.
+	// Only a Job this operator created for the desired identity is trusted.
 	// Anything else under the same name, such as a Job for a previous image or
 	// the chart's legacy Helm hook Job, is replaced.
-	jobVersion := job.Annotations[AnnotationDesiredVersion]
-	jobPodTemplateHash := job.Annotations[AnnotationPodTemplateHash]
 	complete := isJobConditionTrue(job, batchv1.JobComplete)
 	failedAt, failed := jobFailedAt(job)
 	started := !complete && !failed && (ptr.Deref(job.Status.Ready, 0) > 0 || job.Status.Succeeded > 0)
-	outdated := !jobOwnedByDeployment || jobVersion != desiredVersion || jobPodTemplateHash != desiredPodTemplateHash
+	outdated := !jobOwnedByDeployment || jobIdentity(job) != desired
 	if outdated {
 		// Never interrupt a running migration: a non-transactional step such as
 		// a concurrent index build that is aborted halfway leaves the schema in
 		// a state the next run does not repair. A pod that finished before the
 		// Job condition was written is also left alone.
 		if started {
-			logger.V(1).Info("waiting for started migration job before replacing it", "job", job.Name, "jobVersion", jobVersion, "desiredVersion", desiredVersion)
+			logger.V(1).Info("waiting for started migration job before replacing it", "job", job.Name, "jobVersion", jobIdentity(job).Version, "desiredVersion", desired.Version)
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		logger.Info("replacing migration job", "job", job.Name, "jobVersion", jobVersion, "desiredVersion", desiredVersion)
+		logger.Info("replacing migration job", "job", job.Name, "jobVersion", jobIdentity(job).Version, "desiredVersion", desired.Version)
 		if err := r.deleteJob(ctx, job); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -123,33 +139,37 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if complete {
+		if err := updateMigrationStatus(ctx, r.Client, deployment, desired, job.Name); err != nil {
+			return ctrl.Result{}, err
+		}
+		logger.Info("migration succeeded", "version", desired.Version)
+		r.Recorder.Eventf(deployment, corev1.EventTypeNormal, "MigrationSucceeded", "Database migrated to version %s", desired.Version)
+		// Only now: a TTL of 0 would otherwise remove the Job before its
+		// outcome is recorded, and a new Job would run the migration again.
 		if err := r.setCompletedJobTTL(ctx, job); err != nil {
 			return ctrl.Result{}, err
 		}
-		if err := updateMigrationStatus(ctx, r.Client, deployment, desiredVersion, desiredPodTemplateHash, job.Name); err != nil {
-			return ctrl.Result{}, err
-		}
-		logger.Info("migration succeeded", "version", desiredVersion)
 		_, err := r.patchCondition(ctx, deployment, clearMigrationFailedCondition)
 		return ctrl.Result{}, err
 	}
 
 	if failed {
 		changed, err := r.patchCondition(ctx, deployment, func(d *appsv1.Deployment) bool {
-			return setMigrationFailedCondition(d, desiredVersion)
+			return setMigrationFailedCondition(d, desired.Version)
 		})
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		if changed {
-			logger.Info("migration job failed", "job", job.Name, "version", desiredVersion, "retryIn", retryDelay)
+			logger.Info("migration job failed", "job", job.Name, "version", desired.Version, "retryIn", retryDelay)
+			r.Recorder.Eventf(deployment, corev1.EventTypeWarning, "MigrationFailed", "Migration job %s failed for version %s; retrying in %s", job.Name, desired.Version, retryDelay)
 		}
 		// The failed Job itself is the retry timer, so the delay survives
 		// operator restarts and leaves the pod logs around to inspect.
 		if wait := retryDelay - time.Since(failedAt); wait > 0 {
 			return ctrl.Result{RequeueAfter: wait}, nil
 		}
-		logger.Info("retrying migration", "job", job.Name, "version", desiredVersion)
+		logger.Info("retrying migration", "job", job.Name, "version", desired.Version)
 		if err := r.deleteJob(ctx, job); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -159,6 +179,8 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
+// setCompletedJobTTL applies cleanup only after migration status is durable.
+// Optimistic locking avoids overwriting a concurrent Job spec update.
 func (r *MigrationReconciler) setCompletedJobTTL(ctx context.Context, job *batchv1.Job) error {
 	if job.Spec.TTLSecondsAfterFinished != nil && *job.Spec.TTLSecondsAfterFinished == r.TTLSecondsAfterFinished {
 		return nil
@@ -171,6 +193,9 @@ func (r *MigrationReconciler) setCompletedJobTTL(ctx context.Context, job *batch
 	return nil
 }
 
+// deleteJob removes a migration Job and waits for its pods to be gone before
+// the name is reused, so two migrations never run at once. Preconditions make
+// sure the Job is still the one that was inspected.
 func (r *MigrationReconciler) deleteJob(ctx context.Context, job *batchv1.Job) error {
 	options := []client.DeleteOption{client.PropagationPolicy(metav1.DeletePropagationForeground)}
 	preconditions := client.Preconditions{}
@@ -189,7 +214,11 @@ func (r *MigrationReconciler) deleteJob(ctx context.Context, job *batchv1.Job) e
 		options = append(options, preconditions)
 	}
 	err := r.Delete(ctx, job, options...)
-	if client.IgnoreNotFound(err) != nil {
+	if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+		// Gone already, or changed since it was read: the requeue re-evaluates it.
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("deleting migration job %s: %w", job.Name, err)
 	}
 	return nil

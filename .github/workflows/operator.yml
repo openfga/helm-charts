@@ -36,58 +36,7 @@ jobs:
 
       - name: Require a version bump when the operator image changes
         if: github.event_name == 'pull_request'
-        env:
-          BASE: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          # CI publishes ghcr.io/openfga/openfga-operator:<appVersion> once and never
-          # overwrites it, so a change to the image is only released when the
-          # operator chart's appVersion and version are bumped. The parent chart
-          # must also release the matching dependency version.
-          image_inputs=(operator/cmd operator/internal operator/go.mod operator/go.sum operator/Dockerfile)
-          if git diff --quiet "origin/$BASE...HEAD" -- "${image_inputs[@]}"; then
-            echo "operator image inputs unchanged"
-            exit 0
-          fi
-          field() { grep "^$1:" "$2" | awk '{print $2}' | tr -d '"'; }
-          dependency_version() {
-            awk '
-              $1 == "-" && $2 == "name:" {
-                operator = ($3 == "openfga-operator")
-                next
-              }
-              operator && $1 == "version:" {
-                gsub(/"/, "", $2)
-                print $2
-                exit
-              }
-            ' "$1"
-          }
-
-          operator_version=$(field version charts/openfga-operator/Chart.yaml)
-          parent_dependency=$(dependency_version charts/openfga/Chart.yaml)
-          lock_dependency=$(dependency_version charts/openfga/Chart.lock)
-          if [[ "$parent_dependency" != "$operator_version" || "$lock_dependency" != "$operator_version" ]]; then
-            echo "::error file=charts/openfga/Chart.yaml::openfga-operator dependency and Chart.lock must match operator chart version ${operator_version}"
-            exit 1
-          fi
-
-          if git show "origin/$BASE:charts/openfga-operator/Chart.yaml" > /tmp/base-operator-chart.yaml 2>/dev/null; then
-            for f in appVersion version; do
-              if [[ "$(field $f /tmp/base-operator-chart.yaml)" == "$(field $f charts/openfga-operator/Chart.yaml)" ]]; then
-                echo "::error file=charts/openfga-operator/Chart.yaml::operator image inputs changed but $f is still $(field $f charts/openfga-operator/Chart.yaml); bump appVersion and version so the change is published"
-                exit 1
-              fi
-            done
-          else
-            echo "operator chart is new in this PR"
-          fi
-
-          git show "origin/$BASE:charts/openfga/Chart.yaml" > /tmp/base-parent-chart.yaml
-          if [[ "$(field version /tmp/base-parent-chart.yaml)" == "$(field version charts/openfga/Chart.yaml)" ]]; then
-            echo "::error file=charts/openfga/Chart.yaml::operator image inputs changed but the parent chart version was not bumped"
-            exit 1
-          fi
+        run: .github/scripts/check-operator-release.sh "origin/${{ github.base_ref }}"
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0

@@ -86,6 +86,29 @@ Create the name of the migration service account to use (operator mode only)
 {{- end }}
 
 {{/*
+Identity of the non-secret datastore configuration the operator migrates.
+The Job template already covers rendered environment references. The explicit
+migration.trigger handles changes the chart cannot safely expose, such as a
+Secret value rotated under the same name.
+*/}}
+{{- define "openfga.migrationTrigger" -}}
+{{- $ds := .Values.datastore -}}
+{{- dict "engine" $ds.engine "uriSecret" $ds.uriSecret "existingSecret" $ds.existingSecret "secretKeys" $ds.secretKeys "trigger" .Values.migration.trigger | toJson | sha256sum | trunc 16 -}}
+{{- end -}}
+
+{{/*
+migrate.annotations without Helm hook keys, as JSON for the operator to put on
+the migration Job and its pod
+*/}}
+{{- define "openfga.migrationAnnotations" -}}
+{{- $out := dict -}}
+{{- range $k, $v := .Values.migrate.annotations -}}
+{{- if not (hasPrefix "helm.sh/" $k) -}}{{- $_ := set $out $k (toString $v) -}}{{- end -}}
+{{- end -}}
+{{- toJson $out -}}
+{{- end -}}
+
+{{/*
 Return true if the openfga-operator runs the database migrations for this release
 */}}
 {{- define "openfga.operatorMigrations" -}}
