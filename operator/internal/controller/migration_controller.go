@@ -88,17 +88,24 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	jobVersion := job.Annotations[AnnotationDesiredVersion]
 	complete := isJobConditionTrue(job, batchv1.JobComplete)
 	failedAt, failed := jobFailedAt(job)
+	running := !complete && !failed && ptr.Deref(job.Status.Ready, 0) > 0
 	outdated := jobVersion != desiredVersion
 	// A Job whose pod cannot start (a bad secret reference, an image pull
 	// error, an unschedulable pod) never fails on its own, so rebuild it once
-	// the Deployment's pod template has changed. A Job with a ready pod is left
-	// alone so a running migration is not cut off; one whose pod has just
-	// finished may still be rebuilt, which only re-runs a no-op migration.
-	if !outdated && !complete && !failed && job.Status.Active > 0 && ptr.Deref(job.Status.Ready, 0) == 0 {
+	// the Deployment's pod template has changed. A pod that has just finished
+	// may still be rebuilt, which only re-runs a no-op migration.
+	if !outdated && !complete && !failed && !running && job.Status.Active > 0 {
 		want := r.buildMigrationJob(deployment, container, desiredVersion)
 		outdated = job.Annotations[AnnotationPodTemplateHash] != want.Annotations[AnnotationPodTemplateHash]
 	}
 	if outdated {
+		// Never interrupt a running migration: a non-transactional step such as
+		// a concurrent index build that is aborted halfway leaves the schema in
+		// a state the next run does not repair. Replace the Job once it ends.
+		if running {
+			logger.V(1).Info("waiting for running migration job before replacing it", "job", job.Name, "jobVersion", jobVersion, "desiredVersion", desiredVersion)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		logger.Info("replacing migration job", "job", job.Name, "jobVersion", jobVersion, "desiredVersion", desiredVersion)
 		if err := r.deleteJob(ctx, job); err != nil {
 			return ctrl.Result{}, err

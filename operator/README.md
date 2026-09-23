@@ -13,6 +13,8 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
    - Updates the ConfigMap with the new version
 3. On failure, a `MigrationFailed` condition is set on the Deployment. The failed Job is kept for 60 seconds so its logs can be inspected, then replaced with a new one.
 
+A running migration is never interrupted. If the image changes again while a Job's pod is running (a rollback, or two upgrades in a row), the operator waits for that Job to finish and then runs the migration for the new image. Aborting a non-transactional step such as Postgres's concurrent index build in migration 006 leaves an invalid index that the next run skips. To abort a migration that is stuck, delete the Job or set `migrationJob.activeDeadlineSeconds`.
+
 The operator never changes the Deployment's replica count or pod template. On a new database, OpenFGA's readiness check (`MinimumSupportedDatastoreSchemaRevision`) keeps pods `NotReady` until the first migration has run. On an upgrade the existing schema already meets that minimum, so new pods serve on it while the Job applies the newer migrations, which is the same behaviour as the Helm hook flow.
 
 ## Prerequisites

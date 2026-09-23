@@ -422,6 +422,50 @@ func TestReconcile_StartedJobWithOutdatedTemplate_Kept(t *testing.T) {
 	}
 }
 
+func TestReconcile_RunningJobForOtherVersion_KeptUntilItEnds(t *testing.T) {
+	// The image changes from v1.14.0 to v1.15.0 while the v1.14.0 migration is
+	// running. Interrupting it could leave the schema half-migrated, so the Job
+	// must be left alone and only replaced once it finishes.
+	old := newTestDeployment("openfga/openfga:v1.14.0")
+	job := newTestJob(old)
+	job.Status.Active = 1
+	job.Status.Ready = ptr.To(int32(1))
+	dep := newTestDeployment("openfga/openfga:v1.15.0")
+	r := newReconciler(t, nil, dep, job)
+
+	if result := reconcileOnce(t, r); result.RequeueAfter != 10*time.Second {
+		t.Errorf("expected the running job to be polled, got %v", result.RequeueAfter)
+	}
+	kept, err := getJob(r)
+	if err != nil {
+		t.Fatalf("a running migration must not be deleted on a version change: %v", err)
+	}
+	if _, err := getStatus(r); !apierrors.IsNotFound(err) {
+		t.Errorf("no version may be recorded while the old job runs, got err=%v", err)
+	}
+
+	kept.Status = batchv1.JobStatus{Succeeded: 1, Ready: ptr.To(int32(0)), Conditions: []batchv1.JobCondition{jobCondition(batchv1.JobComplete, time.Now())}}
+	if err := r.Status().Update(context.Background(), kept); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if _, err := getJob(r); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected the finished v1.14.0 job to be replaced, got err=%v", err)
+	}
+	if _, err := getStatus(r); !apierrors.IsNotFound(err) {
+		t.Errorf("a v1.14.0 job must not be recorded as a v1.15.0 migration, got err=%v", err)
+	}
+
+	reconcileOnce(t, r)
+	replacement, err := getJob(r)
+	if err != nil {
+		t.Fatalf("expected a migration job for the new version: %v", err)
+	}
+	if got := replacement.Annotations[AnnotationDesiredVersion]; got != "v1.15.0" {
+		t.Errorf("expected the new job to target v1.15.0, got %q", got)
+	}
+}
+
 // The legacy chart's Helm hook Job has the same name and carries the chart's
 // app.kubernetes.io/version label, which is the chart appVersion rather than
 // the image it ran. It must never be taken as proof of a migration.
