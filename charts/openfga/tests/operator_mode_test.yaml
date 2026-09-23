@@ -64,30 +64,27 @@ tests:
           path: metadata.annotations["openfga.dev/migration-service-account"]
 
   # --- Replica count ---
-  # When no live cluster is available (helm template / test), lookup returns empty,
-  # so the template falls back to replicas: 0 (fresh install behavior).
-  # On a real cluster, lookup preserves the existing replica count for zero-downtime upgrades.
-  - it: should set replicas to 0 on fresh install when operator is enabled with database datastore
+  # Operator mode omits spec.replicas so the operator owns it and GitOps treats it
+  # as unmanaged. See ADR-002.
+  - it: should omit replicas in operator mode with a database datastore
     set:
       operator.enabled: true
       migration.enabled: true
       replicaCount: 3
       datastore.engine: postgres
     asserts:
-      - equal:
+      - isNull:
           path: spec.replicas
-          value: 0
 
-  - it: should set replicas to 1 when operator is enabled with memory datastore
+  - it: should omit replicas in operator mode with a memory datastore
     set:
       operator.enabled: true
       migration.enabled: true
       replicaCount: 5
       datastore.engine: memory
     asserts:
-      - equal:
+      - isNull:
           path: spec.replicas
-          value: 1
 
   - it: should set replicas to replicaCount when operator is disabled
     set:
@@ -98,6 +95,21 @@ tests:
       - equal:
           path: spec.replicas
           value: 5
+
+  # applyMigrations=false opts out: no operator annotations, replicas rendered normally.
+  - it: should not use operator mode when applyMigrations is false
+    set:
+      operator.enabled: true
+      migration.enabled: true
+      replicaCount: 4
+      datastore.engine: postgres
+      datastore.applyMigrations: false
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+      - equal:
+          path: spec.replicas
+          value: 4
 
   # --- Autoscaling conflict ---
   - it: should fail when operator and autoscaling are both enabled

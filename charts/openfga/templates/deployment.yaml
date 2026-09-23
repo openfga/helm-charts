@@ -4,7 +4,7 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
-  {{- $hasOperatorAnnotations := and .Values.operator.enabled .Values.migration.enabled }}
+  {{- $hasOperatorAnnotations := and .Values.operator.enabled .Values.migration.enabled .Values.datastore.applyMigrations }}
   {{- if or $hasOperatorAnnotations .Values.annotations }}
   annotations:
     {{- if $hasOperatorAnnotations }}
@@ -20,18 +20,13 @@ metadata:
     {{- end }}
   {{- end }}
 spec:
-  {{- if and .Values.operator.enabled .Values.migration.enabled }}
+  {{- if $hasOperatorAnnotations }}
   {{- if .Values.autoscaling.enabled }}
   {{- fail "operator.enabled and autoscaling.enabled cannot both be true" }}
   {{- end }}
-  {{- /* On upgrade: preserve live replicas (zero-downtime). On fresh install: lookup returns empty, fall back to 0.
-         OpenFGA gates readiness on MinimumSupportedDatastoreSchemaRevision — see ADR-002. */ -}}
-  {{- $existing := (lookup "apps/v1" "Deployment" (include "openfga.namespace" .) (include "openfga.fullname" .)) }}
-  {{- if and $existing (hasKey ($existing) "spec") }}
-  replicas: {{ $existing.spec.replicas }}
-  {{- else }}
-  replicas: {{ ternary 1 0 (eq .Values.datastore.engine "memory") }}
-  {{- end }}
+  {{- /* Operator mode: omit spec.replicas. The operator owns it (scales up after
+         the migration Job completes) and GitOps controllers treat an absent field
+         as unmanaged, so neither fights the other. See ADR-002. */ -}}
   {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ ternary 1 .Values.replicaCount (eq .Values.datastore.engine "memory") }}
   {{- end }}
