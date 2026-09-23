@@ -55,11 +55,10 @@ spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- $needsMigrationInit := and (not .Values.operator.enabled) (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations }}
-      {{- if or $needsMigrationInit .Values.extraInitContainers }}
+      {{- $legacyMigrations := and (not .Values.operator.enabled) (has .Values.datastore.engine (list "postgres" "mysql")) }}
+      {{ if or (and $legacyMigrations .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers }}
       initContainers:
-        {{- if $needsMigrationInit }}
-        {{- if eq .Values.datastore.migrationType "job" }}
+        {{- if and $legacyMigrations .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -69,7 +68,7 @@ spec:
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
-        {{- if eq .Values.datastore.migrationType "initContainer" }}
+        {{- if and $legacyMigrations (eq .Values.datastore.migrationType "initContainer") }}
         {{- with .Values.migrate.extraInitContainers }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -96,7 +95,6 @@ spec:
           {{- if .Values.migrate.sidecars }}
           {{- include "common.tplvalues.render" ( dict "value" .Values.migrate.sidecars "context" $) | nindent 8 }}
           {{- end }}
-        {{- end }}
         {{- end }}
         {{- with .Values.extraInitContainers }}
           {{- toYaml . | nindent 8 }}
