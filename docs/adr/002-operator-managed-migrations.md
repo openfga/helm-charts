@@ -103,7 +103,7 @@ Readiness comes from OpenFGA itself: `IsReady()` reports `NOT_SERVING` while the
 
 #### Version tracking via ConfigMap
 
-A ConfigMap (`openfga-migration-status`) records the last successfully migrated version. The operator compares this to the Deployment's image tag to determine if migration is needed. This is:
+A ConfigMap (`openfga-migration-status`) records the last successfully migrated identity: the image version and the datastore trigger. The operator compares this to the Deployment to determine if migration is needed. This is:
 - Simple to inspect (`kubectl get configmap openfga-migration-status -o yaml`)
 - Survives operator restarts
 - Can be manually deleted to force re-migration (once the previous migration Job has been cleaned up)
@@ -122,7 +122,9 @@ The Job created by the operator has no Helm hook annotations. It is a standard K
 |---------|----------|
 | Job fails | Operator sets `MigrationFailed` on the Deployment, keeps the failed Job for 60 seconds so its logs can be read, then replaces it. On a fresh database the pods stay `NotReady`; on an upgrade they keep serving on the previous schema. |
 | Job pod never starts | A bad secret reference, image pull error or unschedulable pod never fails the Job. Once the Deployment's pod template changes (the fix rolls out), the operator rebuilds a Job whose pod is not running. |
-| Image changes while a Job runs | The running Job is left to finish and then replaced by one for the new image. The hook flow deletes the running hook Job instead (`before-hook-creation`), which can abort a concurrent index build and leave it invalid. |
+| Image changes while a Job runs | The running Job is left to finish and then replaced by one for the new image. The hook flow deletes the running hook Job instead (`before-hook-creation`), which can abort a concurrent index build and leave it invalid. Replacement uses foreground deletion, so the next Job only starts once the old pods are gone. |
+| Datastore repointed, same image | The chart derives a trigger from the datastore settings that is part of the migration identity, so the migration runs against the new database. `migration.trigger` forces a run for changes the chart cannot see. |
+| Same-name Job or ConfigMap from elsewhere | Not touched; a `MigrationJobConflict` event is recorded until it is removed. |
 | Job hangs | No deadline by default, like the Helm hook Job. `activeDeadlineSeconds` can be set, but a migration cut off halfway (an index build, a MySQL table rebuild) starts over on the next attempt. |
 | Operator crashes | On restart, re-reads the ConfigMap and Job status and resumes. The retry delay is measured from the failed Job's condition, so it survives restarts. |
 | Database unreachable | Job fails to connect. After exhausting `backoffLimit` the cycle above repeats until the database becomes available. |

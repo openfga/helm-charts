@@ -1306,8 +1306,13 @@
         },
         "migration": {
             "type": "object",
-            "description": "Service account for the migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
+            "description": "Settings for the migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
             "properties": {
+                "trigger": {
+                    "type": "string",
+                    "description": "Change to any new value to run the migration again without changing the image or datastore settings",
+                    "default": ""
+                },
                 "serviceAccount": {
                     "type": "object",
                     "properties": {

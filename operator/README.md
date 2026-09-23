@@ -7,10 +7,10 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 ## How It Works
 
 1. The operator watches Deployments in its configured namespace, which defaults to the operator pod's namespace, labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
-2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
-   - Creates a migration Job running `openfga migrate`
+2. When the migration identity changes (the container image tag plus the `openfga.dev/migration-trigger` annotation, compared to the `{name}-migration-status` ConfigMap), the operator:
+   - Creates a migration Job running `openfga migrate`, built from the Deployment's pod spec: the OpenFGA container's image, env, volumes, resources and scheduling, the other containers as [sidecars](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) that stop when the migration exits, and the init containers
    - Waits for the Job to complete
-   - Updates the ConfigMap with the new version
+   - Records the identity in the ConfigMap and applies `ttlSecondsAfterFinished` so Kubernetes cleans the Job up
 3. On failure, a `MigrationFailed` condition is set on the Deployment. The failed Job is kept for 60 seconds so its logs can be inspected, then replaced with a new one.
 
 A running migration is never interrupted. If the image changes again while a Job's pod is running (a rollback, or two upgrades in a row), the operator waits for that Job to finish and then runs the migration for the new image. Aborting a non-transactional step such as Postgres's concurrent index build in migration 006 leaves an invalid index that the next run skips. To abort a migration that is stuck, delete the Job or set `migrationJob.activeDeadlineSeconds`.
@@ -22,7 +22,7 @@ The operator never changes the Deployment's replica count or pod template. On a 
 - Go 1.26.8+
 - Docker
 - Helm 3.6+
-- A Kubernetes cluster (Rancher Desktop, kind, etc.)
+- A Kubernetes cluster (Rancher Desktop, kind, etc.), 1.29 or newer when the OpenFGA pod has sidecars
 
 ## Development
 
@@ -55,8 +55,10 @@ docker build -t openfga/openfga-operator:dev .
 
 CI publishes `ghcr.io/openfga/openfga-operator:<appVersion>` on the first push to `main` that carries that appVersion and never overwrites it, and chart-releaser likewise skips chart versions that already exist. A change to the operator image (`cmd/`, `internal/`, `go.mod`, `go.sum`, `Dockerfile`) therefore has to bump, in the same PR:
 
-1. `appVersion` and `version` in `charts/openfga-operator/Chart.yaml` (the operator workflow fails the PR otherwise)
-2. the `openfga-operator` dependency version and `version` in `charts/openfga/Chart.yaml`, then `helm dependency update charts/openfga` to refresh `Chart.lock` (`helm dependency build` fails otherwise)
+1. `appVersion` and `version` in `charts/openfga-operator/Chart.yaml`
+2. the `openfga-operator` dependency version and `version` in `charts/openfga/Chart.yaml`, then `helm dependency update charts/openfga` to refresh `Chart.lock`
+
+`.github/scripts/check-operator-release.sh origin/main` checks the first two files and runs on every PR; `helm dependency build` fails when `Chart.lock` is stale.
 
 ## Local Testing
 
@@ -135,12 +137,15 @@ The operator reads these annotations from the OpenFGA Deployment:
 |------------|-------------|
 | `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `openfga-operator.enabled` and `datastore.applyMigrations` are true and the datastore is Postgres or MySQL. |
 | `openfga.dev/container-name` | The OpenFGA container in the pod spec. Defaults to `openfga`. |
+| `openfga.dev/migration-trigger` | Any string that is part of the migration identity alongside the image tag; a change runs the migration again. The chart derives it from the datastore settings and `migration.trigger`. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
+| `openfga.dev/migration-labels`, `openfga.dev/migration-annotations` | JSON maps added to the migration Job and its pod, e.g. `{"sidecar.istio.io/inject":"false"}`. The chart fills them from `migrate.labels` and `migrate.annotations` (without `helm.sh/*` keys). The operator's own labels and `openfga.dev/*` annotations cannot be overridden. |
 
 ## Limitations
 
-- **Migrations key only on the image tag:** The operator compares the container image tag (or digest) to the `{name}-migration-status` ConfigMap. A mutable tag like `latest`, or a tag reused for a new build, is not seen as a change, so the migration is skipped — use immutable tags (e.g. `v1.14.0`) or pin by digest. A migration-needing change that keeps the same image — for example repointing `datastore.uri` at a different or restored database — also won't trigger a Job; delete the status ConfigMap (and the `{name}-migrate` Job, if it still exists) to run the migration again.
-- **Legacy migration values:** `migrate.*` (extra volumes and mounts, init containers, sidecars, annotations, labels, timeout) and `datastore.migrations.resources` only apply to the legacy Helm hook Job. The operator's Job copies the OpenFGA container's image, env, volumes, resources, security context and scheduling instead, so put anything the migration needs (e.g. CA bundles) in the top-level `extraVolumes`, `extraVolumeMounts` and `extraEnvVars`.
-- **Single-container migration Job:** The Job runs one container (`openfga migrate`) and injects no sidecars or extra init containers, so databases reached through a sidecar proxy (Cloud SQL Auth Proxy, AlloyDB) aren't supported for operator-managed migrations. A sidecar injected into every pod in the namespace that doesn't exit on its own (e.g. an Istio sidecar) keeps the Job pod running and stops the Job from completing.
-- **Job pod labels:** The migration pod is labelled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: migration`, not with the OpenFGA Deployment's `app.kubernetes.io/name`/`instance` labels (which would make it a Service endpoint). A NetworkPolicy that allows database egress only for the OpenFGA pods' labels needs a rule for the migration pod too.
+- **Migrations key on the image tag and the trigger:** A mutable tag like `latest`, or a tag reused for a new build, is not seen as a change, so use immutable tags (e.g. `v1.14.0`) or pin by digest. The chart's trigger covers changes to the datastore settings it renders, but not a Secret whose contents change under the same name; set `migration.trigger` to a new value in that case.
+- **Legacy migration values:** `migrate.extraVolumes`, `migrate.extraVolumeMounts`, `migrate.extraInitContainers`, `migrate.sidecars`, `migrate.timeout` and `datastore.migrations.resources` only apply to the legacy Helm hook Job. The operator's Job is built from the OpenFGA pod spec, so put what the migration needs in the top-level `extraVolumes`, `extraVolumeMounts`, `extraInitContainers`, `sidecars` and `extraEnvVars`. `migrate.labels` and `migrate.annotations` apply in both modes.
+- **Injected sidecars:** Containers injected by a webhook (Istio, Linkerd) are not part of the Deployment's pod spec and are not converted to native sidecars, so one that does not exit keeps the Job pod running. Disable injection for the migration pod with `migrate.annotations`, e.g. `sidecar.istio.io/inject: "false"`.
+- **Job pod labels:** The migration pod is labelled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: migration` plus `migrate.labels`, not with the OpenFGA Deployment's `app.kubernetes.io/name`/`instance` labels (which would make it a Service endpoint). A NetworkPolicy that allows database egress only for the OpenFGA pods' labels needs a rule for the migration pod too.
+- **Same-name resources:** The operator only replaces a `{name}-migrate` Job it created itself or the chart's legacy hook Job, and only trusts a `{name}-migration-status` ConfigMap owned by the Deployment. Anything else with those names blocks the migration with a `MigrationJobConflict` event until it is removed.
 - **One namespace per operator:** The operator reconciles every opted-in OpenFGA Deployment in its watch namespace. Operators installed by several releases in one namespace share a leader election lease, so only one of them is active at a time.

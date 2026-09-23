@@ -164,7 +164,7 @@ datastore:
   uriSecret: my-postgres-secret
 ```
 
-The operator only runs migrations; replicas, autoscaling and the pod template stay under the chart's control. It records the migrated version in the `<release>-migration-status` ConfigMap and sets a `MigrationFailed` condition on the Deployment if a migration fails. The migration Job runs as a dedicated `<release>-migration` service account (`migration.serviceAccount`), which can carry cloud IAM annotations for DDL permissions. Migrations only run when the image tag changes, so pin `image.tag` to a release rather than a floating tag. See the [operator README](../../operator/README.md) for how it works and its limitations.
+The operator only runs migrations; replicas, autoscaling and the pod template stay under the chart's control. It records the migrated version in the `<release>-migration-status` ConfigMap and sets a `MigrationFailed` condition on the Deployment if a migration fails. The migration Job is built from the OpenFGA pod spec, so `sidecars` such as a database proxy and `extraInitContainers` run alongside it, and `migrate.labels`/`migrate.annotations` (e.g. `sidecar.istio.io/inject: "false"`) are applied to it. It runs as a dedicated `<release>-migration` service account (`migration.serviceAccount`), which can carry cloud IAM annotations for DDL permissions. Migrations run when the image tag or the datastore settings change, so pin `image.tag` to a release rather than a floating tag; set `migration.trigger` to any new value to run one on demand. See the [operator README](../../operator/README.md) for how it works and its limitations.
 
 ## Uninstalling the Chart
 

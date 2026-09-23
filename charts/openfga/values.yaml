@@ -372,10 +372,13 @@ migrate:
   extraVolumeMounts: []
   extraInitContainers: []
   sidecars: []
+  # -- Added to the migration Job and its pod. With the operator, helm.sh/* keys
+  # are dropped and the rest is forwarded (e.g. sidecar.istio.io/inject: "false").
   annotations:
     helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
     helm.sh/hook-weight: "-5"
     helm.sh/hook-delete-policy: "before-hook-creation"
+  # -- Added to the migration Job and its pod in both modes.
   labels: {}
   timeout:
 
@@ -405,9 +408,13 @@ openfga-operator:
   #   limits:
   #     memory: 128Mi
 
-# -- Service account for the migration Jobs the operator creates.
+# -- Settings for the migration Jobs the operator creates.
 # Only used when openfga-operator.enabled is true.
 migration:
+  # -- The operator runs a migration when the OpenFGA image or the datastore
+  # settings change. Set this to any new value to run it again when neither
+  # changed, e.g. after rotating a Secret to point at a different database.
+  trigger: ""
   serviceAccount:
     # -- Create a dedicated service account for migration Jobs.
     # The migration Job inherits env vars (including secretKeyRef) from the OpenFGA container.
