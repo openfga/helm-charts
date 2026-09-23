@@ -3,17 +3,12 @@
 # out of charts/openfga/ci/ because chart-testing only installs one version.
 replicaCount: 1
 
-operator:
-  enabled: true
-
-migration:
-  enabled: true
-
 datastore:
   engine: postgres
   uriSecret: openfga-e2e-postgres-credentials
 
 openfga-operator:
+  enabled: true
   image:
     pullPolicy: Never
 

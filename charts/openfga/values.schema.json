@@ -1293,31 +1293,21 @@
             "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
             "default": false
         },
-        "operator": {
+        "openfga-operator": {
             "type": "object",
-            "description": "Controls the openfga-operator subchart. When enabled, migration is managed by the operator instead of the Helm job hook.",
+            "description": "Configuration for the openfga-operator subchart, validated by that chart's own schema. When enabled, database migrations are run by the operator instead of the Helm hook Job.",
             "properties": {
                 "enabled": {
                     "type": "boolean",
-                    "description": "Enable the openfga-operator subchart for operator-managed migrations",
+                    "description": "Install the openfga-operator and let it run database migrations",
                     "default": false
                 }
-            },
-            "additionalProperties": false
-        },
-        "openfga-operator": {
-            "type": "object",
-            "description": "Values passed through to the openfga-operator subchart (validated by that chart's own schema)"
+            }
         },
         "migration": {
             "type": "object",
-            "description": "Controls operator-driven migration behavior. Only used when operator.enabled is true.",
+            "description": "Service account for the migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
             "properties": {
-                "enabled": {
-                    "type": "boolean",
-                    "description": "Enable operator-managed database migrations",
-                    "default": true
-                },
                 "serviceAccount": {
                     "type": "object",
                     "properties": {

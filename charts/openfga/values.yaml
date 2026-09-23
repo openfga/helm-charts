@@ -386,14 +386,11 @@ testContainerSpec: {}
 ## Note: Supports use of custom Helm templates
 extraObjects: []
 
-# -- operator controls the openfga-operator subchart.
-# When enabled, migration is managed by the operator instead of the Helm job hook.
-operator:
-  enabled: false
-
-# -- Values passed to the openfga-operator subchart (when operator.enabled is true).
+# -- Configuration for the openfga-operator subchart. When enabled, database
+# migrations are run by the operator instead of the Helm hook Job.
 # See charts/openfga-operator/values.yaml for all available options.
-openfga-operator: {}
+openfga-operator:
+  enabled: false
   # migrationJob:
   #   backoffLimit: 3
   #   activeDeadlineSeconds: 0
@@ -408,11 +405,9 @@ openfga-operator: {}
   #   limits:
   #     memory: 128Mi
 
-# -- migration controls operator-driven migration behavior.
-# Only used when operator.enabled is true.
+# -- Service account for the migration Jobs the operator creates.
+# Only used when openfga-operator.enabled is true.
 migration:
-  # -- Enable operator-managed migrations. Set to false if you manage migrations externally.
-  enabled: true
   serviceAccount:
     # -- Create a dedicated service account for migration Jobs.
     # The migration Job inherits env vars (including secretKeyRef) from the OpenFGA container.

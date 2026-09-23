@@ -11,5 +11,5 @@ dependencies:
 - name: openfga-operator
   repository: file://../openfga-operator
   version: 0.1.0
-digest: sha256:d502dc105790995a4368a049c0f593820d08f2f82dc9c9a70480a343c7affe8b
-generated: "2026-04-10T11:45:16.638975-04:00"
+digest: sha256:3df1161dfa820406918b40bb5bada3da6d156a65631f29d72840087d9063db2e
+generated: "2026-09-23T14:52:08.781111+05:30"

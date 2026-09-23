@@ -1,3 +1,7 @@
+# -- Used as the dependency condition by the openfga chart; has no effect when
+# this chart is installed on its own.
+enabled: true
+
 replicaCount: 1
 
 image:

@@ -4,7 +4,7 @@ templates:
 tests:
   - it: should not render legacy RBAC when operator is enabled
     set:
-      operator.enabled: true
+      openfga-operator.enabled: true
       serviceAccount.create: true
     asserts:
       - hasDocuments:
@@ -12,7 +12,7 @@ tests:
 
   - it: should render legacy RBAC when operator is disabled
     set:
-      operator.enabled: false
+      openfga-operator.enabled: false
       serviceAccount.create: true
     asserts:
       - hasDocuments:

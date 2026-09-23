@@ -32,4 +32,4 @@ dependencies:
   - name: openfga-operator
     version: "0.1.0"
     repository: "file://../openfga-operator"
-    condition: operator.enabled
+    condition: openfga-operator.enabled

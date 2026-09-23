@@ -89,7 +89,7 @@ Create the name of the migration service account to use (operator mode only)
 Return true if the openfga-operator runs the database migrations for this release
 */}}
 {{- define "openfga.operatorMigrations" -}}
-{{- if and .Values.operator.enabled .Values.migration.enabled .Values.datastore.applyMigrations (has .Values.datastore.engine (list "postgres" "mysql")) -}}
+{{- if and (index .Values "openfga-operator" "enabled") .Values.datastore.applyMigrations (has .Values.datastore.engine (list "postgres" "mysql")) -}}
 true
 {{- end -}}
 {{- end -}}

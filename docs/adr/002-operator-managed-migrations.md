@@ -186,9 +186,9 @@ No hooks. No init containers. No `k8s-wait-for`. All resources are regular Kuber
 
 ### What Changes in the Helm Chart
 
-Nothing is deleted outright — every change is gated on `operator.enabled` so the legacy flow remains the default for backward compatibility.
+Nothing is deleted outright — every change is gated on `openfga-operator.enabled` so the legacy flow remains the default for backward compatibility.
 
-**Gated on `operator.enabled: false` (legacy Helm-hook flow, rendered when the operator is disabled):**
+**Gated on `openfga-operator.enabled: false` (legacy Helm-hook flow, rendered when the operator is disabled):**
 
 | File/Section | Behavior when operator is enabled |
 |--------------|-----------------------------------|
@@ -199,17 +199,17 @@ Nothing is deleted outright — every change is gated on `operator.enabled` so t
 | `values.yaml`: `migrate.annotations` | Unused — no Helm hooks |
 | Deployment migration init containers | Skipped — OpenFGA's readiness check holds pods until the schema is migrated |
 
-**Added (active only when `operator.enabled: true`):**
+**Added (active only when `openfga-operator.enabled: true`):**
 
 | File/Section | Purpose |
 |--------------|---------|
-| `values.yaml`: `operator.enabled` | Toggle the operator subchart |
-| `values.yaml`: `migration.serviceAccount.*` | Separate ServiceAccount for migration Jobs |
+| `values.yaml`: `openfga-operator.enabled` | Toggle the operator subchart |
 | `values.yaml`: `openfga-operator.migrationJob.*` | Migration Job backoff, deadline, and TTL configuration |
+| `values.yaml`: `migration.serviceAccount.*` | Separate ServiceAccount for migration Jobs |
 | `templates/serviceaccount.yaml`: second SA | Migration ServiceAccount |
 | `charts/openfga-operator/` | Operator subchart (conditional dependency) |
 
-Users on `operator.enabled: false` (the default) see identical rendered output to the pre-operator chart, so gradual adoption is possible with no forced migration.
+Users on `openfga-operator.enabled: false` (the default) see identical rendered output to the pre-operator chart, so gradual adoption is possible with no forced migration.
 
 ## Consequences
 
@@ -218,14 +218,14 @@ Users on `operator.enabled: false` (the default) see identical rendered output t
 - **All 6 migration issues resolved** — no Helm hooks means no ArgoCD/FluxCD/`--wait` incompatibility
 - **`k8s-wait-for` eliminated** — removes an unmaintained image with CVEs from the supply chain (#132, #144)
 - **Least-privilege enforced** — separate ServiceAccounts for migration (DDL) and runtime (CRUD) (#95)
-- **Runtime surface area reduced** — when `operator.enabled: true`, the legacy migration Job, init-container `k8s-wait-for` logic, and job-watching RBAC are skipped from the rendered manifest
+- **Runtime surface area reduced** — when `openfga-operator.enabled: true`, the legacy migration Job, init-container `k8s-wait-for` logic, and job-watching RBAC are skipped from the rendered manifest
 - **Migration is observable** — Job is a regular resource visible in all tools; ConfigMap records migration history; operator conditions surface errors
 - **Idempotent and crash-safe** — operator can restart at any point and resume correctly
 
 ### Negative
 
 - **Operator is a new runtime dependency** — if the operator pod is unavailable, migrations don't run (but existing running pods are unaffected)
-- **Two upgrade paths to document** — `operator.enabled: true` (new) vs `operator.enabled: false` (legacy)
+- **Two upgrade paths to document** — `openfga-operator.enabled: true` (new) vs `openfga-operator.enabled: false` (legacy)
 
 ### Risks
 

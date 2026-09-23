@@ -5,8 +5,7 @@ tests:
   # --- Deployment annotations ---
   - it: should set operator annotations when operator and migration are enabled
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       datastore.engine: postgres
     asserts:
       - equal:
@@ -21,7 +20,7 @@ tests:
 
   - it: should not set operator annotations when operator is disabled
     set:
-      operator.enabled: false
+      openfga-operator.enabled: false
       annotations:
         custom: value
     asserts:
@@ -33,8 +32,7 @@ tests:
 
   - it: should not set operator annotations for the memory datastore
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       datastore.engine: memory
     asserts:
       - isNull:
@@ -42,8 +40,7 @@ tests:
 
   - it: should use custom migration service account name when set
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       datastore.engine: postgres
       migration.serviceAccount.name: my-custom-sa
     asserts:
@@ -53,8 +50,7 @@ tests:
 
   - it: should not set migration-service-account annotation when SA creation is disabled and no name set
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       datastore.engine: postgres
       migration.serviceAccount.create: false
     asserts:
@@ -65,8 +61,7 @@ tests:
   # The operator never changes the replica count, so it renders as in legacy mode.
   - it: should set replicas to replicaCount in operator mode
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       replicaCount: 3
       datastore.engine: postgres
     asserts:
@@ -76,8 +71,7 @@ tests:
 
   - it: should leave replicas to the autoscaler in operator mode
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       autoscaling.enabled: true
       datastore.engine: postgres
     asserts:
@@ -89,7 +83,7 @@ tests:
 
   - it: should set replicas to replicaCount when operator is disabled
     set:
-      operator.enabled: false
+      openfga-operator.enabled: false
       replicaCount: 5
       datastore.engine: postgres
     asserts:
@@ -100,8 +94,7 @@ tests:
   # applyMigrations=false opts out: no operator annotations, replicas rendered normally.
   - it: should not use operator mode when applyMigrations is false
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       replicaCount: 4
       datastore.engine: postgres
       datastore.applyMigrations: false
@@ -115,8 +108,7 @@ tests:
   # --- initContainers gating ---
   - it: should not render migration initContainers when operator is enabled
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       datastore.engine: postgres
       datastore.uri: "postgres://localhost/openfga"
       datastore.applyMigrations: true
@@ -128,7 +120,7 @@ tests:
 
   - it: should render migration initContainers when operator is disabled
     set:
-      operator.enabled: false
+      openfga-operator.enabled: false
       datastore.engine: postgres
       datastore.uri: "postgres://localhost/openfga"
       datastore.applyMigrations: true
@@ -145,7 +137,7 @@ tests:
   # across upgrades. Regression guard for the operator-migration branch.
   - it: should include common labels on pod template metadata when operator is disabled
     set:
-      operator.enabled: false
+      openfga-operator.enabled: false
     asserts:
       - isNotEmpty:
           path: spec.template.metadata.labels["helm.sh/chart"]
@@ -158,8 +150,7 @@ tests:
 
   - it: should include common labels on pod template metadata when operator is enabled
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       datastore.engine: postgres
     asserts:
       - isNotEmpty:

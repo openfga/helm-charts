@@ -3,15 +3,11 @@
 # memory datastore needs no migration, so the Deployment is not opted in to
 # operator migrations; the Postgres migration path is covered by the operator
 # E2E step in .github/workflows/test.yml.
-operator:
-  enabled: true
-
-migration:
-  enabled: true
 
 datastore:
   engine: memory
 
 openfga-operator:
+  enabled: true
   image:
     pullPolicy: Never

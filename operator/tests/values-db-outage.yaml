@@ -1,8 +1,6 @@
 # Test values: Postgres deployed but scaled to 0 (simulates DB outage)
-operator:
-  enabled: true
-
 openfga-operator:
+  enabled: true
   image:
     repository: openfga/openfga-operator
     tag: dev
@@ -15,11 +13,6 @@ openfga-operator:
 datastore:
   engine: postgres
   uri: "postgres://openfga:changeme@openfga-test-postgres:5432/openfga?sslmode=disable"
-
-migration:
-  enabled: true
-  serviceAccount:
-    create: true
 
 extraObjects:
   - apiVersion: v1

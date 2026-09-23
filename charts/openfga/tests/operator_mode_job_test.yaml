@@ -4,8 +4,7 @@ templates:
 tests:
   - it: should not render migration job when operator is enabled
     set:
-      operator.enabled: true
-      migration.enabled: true
+      openfga-operator.enabled: true
       datastore.engine: postgres
       datastore.uri: "postgres://localhost/openfga"
       datastore.applyMigrations: true
@@ -16,7 +15,7 @@ tests:
 
   - it: should render migration job when operator is disabled
     set:
-      operator.enabled: false
+      openfga-operator.enabled: false
       datastore.engine: postgres
       datastore.uri: "postgres://localhost/openfga"
       datastore.applyMigrations: true

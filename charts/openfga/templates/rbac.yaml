@@ -1,4 +1,4 @@
-{{- if and (not .Values.operator.enabled) .Values.serviceAccount.create -}}
+{{- if and (not (index .Values "openfga-operator" "enabled")) .Values.serviceAccount.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
