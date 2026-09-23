@@ -120,7 +120,7 @@ func (r *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// the chart's legacy Helm hook Job, is replaced.
 	complete := isJobConditionTrue(job, batchv1.JobComplete)
 	failedAt, failed := jobFailedAt(job)
-	started := !complete && !failed && (ptr.Deref(job.Status.Ready, 0) > 0 || job.Status.Succeeded > 0)
+	started := !complete && !failed && (job.Status.Active > 0 || ptr.Deref(job.Status.Ready, 0) > 0 || job.Status.Succeeded > 0)
 	outdated := !jobOwnedByDeployment || jobIdentity(job) != desired
 	if outdated {
 		// Never interrupt a running migration: a non-transactional step such as

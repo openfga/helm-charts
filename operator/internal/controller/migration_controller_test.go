@@ -506,11 +506,9 @@ func TestReconcile_JobForOtherVersion_Replaced(t *testing.T) {
 	}
 }
 
-func TestReconcile_PendingJobWithOutdatedTemplate_Replaced(t *testing.T) {
+func TestReconcile_UnstartedJobWithOutdatedTemplate_Replaced(t *testing.T) {
 	dep := newTestDeployment("openfga/openfga:v1.14.0")
 	job := newTestJob(dep)
-	job.Status.Active = 1
-	job.Status.Ready = ptr.To(int32(0))
 	dep.Spec.Template.Spec.Containers[0].Env[1].Value = "postgres://db.example.com/openfga"
 	r := newReconciler(t, nil, dep, job)
 
@@ -619,6 +617,7 @@ func TestReconcile_StartedJobWithOutdatedTemplate_Kept(t *testing.T) {
 		name   string
 		status batchv1.JobStatus
 	}{
+		{"active pod not ready", batchv1.JobStatus{Active: 1}},
 		{"pod running", batchv1.JobStatus{Active: 1, Ready: ptr.To(int32(1))}},
 		{"pod finished before the job is marked complete", batchv1.JobStatus{Succeeded: 1, Ready: ptr.To(int32(0))}},
 	} {
