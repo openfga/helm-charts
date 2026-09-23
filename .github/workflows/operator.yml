@@ -7,11 +7,13 @@ on:
     paths:
       - "operator/**"
       - "charts/openfga-operator/**"
+      - ".github/scripts/check-operator-release*.sh"
       - ".github/workflows/operator.yml"
   pull_request:
     paths:
       - "operator/**"
       - "charts/openfga-operator/**"
+      - ".github/scripts/check-operator-release*.sh"
       - ".github/workflows/operator.yml"
   workflow_dispatch:
     inputs:
@@ -37,6 +39,9 @@ jobs:
       - name: Require a version bump when the operator image changes
         if: github.event_name == 'pull_request'
         run: .github/scripts/check-operator-release.sh "origin/${{ github.base_ref }}"
+
+      - name: Test operator release guard
+        run: .github/scripts/check-operator-release_test.sh
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
