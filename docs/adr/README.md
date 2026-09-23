@@ -10,7 +10,7 @@ We follow the format described by [Michael Nygard](https://cognitect.com/blog/20
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](001-adopt-openfga-operator.md) | Adopt a Kubernetes Operator for OpenFGA Lifecycle Management | Proposed | 2026-04-06 |
+| [ADR-001](001-adopt-openfga-operator.md) | Adopt a Kubernetes Operator for OpenFGA Lifecycle Management | Accepted | 2026-04-06 |
 | [ADR-002](002-operator-managed-migrations.md) | Replace Helm Hook Migrations with Operator-Managed Migrations | Proposed | 2026-04-06 |
 
 ---
