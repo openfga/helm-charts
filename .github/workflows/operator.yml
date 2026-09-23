@@ -42,6 +42,10 @@ jobs:
         working-directory: operator
         run: go test ./... -v
 
+      - name: Check formatting
+        working-directory: operator
+        run: test -z "$(gofmt -l .)"
+
       - name: Run vet
         working-directory: operator
         run: go vet ./...

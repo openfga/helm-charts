@@ -1,7 +1,9 @@
-{{- if and .Values.operator.enabled .Values.migration.enabled }}
-NOTE: operator-managed migration is enabled. The OpenFGA Deployment starts at
-0 replicas and is scaled up by the openfga-operator only after the migration
-Job completes successfully.
+{{- if and .Values.operator.enabled .Values.migration.enabled .Values.datastore.applyMigrations (has .Values.datastore.engine (list "postgres" "mysql")) }}
+NOTE: operator-managed migration is enabled. The chart does not set spec.replicas
+in this mode — the operator scales the Deployment to the desired count once the
+migration Job succeeds. A fresh install begins at the Kubernetes default of one
+replica (held NotReady by the readiness gate until migration finishes); an
+upgrade preserves the live replica count while the migration runs.
 
 If pods don't appear within ~2 minutes, check the operator and the migration
 Job:

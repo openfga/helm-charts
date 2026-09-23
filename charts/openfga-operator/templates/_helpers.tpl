@@ -32,6 +32,13 @@ Allows overriding it for multi-namespace deployments in combined charts.
 {{- end -}}
 
 {{/*
+Expand the namespace watched and managed by the operator.
+*/}}
+{{- define "openfga-operator.watchNamespace" -}}
+{{- default (include "openfga-operator.namespace" .) .Values.watchNamespace | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
 Create chart name and version as used by the chart label.
 */}}
 {{- define "openfga-operator.chart" -}}

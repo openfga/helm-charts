@@ -6,7 +6,7 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 
 ## How It Works
 
-1. The operator watches Deployments **in its own namespace** labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
+1. The operator watches Deployments in its configured namespace, which defaults to the operator pod's namespace, labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
 2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
    - Creates a migration Job running `openfga migrate`
    - Waits for the Job to complete
@@ -58,7 +58,7 @@ Integration test values and instructions are in [`tests/`](tests/). Three scenar
 |----------|-------------|---------------|
 | Happy path | `tests/values-happy-path.yaml` | Full lifecycle: Postgres up, migration succeeds, OpenFGA scales to 3/3 |
 | DB outage & recovery | `tests/values-db-outage.yaml` | Postgres starts at 0 replicas; scale it up later to verify self-healing |
-| No database | `tests/values-no-db.yaml` | Permanent failure: operator retries without crashing, app stays at 0 |
+| No database | `tests/values-no-db.yaml` | Permanent failure: operator retries without crashing; the app pod stays NotReady (0/1) |
 
 Quick start:
 
@@ -88,7 +88,7 @@ See [`tests/README.md`](tests/README.md) for detailed verification steps and all
 
 ## Project Structure
 
-```
+```text
 operator/
 ├── cmd/
 │   └── main.go                          # Entry point, manager setup
@@ -110,7 +110,7 @@ The operator accepts the following flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--leader-elect` | `false` | Enable leader election so only one replica actively reconciles at a time. Required when running multiple operator replicas for high availability; standby pods wait for the leader's Lease to expire before taking over. Not needed for single-replica deployments. |
-| `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). Each operator instance manages only its own namespace, so multiple independent OpenFGA installations can coexist safely. |
+| `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). The chart binds namespaced RBAC in the configured watch namespace, so the operator may run in a different namespace when needed. |
 | `--metrics-bind-address` | `:8080` | Address the Prometheus metrics endpoint binds to. Change only if the default port conflicts with other containers in the pod. |
 | `--health-probe-bind-address` | `:8081` | Address the Kubernetes liveness and readiness probe endpoints bind to. Change only if the default port conflicts. |
 | `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. After hitting this limit the operator deletes the Job, sets a `MigrationFailed` condition on the Deployment, and retries after a 60-second cooldown. |

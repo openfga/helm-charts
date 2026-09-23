@@ -25,12 +25,12 @@ func init() {
 
 func main() {
 	var (
-		leaderElect     bool
-		watchNamespace  string
-		metricsAddr     string
-		healthProbeAddr string
-		backoffLimit    int
-		activeDeadline  int
+		leaderElect      bool
+		watchNamespace   string
+		metricsAddr      string
+		healthProbeAddr  string
+		backoffLimit     int
+		activeDeadline   int
 		ttlAfterFinished int
 	)
 
@@ -82,12 +82,13 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress: healthProbeAddr,
-		LeaderElection:         leaderElect,
-		LeaderElectionID:       "openfga-operator-leader",
-		Cache:                  cacheOpts,
+		Scheme:                  scheme,
+		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
+		HealthProbeBindAddress:  healthProbeAddr,
+		LeaderElection:          leaderElect,
+		LeaderElectionID:        "openfga-operator-leader",
+		LeaderElectionNamespace: watchNamespace,
+		Cache:                   cacheOpts,
 	})
 	if err != nil {
 		logger.Error(err, "unable to create manager")

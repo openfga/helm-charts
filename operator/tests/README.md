@@ -40,7 +40,7 @@ helm install openfga-test charts/openfga -n openfga-test \
 |----------|-------|
 | `openfga-test-openfga-operator` | `1/1 Running` |
 | `openfga-test-postgres` | `1/1 Running` |
-| `openfga-test-migrate-xxxxx` | `0/1 Completed` |
+| `openfga-test-migrate` | `0/1 Completed` |
 | `openfga-test` (OpenFGA) | `3/3 Running` |
 
 **Verify:**
@@ -92,7 +92,7 @@ helm install openfga-test charts/openfga -n openfga-test \
   - Deletes the failed Job
   - Creates a fresh Job after a 60-second delay
 - This cycle repeats indefinitely
-- OpenFGA stays at 0 replicas throughout (safe — no unmigrated app running)
+- OpenFGA stays at 0/1 throughout — the chart omits `spec.replicas`, so one pod starts (the Kubernetes default) but the readiness gate holds it NotReady, serving no traffic while the migration keeps failing
 
 **Watch the failure cycle:**
 
@@ -160,14 +160,14 @@ helm install openfga-test charts/openfga -n openfga-test \
 - Migration Jobs fail repeatedly (DNS resolution fails for `postgres-does-not-exist`)
 - Operator sets `MigrationFailed: True` on the Deployment
 - Operator deletes failed Jobs and retries every ~60 seconds
-- OpenFGA stays at 0 replicas indefinitely — never starts against an unmigrated database
+- OpenFGA stays at 0/1 indefinitely — the single default pod never passes the readiness gate, so it never serves traffic against an unmigrated database
 
 This scenario verifies the operator doesn't crash-loop or consume excessive resources when the database is permanently unavailable.
 
 **Verify:**
 
 ```bash
-# OpenFGA at 0/0, operator at 1/1
+# OpenFGA at 0/1 (pod NotReady), operator at 1/1
 kubectl get deployments -n openfga-test
 
 # MigrationFailed condition present
