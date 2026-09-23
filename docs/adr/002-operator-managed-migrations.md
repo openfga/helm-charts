@@ -88,23 +88,25 @@ The operator runs a **migration controller** that reconciles the OpenFGA Deploym
 │     └── ttlSecondsAfterFinished: 300                     │
 │  5. Watch Job until succeeded                            │
 │  6. Update ConfigMap → "version: v1.14.0"                │
-│  7. Ensure Deployment at desired replicas                │
-│     (fresh install: 0 → N; upgrade: already running)     │
+│  7. Scale Deployment to desired replicas                 │
+│     (fresh install: default 1 → N; upgrade: unchanged)   │
 │  8. New pods pass readiness, serve requests              │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **Key design decisions within this approach:**
 
-#### Zero-downtime upgrades via lookup and readiness gating
+#### Zero-downtime upgrades via omitted replicas and readiness gating
 
-On **fresh install**, the Helm chart renders the Deployment with `replicas: 0` (no existing Deployment found via `lookup`). The operator runs the migration Job and scales the Deployment to the desired replica count afterward.
+In operator mode the chart **omits `spec.replicas` entirely** rather than rendering a fixed number. The operator owns the replica count: it scales the Deployment to `openfga.dev/desired-replicas` once the migration Job succeeds. Omitting the field (the same treatment an HPA-managed Deployment gets) means a GitOps controller sees no declared replica count and leaves it unmanaged, so it never fights the operator over the value — no `ignoreDifferences` or field-ownership patch is required.
 
-On **upgrade**, the chart uses Helm's `lookup` function to read the current replica count from the live Deployment and preserves it. Kubernetes starts a rolling update with the new image. OpenFGA has a **built-in schema version gate**: on startup, each instance calls `IsReady()` which checks the database schema revision against `MinimumSupportedDatastoreSchemaRevision` (via goose). If the schema is behind, the gRPC health endpoint returns `NOT_SERVING`, the readiness probe fails, and Kubernetes does not route traffic to the pod. Old pods continue serving on the migrated schema (OpenFGA migrations are additive/backward-compatible — this is how the existing Helm hook flow has operated for years with rolling updates). Once the operator's migration Job completes, new pods pass readiness and the rolling update proceeds.
+On **fresh install**, no `spec.replicas` is set, so Kubernetes applies its default of one replica. That pod starts before the migration has run and is held `NotReady` by OpenFGA's readiness gate (see below), so it serves no traffic. The operator runs the migration Job and then scales the Deployment to the desired replica count.
 
-This matches the existing zero-downtime behavior of the non-operator chart. The previous approach (always starting at `replicas: 0`) introduced a full outage on every `helm upgrade` — even for config-only changes — which was a regression from the existing rolling update model.
+On **upgrade**, the field is still absent from the rendered manifest, so Kubernetes preserves the live replica count and starts a rolling update with the new image. OpenFGA has a **built-in schema version gate**: on startup, each instance calls `IsReady()` which checks the database schema revision against `MinimumSupportedDatastoreSchemaRevision` (via goose). If the schema is behind, the gRPC health endpoint returns `NOT_SERVING`, the readiness probe fails, and Kubernetes does not route traffic to the pod. Old pods continue serving on the migrated schema (OpenFGA migrations are additive/backward-compatible — this is how the existing Helm hook flow has operated for years with rolling updates). Once the operator's migration Job completes, new pods pass readiness and the rolling update proceeds.
 
-**`lookup` caveat:** `helm template` and `--dry-run=client` cannot query the cluster, so `lookup` returns empty and the template falls back to `replicas: 0`. This is correct for CI rendering (no live cluster) and does not affect real installs/upgrades. `--dry-run=server` works correctly.
+This matches the existing zero-downtime behavior of the non-operator chart.
+
+**Rejected alternative — pin `replicas: 0` and read the live count via `lookup`:** the chart could render `replicas: 0` on fresh install and use Helm's `lookup` to preserve the live count on upgrade. This is rejected for two reasons. A GitOps controller that reconciles the manifest drives replicas back to 0 on every sync and fights the operator, causing a full outage. And `lookup` returns empty under `helm template` and `--dry-run=client`, so the manifest silently renders `replicas: 0` in CI and dry runs. Omitting the field avoids both problems and needs no cluster lookup.
 
 #### Version tracking via ConfigMap
 
@@ -155,9 +157,12 @@ Problems: ArgoCD skips step 4. FluxCD deletes Job in step 4. `--wait` deadlocks 
 helm install
   ├── Create ServiceAccount (runtime), ServiceAccount (migrator)
   ├── Create Secret, Service
-  ├── Create Deployment (replicas: 0 via lookup fallback, no init containers)
+  ├── Create Deployment (no spec.replicas, no init containers)
   ├── Create Operator Deployment
   └── [Helm is done — all resources are regular, no hooks]
+
+(Kubernetes starts the Deployment at its default of 1 replica; that pod
+is held NotReady by the readiness gate until the migration completes.)
 
 Operator starts:
   ├── Detects Deployment image version
@@ -166,14 +171,14 @@ Operator starts:
   │     └── Uses openfga-migrator ServiceAccount
   │     └── Runs openfga migrate → succeeds
   ├── Creates ConfigMap with migrated version
-  └── Scales Deployment 0 → 3 replicas → pods start
+  └── Scales Deployment to 3 replicas → pods pass readiness
 ```
 
 **After (operator-managed, upgrade with new image):**
 
 ```
 helm upgrade
-  ├── lookup finds existing Deployment at 3 replicas → preserves replicas: 3
+  ├── no spec.replicas in manifest → Kubernetes keeps the live count (3)
   ├── Patches Deployment with new image tag
   ├── Kubernetes starts rolling update
   │     ├── New pods (v1.14) start → schema is behind →
@@ -232,7 +237,7 @@ Users on `operator.enabled: false` (the default) see identical rendered output t
 ### Negative
 
 - **Operator is a new runtime dependency** — if the operator pod is unavailable, migrations don't run (but existing running pods are unaffected)
-- **`lookup` limitation** — `helm template` and `--dry-run=client` cannot query the cluster; the template falls back to `replicas: 0` in these contexts. This does not affect real installs/upgrades.
+- **Replica count is unmanaged by the chart in operator mode** — because `spec.replicas` is omitted, the rendered manifest no longer declares a desired count; the operator (and, on first install, the Kubernetes default of 1) determines it. A reader inspecting only the chart output cannot see the running replica count.
 - **Two upgrade paths to document** — `operator.enabled: true` (new) vs `operator.enabled: false` (legacy)
 
 ### Risks

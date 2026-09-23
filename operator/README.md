@@ -8,12 +8,13 @@ This is **Stage 1** of the operator — focused solely on migration orchestratio
 
 1. The operator watches Deployments **in its own namespace** labeled `app.kubernetes.io/part-of: openfga` and `app.kubernetes.io/component: authorization-controller`
 2. When a version change is detected (comparing the container image tag to the `{name}-migration-status` ConfigMap), the operator:
-   - Keeps the Deployment at 0 replicas
    - Creates a migration Job running `openfga migrate`
    - Waits for the Job to complete
    - Updates the ConfigMap with the new version
-   - Scales the Deployment up to the desired replica count
-3. On failure, a `MigrationFailed` condition is set on the Deployment and replicas stay at 0
+   - Scales the Deployment to the desired replica count (`openfga.dev/desired-replicas`)
+3. On failure, a `MigrationFailed` condition is set on the Deployment and the desired replica count is not applied
+
+The operator never scales the Deployment to 0. A pod that starts before the migration completes is held `NotReady` by OpenFGA's readiness gate on `MinimumSupportedDatastoreSchemaRevision`, so it won't serve traffic against an unmigrated schema.
 
 ## Prerequisites
 
@@ -124,23 +125,14 @@ The operator reads these annotations from the OpenFGA Deployment:
 
 | Annotation | Description |
 |------------|-------------|
-| `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `operator.enabled` and `migration.enabled` are both true. |
-| `openfga.dev/desired-replicas` | The replica count to restore after migration succeeds. Set by the Helm chart. |
+| `openfga.dev/migration-enabled` | Must be `"true"` for the operator to manage migrations. Deployments without this annotation are ignored. Set by the Helm chart when `operator.enabled`, `migration.enabled`, and `datastore.applyMigrations` are all true. |
+| `openfga.dev/desired-replicas` | The replica count the operator scales the Deployment to once migration succeeds. Set by the Helm chart. |
 | `openfga.dev/migration-service-account` | The ServiceAccount to use for migration Jobs. Defaults to the Deployment's SA. |
 
 ## Limitations
 
-- **Mutable image tags:** The operator detects version changes by comparing the container image tag (or digest). If you deploy with a mutable tag like `latest` or reuse the same tag for different builds, the operator will not detect changes and will skip the migration. Use immutable tags (e.g., `v1.14.0`) or pin images by digest for reliable migration triggering.
+- **Migrations key only on the image tag:** The operator compares the container image tag (or digest) to the `{name}-migration-status` ConfigMap. A mutable tag like `latest`, or a tag reused for a new build, is not seen as a change, so the migration is skipped — use immutable tags (e.g. `v1.14.0`) or pin by digest. A migration-needing change that keeps the same image — for example repointing `datastore.uri` at a different or restored database — also won't trigger a Job; the readiness gate holds the new pod `NotReady`, but you must migrate manually (bump the image or delete the status ConfigMap).
 - **Migration-specific volumes:** The legacy Helm chart values `migrate.extraVolumes` and `migrate.extraVolumeMounts` have no effect in operator mode. The operator inherits volumes and mounts from the main Deployment pod spec. If you need additional volumes for migrations (e.g., CA bundles or TLS certs), add them to the top-level `extraVolumes` and `extraVolumeMounts` values instead.
+- **Single-container migration Job:** The Job runs one container (`openfga migrate`) with the main container's env, volumes, and scheduling. It injects no sidecars or extra init containers, so databases reached through a sidecar proxy (Cloud SQL Auth Proxy, AlloyDB) aren't supported for operator-managed migrations — a proxy that doesn't exit on its own (e.g. an Istio sidecar) would keep the Job pod running and stop the Job from completing. Connect to such databases directly instead.
 - **`envFrom` datastore detection:** The memory-datastore check inspects only the explicit `env` entries on the container. If `OPENFGA_DATASTORE_ENGINE` is supplied via `envFrom` (a ConfigMap or Secret), the operator cannot read the value and will attempt a migration Job that a memory datastore does not need. The Helm chart sets this variable inline, so chart-managed installs are unaffected.
-- **GitOps and `spec.replicas`:** The operator owns the Deployment's replica count — it scales to `0` for the duration of a migration and restores `openfga.dev/desired-replicas` afterward. Under a GitOps controller the chart's `lookup` of the live replica count returns empty at render time, so the rendered manifest carries `replicas: 0` (see [ADR-002](../docs/adr/002-operator-managed-migrations.md)). If the controller keeps syncing that field it will fight the operator over it, so exclude `spec.replicas` from GitOps reconciliation — the same treatment an HPA-managed Deployment needs:
-  - **ArgoCD** — add to the `Application`:
-    ```yaml
-    spec:
-      ignoreDifferences:
-        - group: apps
-          kind: Deployment
-          jsonPointers:
-            - /spec/replicas
-    ```
-  - **FluxCD** — Flux applies server-side and honors field ownership, so drop `spec.replicas` from the Flux-applied manifest (e.g. a Kustomize patch removing `/spec/replicas`) and let the operator own it.
+- **GitOps and `spec.replicas`:** The operator owns the replica count — it scales to `openfga.dev/desired-replicas` after the migration Job completes (see [ADR-002](../docs/adr/002-operator-managed-migrations.md)). To avoid fighting a GitOps controller over that field, the chart omits `spec.replicas` in operator mode, the same as an HPA-managed Deployment. Argo CD and Flux treat an absent field as unmanaged, so no `ignoreDifferences` or field-ownership patch is needed. A fresh install starts at the Kubernetes default of one replica, held `NotReady` by the readiness gate until the migration finishes, after which the operator scales to the desired count.
