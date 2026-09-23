@@ -122,7 +122,7 @@ The operator accepts the following flags:
 |------|---------|-------------|
 | `--leader-elect` | `false` | Enable leader election so only one replica actively reconciles at a time. Required when running multiple operator replicas for high availability; standby pods wait for the leader's Lease to expire before taking over. Not needed for single-replica deployments. |
 | `--watch-namespace` | `""` | Namespace to watch for OpenFGA Deployments. Defaults to the operator pod's own namespace (via `POD_NAMESPACE` env var). The chart binds namespaced RBAC in the configured watch namespace, so the operator may run in a different namespace when needed. |
-| `--metrics-bind-address` | `:8080` | Address the Prometheus metrics endpoint binds to. Change only if the default port conflicts with other containers in the pod. |
+| `--metrics-bind-address` | `:8080` | Address the Prometheus metrics endpoint binds to; `0` disables it. The chart passes `0` unless `metrics.enabled` is set, which also declares a `metrics` container port. The endpoint is plain HTTP without authentication. |
 | `--health-probe-bind-address` | `:8081` | Address the Kubernetes liveness and readiness probe endpoints bind to. Change only if the default port conflicts. |
 | `--backoff-limit` | `3` | Number of times a migration Job's pod can fail before the Job is considered failed. The operator then sets a `MigrationFailed` condition on the Deployment and replaces the Job 60 seconds after it failed. |
 | `--active-deadline-seconds` | `0` | Maximum wall-clock seconds a migration Job can run before Kubernetes terminates it. `0` means no deadline. A deadline cuts off long migrations, such as index builds or MySQL table rebuilds on large tables, which then start over on the next attempt. |
@@ -148,6 +148,33 @@ The operator reads these annotations from the OpenFGA Deployment:
 | `openfga.dev/migration-timeout` | `OPENFGA_TIMEOUT` for the migration container. Generated from `migrate.timeout`. |
 | `openfga.dev/migration-annotations` | JSON map of non-Helm annotations for the migration Job and pod. Generated from `migrate.annotations`; `helm.sh/*` hook annotations are excluded. |
 | `openfga.dev/migration-labels` | JSON map of additional labels for the migration Job and pod. Generated from `migrate.labels`; operator identity labels take precedence. |
+
+## Security
+
+The operator is namespace-scoped. It watches one namespace, runs with a Role rather than a ClusterRole, and never reads Secrets itself: the migration Job gets the OpenFGA container's environment, including `secretKeyRef` entries, and runs as the service account named in `openfga.dev/migration-service-account`, or the OpenFGA pod's service account when that annotation is absent.
+
+The Role the chart creates in the watch namespace:
+
+| Resource | Verbs | Used for |
+|----------|-------|----------|
+| `apps/deployments` | get, list, watch | Find opted-in OpenFGA Deployments |
+| `apps/deployments/status` | patch | Set the `MigrationFailed` condition |
+| `batch/jobs` | get, list, watch, create, delete, patch | Run, replace and expire migration Jobs |
+| `configmaps` | get, list, watch, create, update | Record the migrated version |
+| `coordination.k8s.io/leases` | get, list, watch, create, update | Leader election |
+| `events` | create, patch | `MigrationStarted`, `MigrationSucceeded`, `MigrationFailed`, `MigrationJobConflict` |
+
+Ports: `8081` serves `/healthz` and `/readyz` for the kubelet. `8080` serves Prometheus metrics only when `metrics.enabled` is set; it has no authentication, so restrict it with a NetworkPolicy if the namespace is shared.
+
+Images pushed by `.github/workflows/operator.yml` carry an SBOM and build provenance and are signed with cosign keyless. To verify:
+
+```bash
+cosign verify ghcr.io/openfga/openfga-operator:<tag> \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/openfga/helm-charts/\.github/workflows/operator\.yml@refs/heads/'
+```
+
+Report vulnerabilities through the [security policy](https://github.com/openfga/helm-charts/security/policy), not in a public issue.
 
 ## Limitations
 

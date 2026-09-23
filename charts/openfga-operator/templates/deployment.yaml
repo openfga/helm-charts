@@ -43,6 +43,7 @@ spec:
             {{- if .Values.watchNamespace }}
             - --watch-namespace={{ .Values.watchNamespace }}
             {{- end }}
+            - --metrics-bind-address={{ if .Values.metrics.enabled }}:8080{{ else }}0{{ end }}
             - --backoff-limit={{ .Values.migrationJob.backoffLimit }}
             - --active-deadline-seconds={{ .Values.migrationJob.activeDeadlineSeconds }}
             - --ttl-seconds-after-finished={{ .Values.migrationJob.ttlSecondsAfterFinished }}
@@ -55,6 +56,11 @@ spec:
             - name: healthz
               containerPort: 8081
               protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

@@ -63,6 +63,11 @@ leaderElection:
   # -- Enable leader election for controller manager.
   enabled: true
 
+metrics:
+  # -- Serve controller-runtime metrics on a `metrics` port (8080). Plain HTTP
+  # without authentication, so leave off unless something scrapes it.
+  enabled: false
+
 migrationJob:
   # -- Number of pod failures before a migration Job is considered failed.
   backoffLimit: 3
