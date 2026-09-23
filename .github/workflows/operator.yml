@@ -69,24 +69,18 @@ jobs:
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
           echo "Operator version: ${version} (sha: ${short_sha})"
 
-      - name: Determine image tags and push policy
-        id: tags
+      - name: Determine push policy
+        id: policy
         run: |
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-            # Main push: publish floating :<version> and :latest plus an
-            # immutable :<version>-<sha> so consumers pinning a specific
-            # commit have a stable reference.
-            echo "tags=${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }},${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}-${{ steps.version.outputs.short_sha }}" >> "$GITHUB_OUTPUT"
             echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "mode=main" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.push_image }}" == "true" ]]; then
-            echo "tags=${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}-${{ steps.version.outputs.short_sha }}" >> "$GITHUB_OUTPUT"
             echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "mode=dispatch" >> "$GITHUB_OUTPUT"
           else
-            # Pull request (or workflow_dispatch with push_image=false):
-            # build both platforms but don't publish — catches arm64-incompatible
-            # changes (build tags, syscalls, CGO) before they merge.
-            echo "tags=${{ env.IMAGE_NAME }}:pr-${{ steps.version.outputs.short_sha }}" >> "$GITHUB_OUTPUT"
             echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "mode=pr" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up QEMU
@@ -96,18 +90,52 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        if: steps.tags.outputs.push == 'true'
+        if: steps.policy.outputs.push == 'true'
         uses: docker/login-action@v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          sha="${{ steps.version.outputs.short_sha }}"
+          img="${{ env.IMAGE_NAME }}"
+          case "${{ steps.policy.outputs.mode }}" in
+            main)
+              # Always refresh :latest and publish the immutable per-commit tag.
+              tags="${img}:latest,${img}:${version}-${sha}"
+              # Publish :<version> only if it is not already in the registry, so a
+              # released version is never overwritten by a later push to main. This
+              # mirrors chart-releaser's CR_SKIP_EXISTING for the charts and keeps
+              # the chart's default image tag stable for a given version.
+              if docker buildx imagetools inspect "${img}:${version}" >/dev/null 2>&1; then
+                echo "::notice::${img}:${version} already exists; leaving it unchanged"
+              else
+                tags="${img}:${version},${tags}"
+              fi
+              ;;
+            dispatch)
+              # Manual run: publish only the immutable per-commit tag.
+              tags="${img}:${version}-${sha}"
+              ;;
+            *)
+              # Pull request: build both platforms but do not publish — catches
+              # arm64-incompatible changes (build tags, syscalls, CGO) before merge.
+              tags="${img}:pr-${sha}"
+              ;;
+          esac
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tags: ${tags}"
+
       - name: Build and (conditionally) push
         uses: docker/build-push-action@v6
         with:
           context: operator
-          push: ${{ steps.tags.outputs.push }}
+          push: ${{ steps.policy.outputs.push }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
