@@ -24,6 +24,7 @@ jobs:
           helm repo add bitnami-legacy https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
           helm dependency build charts/openfga
           helm unittest charts/openfga
+          helm unittest charts/openfga-operator
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -37,7 +38,10 @@ jobs:
         id: list-changed
         run: |
           changed=$(ct list-changed --target-branch ${{ github.event.repository.default_branch }})
-          if [[ -n "$changed" ]]; then
+          # Operator code changes are only exercised against a cluster by the
+          # steps below, so treat them as a chart change too.
+          operator=$(git diff --name-only "origin/${{ github.event.repository.default_branch }}...HEAD" -- operator)
+          if [[ -n "$changed" || -n "$operator" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -59,6 +63,96 @@ jobs:
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
 
+      - name: Build and load operator image into kind
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          version=$(grep '^appVersion:' charts/openfga-operator/Chart.yaml | awk '{print $2}' | tr -d '"')
+          docker build -t "ghcr.io/openfga/openfga-operator:${version}" operator/
+          kind load docker-image "ghcr.io/openfga/openfga-operator:${version}" --name chart-testing
+
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
         run: ct install --target-branch ${{ github.event.repository.default_branch }}
+
+      - name: E2E test — operator-managed migration across schema boundary
+        id: e2e-operator
+        if: steps.list-changed.outputs.changed == 'true'
+        env:
+          NS: openfga-e2e
+          REL: openfga
+          # v1.9.5 predates the v1.10.0 "!!REQUIRES MIGRATION!!" boundary
+          # (collation spec change in openfga/openfga#2661), so upgrading to the
+          # chart's appVersion always crosses at least one migration.
+          OLD_VER: v1.9.5
+        run: |
+          set -euo pipefail
+          NEW_VER=$(grep '^appVersion:' charts/openfga/Chart.yaml | awk '{print $2}' | tr -d '"')
+          kubectl create namespace "$NS"
+          helm dependency build charts/openfga
+
+          echo "=== Phase 1: fresh install at ${OLD_VER} ==="
+          helm install "$REL" charts/openfga \
+            --namespace "$NS" \
+            --values .github/ci/operator-postgres-values.yaml \
+            --set image.tag="${OLD_VER}" \
+            --wait --timeout=3m
+
+          # Operator pod must reach Ready (validates /readyz, RBAC, env vars).
+          kubectl wait deployment -n "$NS" \
+            -l app.kubernetes.io/name=openfga-operator \
+            --for=condition=Available=True --timeout=2m
+
+          # Operator must run the migration Job and write ConfigMap at OLD_VER.
+          # Poll because kubectl wait --for=create requires kubectl >=1.31.
+          for _ in $(seq 1 60); do
+            ver=$(kubectl get configmap "${REL}-migration-status" -n "$NS" \
+              -o jsonpath='{.data.version}' 2>/dev/null || true)
+            if [ "$ver" = "${OLD_VER}" ]; then
+              echo "Phase 1: migration ConfigMap version=${ver}"
+              break
+            fi
+            sleep 3
+          done
+          test "$ver" = "${OLD_VER}"
+
+          # The pod stays NotReady until the migration has run on the new database.
+          kubectl wait deployment/"$REL" -n "$NS" \
+            --for=jsonpath='{.status.readyReplicas}'=1 --timeout=3m
+
+          echo "=== Phase 2: helm upgrade ${OLD_VER} → ${NEW_VER} ==="
+          helm upgrade "$REL" charts/openfga \
+            --namespace "$NS" \
+            --values .github/ci/operator-postgres-values.yaml \
+            --set image.tag="${NEW_VER}" \
+            --wait --timeout=3m
+
+          # Operator must detect the version change, delete the stale Job,
+          # run a new migration, and update the ConfigMap to NEW_VER.
+          for _ in $(seq 1 60); do
+            ver=$(kubectl get configmap "${REL}-migration-status" -n "$NS" \
+              -o jsonpath='{.data.version}' 2>/dev/null || true)
+            if [ "$ver" = "${NEW_VER}" ]; then
+              echo "Phase 2: migration ConfigMap version=${ver}"
+              break
+            fi
+            sleep 3
+          done
+          test "$ver" = "${NEW_VER}"
+
+          # New pods must roll out at NEW_VER and become Ready.
+          kubectl wait deployment/"$REL" -n "$NS" \
+            --for=jsonpath='{.status.readyReplicas}'=1 --timeout=3m
+          image=$(kubectl get deployment/"$REL" -n "$NS" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')
+          echo "Phase 2 running image: $image"
+          echo "$image" | grep -q ":${NEW_VER}"
+
+      - name: Dump operator E2E diagnostics on failure
+        if: failure() && steps.e2e-operator.conclusion == 'failure'
+        env:
+          NS: openfga-e2e
+        run: |
+          kubectl get all,configmap,job -n "$NS" -o wide || true
+          kubectl describe deployment -n "$NS" || true
+          kubectl logs -n "$NS" -l app.kubernetes.io/name=openfga-operator --tail=200 || true
+          kubectl logs -n "$NS" -l job-name --tail=200 || true
