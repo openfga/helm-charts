@@ -82,7 +82,7 @@ The operator runs a **migration controller** that reconciles the OpenFGA Deploym
 │     └── "Last migrated image and datastore trigger"      │
 │  3. Identities differ → migration needed                 │
 │  4. Create Job/openfga-migrate                           │
-│     ├── ServiceAccount: openfga-migrator (DDL perms)     │
+│     ├── ServiceAccount: openfga (or a dedicated one)     │
 │     ├── Image: openfga/openfga:v1.14.0                   │
 │     ├── Args: ["migrate"]                                │
 │     └── ttlSecondsAfterFinished: 300                     │
@@ -152,7 +152,7 @@ Problems: ArgoCD skips step 4. FluxCD deletes Job in step 4. `--wait` deadlocks 
 
 ```text
 helm install
-  ├── Create ServiceAccount (runtime), ServiceAccount (migrator)
+  ├── Create ServiceAccount (plus a migration ServiceAccount if enabled)
   ├── Create Secret, Service
   ├── Create Deployment (no init containers)
   ├── Create Operator Deployment
@@ -164,7 +164,7 @@ Operator starts:
   ├── Detects Deployment image version
   ├── No migration status ConfigMap → migration needed
   ├── Creates Job/openfga-migrate (regular Job, no hooks)
-  │     └── Uses openfga-migrator ServiceAccount
+  │     └── Runs as the OpenFGA ServiceAccount (or the migration one)
   │     └── Runs openfga migrate → succeeds
   ├── Creates ConfigMap with migrated version
   └── Pods pass readiness
@@ -210,7 +210,7 @@ Nothing is deleted outright — every change is gated on `openfga-operator.enabl
 | `values.yaml`: `migration.serviceAccount.*` | Optional separate ServiceAccount for migration Jobs |
 | `values.yaml`: `migration.trigger` | Explicit rerun trigger for referenced Secret data changes |
 | `values.yaml`: migration pod values | `migrate.extraInitContainers`, `migrate.sidecars`, volumes, mounts, resources, timeout, non-hook annotations, and labels are forwarded to operator Jobs |
-| `templates/serviceaccount.yaml`: second SA | Migration ServiceAccount |
+| `templates/serviceaccount.yaml`: second SA | Optional migration ServiceAccount |
 | `charts/openfga-operator/` | Operator subchart (conditional dependency) |
 
 Users on `openfga-operator.enabled: false` (the default) see identical rendered output to the pre-operator chart, so gradual adoption is possible with no forced migration.
@@ -219,9 +219,9 @@ Users on `openfga-operator.enabled: false` (the default) see identical rendered 
 
 ### Positive
 
-- **All 6 migration issues resolved** — no Helm hooks means no ArgoCD/FluxCD/`--wait` incompatibility
+- **Migration issues resolved** (#211, #107, #120, #100, #126) — no Helm hooks means no ArgoCD/FluxCD/`--wait` incompatibility
 - **`k8s-wait-for` eliminated** — removes an unmaintained image with CVEs from the supply chain (#132, #144)
-- **Least-privilege enforced** — separate ServiceAccounts for migration (DDL) and runtime (CRUD) (#95)
+- **Least-privilege available** — `migration.serviceAccount.create` separates the migration (DDL) and runtime (CRUD) ServiceAccounts (#95)
 - **Runtime surface area reduced** — when `openfga-operator.enabled: true`, the legacy migration Job, init-container `k8s-wait-for` logic, and job-watching RBAC are skipped from the rendered manifest
 - **Migration is observable** — Job is a regular resource visible in all tools; ConfigMap records migration history; operator conditions surface errors
 - **Idempotent and crash-safe** — operator can restart at any point and resume correctly

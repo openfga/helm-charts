@@ -1,9 +1,9 @@
 # ADR-001: Adopt a Kubernetes Operator for OpenFGA Lifecycle Management
 
-- **Status:** Accepted — Stage 1 implemented
+- **Status:** Proposed
 - **Date:** 2026-04-06
 - **Deciders:** OpenFGA Helm Charts maintainers
-- **Related Issues:** #211, #107, #120, #100, #95, #126, #132, #143, #144
+- **Related Issues:** #211, #107, #120, #100, #95, #126, #132, #144
 
 ## Context
 
@@ -51,16 +51,16 @@ The OpenFGA Helm chart currently handles all lifecycle concerns — deployment, 
 
 ## Decision
 
-We will build an **OpenFGA Kubernetes Operator** that handles:
+We will build an **OpenFGA Kubernetes Operator**. This ADR decides Stage 1 only:
 
 1. **Database migration orchestration** (Stage 1) — replacing Helm hooks, the `k8s-wait-for` init container, and shared ServiceAccount with operator-managed migration Jobs.
 
-2. **Declarative store lifecycle management** (Stages 2-4) — exposing `FGAStore`, `FGAModel`, and `FGATuples` CRDs for GitOps-native authorization configuration.
+2. **Declarative store lifecycle management** (Stages 2-4) — `FGAStore`, `FGAModel`, and `FGATuples` CRDs for GitOps-native authorization configuration. Under consideration; each stage needs its own ADR before implementation.
 
 The operator will be:
 - Written in Go using `controller-runtime` / kubebuilder
 - Distributed as a Helm subchart dependency of the main OpenFGA chart
-- Optional — users who don't need it can set `openfga-operator.enabled: false` and fall back to the existing behavior
+- Optional — `openfga-operator.enabled` defaults to `false`, which keeps the existing behavior
 
 Development will follow a staged approach to deliver value incrementally:
 
@@ -73,7 +73,7 @@ Development will follow a staged approach to deliver value incrementally:
 
 ## Implementation Status
 
-Stage 1 has shipped on the `feat/operator-migration` branch. Stages 2-4 are planned but not yet implemented.
+Stage 1 is implemented alongside this ADR (openfga chart 0.4.0, openfga-operator chart 0.1.0). Stages 2-4 are not implemented.
 
 ### Delivered in Stage 1
 
@@ -88,30 +88,30 @@ Stage 1 has shipped on the `feat/operator-migration` branch. Stages 2-4 are plan
 - `FGAStore`, `FGAModel`, and `FGATuples` CRDs and their controllers
 - Declarative store/model/tuple lifecycle management
 
-### Backward-compatibility path (deprecated)
+### Backward-compatibility path
 
-When `openfga-operator.enabled: false`, the chart still renders the legacy migration path: the Helm-hook migration Job, the `groundnuty/k8s-wait-for` init container, and the job-status RBAC. **This path is deprecated and will be removed in a future release** once the operator is the default and users have had time to migrate. It remains only to preserve backward compatibility during the transition.
+When `openfga-operator.enabled: false` (the default), the chart still renders the legacy migration path: the Helm-hook migration Job, the `groundnuty/k8s-wait-for` init container, and the job-status RBAC. Making the operator the default and retiring this path is left to a later ADR.
 
 ## Consequences
 
 ### Positive
 
-- **Resolves all 6 migration issues** (#211, #107, #120, #100, #95, #126) and related dependency issues (#132, #144) on the operator-enabled path
-- **Removes `k8s-wait-for` from the operator-enabled path** — the unmaintained, CVE-carrying image is no longer used when `openfga-operator.enabled: true`, and will be removed from the chart entirely once the legacy path is retired
+- **Resolves the migration issues** (#211, #107, #120, #100, #126) and related dependency issues (#132, #144) on the operator-enabled path; #95 is addressed by the opt-in migration ServiceAccount
+- **Removes `k8s-wait-for` from the operator-enabled path** — the unmaintained, CVE-carrying image is no longer used when `openfga-operator.enabled: true`, and would leave the chart entirely if the legacy path is retired
 - **Enables GitOps-native authorization management** (planned, Stages 2-4) — stores, models, and tuples will become declarative Kubernetes resources that ArgoCD/FluxCD can sync
-- **Enforces least-privilege** — separate ServiceAccounts for migration (DDL) and runtime (CRUD) on the operator-enabled path
-- **Path to simplifying the Helm chart** — the migration Job template, init container logic, job-status RBAC, and hook annotations are conditionalized behind `openfga-operator.enabled: false` and scheduled for removal when the legacy path is retired
+- **Enables least-privilege** — `migration.serviceAccount.create` gives migration Jobs (DDL) a ServiceAccount separate from the runtime (CRUD) on the operator-enabled path
+- **Path to simplifying the Helm chart** — the migration Job template, init container logic, job-status RBAC, and hook annotations are conditionalized behind `openfga-operator.enabled: false` and could be removed if the legacy path is retired
 - **Follows Kubernetes ecosystem conventions** — operators are the standard pattern for managing stateful application lifecycle
 
 ### Negative
 
 - **New component to maintain** — the operator is a full Go project with its own release cycle, CI, testing, and CVE surface
-- **Increased deployment footprint** — an additional pod running in the cluster (though resource requirements are minimal: ~50m CPU, ~64Mi memory)
+- **Increased deployment footprint** — an additional pod running in the cluster (default requests 10m CPU, 64Mi memory)
 - **Learning curve** — contributors need to understand controller-runtime patterns to modify the operator
 - **CRD management complexity** (applies once Stages 2-4 land) — Helm does not upgrade or delete CRDs; users may need to apply CRD manifests separately on operator upgrades
-- **Two code paths during the transition** — the chart must maintain both the operator-enabled path and the deprecated legacy path until the latter is removed
+- **Two code paths** — the chart must maintain both the operator-enabled path and the legacy path
 
 ### Neutral
 
-- **Backward compatibility preserved during the transition** — `openfga-operator.enabled: false` keeps the existing Helm-hook behavior working for users who have not yet migrated, but this path is deprecated and slated for removal
+- **Backward compatibility preserved** — `openfga-operator.enabled: false` (the default) keeps the existing Helm-hook behavior unchanged
 - **No change for memory-datastore users** — users running with `datastore.engine: memory` are unaffected (no migrations, no operator needed)
