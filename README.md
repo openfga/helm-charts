@@ -14,6 +14,7 @@ It is designed to make it easy for developers to model their application permiss
 ## Charts
 
 * [openfga](https://github.com/openfga/helm-charts/blob/main/charts/openfga)
+* [openfga-operator](https://github.com/openfga/helm-charts/blob/main/charts/openfga-operator) — runs OpenFGA database migrations; installed by the openfga chart with `openfga-operator.enabled: true`
 
 ## Contributing
 

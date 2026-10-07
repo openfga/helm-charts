@@ -1,0 +1,29 @@
+suite: operator metrics
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should disable the metrics endpoint by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --metrics-bind-address=0
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: metrics
+            containerPort: 8080
+            protocol: TCP
+
+  - it: should serve metrics on a named port when enabled
+    set:
+      metrics.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --metrics-bind-address=:8080
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: metrics
+            containerPort: 8080
+            protocol: TCP

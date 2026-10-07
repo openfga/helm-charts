@@ -75,6 +75,52 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Create the name of the migration service account to use (operator mode only)
+*/}}
+{{- define "openfga.migrationServiceAccountName" -}}
+{{- if .Values.migration.serviceAccount.create }}
+{{- default (printf "%s-migration" (include "openfga.fullname" .)) .Values.migration.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- required "migration.serviceAccount.name must be set when migration.serviceAccount.create=false" .Values.migration.serviceAccount.name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Identity of the datastore the operator migrates. The operator runs the migration
+again whenever this changes, e.g. when the chart points at a different database
+with the same OpenFGA image. Credentials in the URI are left out, so a password
+change does not count and no secret goes into the hash. migration.trigger is any
+user-chosen string that forces another run, for changes the chart cannot see
+such as a Secret rotated under the same name.
+*/}}
+{{- define "openfga.migrationTrigger" -}}
+{{- $ds := .Values.datastore -}}
+{{- $uri := regexReplaceAll "^([a-z0-9+.-]+://)?[^@/]*@" (toString (default "" $ds.uri)) "${1}" -}}
+{{- dict "engine" $ds.engine "uri" $uri "username" $ds.username "uriSecret" $ds.uriSecret "existingSecret" $ds.existingSecret "secretKeys" $ds.secretKeys "trigger" .Values.migration.trigger | toJson | sha256sum | trunc 16 -}}
+{{- end -}}
+
+{{/*
+migrate.annotations without Helm hook keys, as JSON for the operator to put on
+the migration Job and its pod
+*/}}
+{{- define "openfga.migrationAnnotations" -}}
+{{- $out := dict -}}
+{{- range $k, $v := .Values.migrate.annotations -}}
+{{- if not (hasPrefix "helm.sh/" $k) -}}{{- $_ := set $out $k (toString $v) -}}{{- end -}}
+{{- end -}}
+{{- toJson $out -}}
+{{- end -}}
+
+{{/*
+Return true if the openfga-operator runs the database migrations for this release
+*/}}
+{{- define "openfga.operatorMigrations" -}}
+{{- if and (index .Values "openfga-operator" "enabled") .Values.datastore.applyMigrations (has .Values.datastore.engine (list "postgres" "mysql")) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
 Return true if a secret object should be created
 */}}
 {{- define "openfga.createSecret" -}}

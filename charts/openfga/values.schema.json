@@ -1205,6 +1205,14 @@
                     },
                     "default": {}
                 },
+                "labels": {
+                    "type": "object",
+                    "description": "Map of labels to add to the migration job and pod",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "default": {}
+                },
                 "timeout": {
                     "type": [
                         "string",
@@ -1292,6 +1300,53 @@
             "type": "boolean",
             "description": "This value is not used by this chart, but allows a common pattern of enabling/disabling subchart dependencies (where OpenFGA is a subchart)",
             "default": false
+        },
+        "openfga-operator": {
+            "type": "object",
+            "description": "Configuration for the openfga-operator subchart, validated by that chart's own schema. When enabled, database migrations are run by the operator instead of the Helm hook Job.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Install the openfga-operator and let it run database migrations",
+                    "default": false
+                }
+            }
+        },
+        "migration": {
+            "type": "object",
+            "description": "Settings for the migration Jobs the operator creates. Only used when openfga-operator.enabled is true.",
+            "properties": {
+                "trigger": {
+                    "type": "string",
+                    "description": "Change to any new value to run the migration again without changing the image or datastore settings",
+                    "default": ""
+                },
+                "serviceAccount": {
+                    "type": "object",
+                    "properties": {
+                        "create": {
+                            "type": "boolean",
+                            "description": "Create a dedicated service account for migration Jobs; otherwise they run as the OpenFGA service account",
+                            "default": false
+                        },
+                        "annotations": {
+                            "type": "object",
+                            "description": "Annotations to add to the migration service account",
+                            "additionalProperties": {
+                                "type": "string"
+                            },
+                            "default": {}
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The name of the migration service account. Defaults to {fullname}-migration. Must be set explicitly when create=false and a dedicated migration SA is desired; leave empty to skip the annotation entirely.",
+                            "default": ""
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "additionalProperties": false
         }
     },
     "additionalProperties": false
