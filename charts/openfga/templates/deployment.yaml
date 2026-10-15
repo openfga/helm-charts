@@ -4,9 +4,45 @@ metadata:
   name: {{ include "openfga.fullname" . }}
   labels:
     {{- include "openfga.labels" . | nindent 4 }}
-  {{- with .Values.annotations }}
+  {{- $operatorMigrations := include "openfga.operatorMigrations" . }}
+  {{- if or $operatorMigrations .Values.annotations }}
   annotations:
+    {{- if $operatorMigrations }}
+    openfga.dev/migration-enabled: "true"
+    openfga.dev/container-name: "{{ .Chart.Name }}"
+    openfga.dev/migration-trigger: {{ include "openfga.migrationTrigger" . | quote }}
+    {{- if or .Values.migration.serviceAccount.create .Values.migration.serviceAccount.name }}
+    openfga.dev/migration-service-account: '{{ include "openfga.migrationServiceAccountName" . }}'
+    {{- end }}
+    {{- with .Values.migrate.extraInitContainers }}
+    openfga.dev/migration-init-containers: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.sidecars }}
+    openfga.dev/migration-sidecars: {{ include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.extraVolumes }}
+    openfga.dev/migration-volumes: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.extraVolumeMounts }}
+    openfga.dev/migration-volume-mounts: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.datastore.migrations.resources }}
+    openfga.dev/migration-resources: {{ . | toJson | quote }}
+    {{- end }}
+    {{- with .Values.migrate.timeout }}
+    openfga.dev/migration-timeout: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.migrate.labels }}
+    openfga.dev/migration-labels: {{ toJson . | quote }}
+    {{- end }}
+    {{- $migrationAnnotations := include "openfga.migrationAnnotations" . }}
+    {{- if ne $migrationAnnotations "{}" }}
+    openfga.dev/migration-annotations: {{ $migrationAnnotations | quote }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
   {{- if not  .Values.autoscaling.enabled }}
@@ -37,9 +73,10 @@ spec:
       serviceAccountName: {{ include "openfga.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{ if or (and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers }}
+      {{- $legacyMigrations := and (not (index .Values "openfga-operator" "enabled")) (has .Values.datastore.engine (list "postgres" "mysql")) }}
+      {{ if or (and $legacyMigrations .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers }}
       initContainers:
-        {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
+        {{- if and $legacyMigrations .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -49,7 +86,7 @@ spec:
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
-        {{- if and (has .Values.datastore.engine (list "postgres" "mysql")) (eq .Values.datastore.migrationType "initContainer") }}
+        {{- if and $legacyMigrations (eq .Values.datastore.migrationType "initContainer") }}
         {{- with .Values.migrate.extraInitContainers }}
           {{- toYaml . | nindent 8 }}
         {{- end }}

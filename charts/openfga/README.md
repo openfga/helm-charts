@@ -151,6 +151,21 @@ datastore:
     passwordKey: password
 ```
 
+### Running migrations with the operator
+
+By default the chart runs database migrations from a Helm hook Job and gates the OpenFGA pods on it with an init container. Helm hooks are not run by Argo CD and conflict with `helm install --wait` and Flux, so the chart can instead install the [openfga-operator](../openfga-operator), which runs `openfga migrate` as a regular Job whenever the OpenFGA image or migration inputs change:
+
+```yaml
+openfga-operator:
+  enabled: true
+
+datastore:
+  engine: postgres
+  uriSecret: my-postgres-secret
+```
+
+The operator only runs migrations; replicas, autoscaling and the pod template stay under the chart's control. It records the migrated version in the `<release>-migration-status` ConfigMap and sets a `MigrationFailed` condition on the Deployment if a migration fails. The migration Job is built from the OpenFGA pod spec, so `sidecars` such as a database proxy and `extraInitContainers` run alongside it, and the `migrate.*` values (labels, non-hook annotations such as `sidecar.istio.io/inject: "false"`, extra volumes, init containers, sidecars, timeout) and `datastore.migrations.resources` are applied to it. The Job runs as the OpenFGA service account; set `migration.serviceAccount.create` to give it a dedicated `<release>-migration` one, for example with cloud IAM annotations for DDL permissions. Migrations run when the image tag or the datastore connection settings change, so pin `image.tag` to a release rather than a floating tag; set `migration.trigger` to any new value to run one on demand. See the [operator README](../../operator/README.md) for how it works and its limitations.
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `openfga` deployment:
