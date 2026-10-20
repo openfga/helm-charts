@@ -298,6 +298,10 @@ checkQueryCache:
   limit:
   ttl:
 
+checkCache:
+  enabled: true
+  limit:
+
 experimentals: []
 
 maxTuplesPerWrite:
