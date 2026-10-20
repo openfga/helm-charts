@@ -825,6 +825,25 @@
                 }
             }
         },
+        "checkCache": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "renders OPENFGA_CHECK_CACHE_LIMIT from checkCache.limit. Defaults to true, unlike checkQueryCache.enabled, because this is a chart-only convenience toggle: OpenFGA's CheckCacheConfig has only a Limit field, with no corresponding OPENFGA_CHECK_CACHE_ENABLED server flag, so defaulting it to false would silently disable the canonical cache-limit override whenever checkCache.limit is set",
+                    "default": true
+                },
+                "limit": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "minimum": 0,
+                    "description": "the size limit (in items) of the shared Check cache that backs checkQueryCache (and, when enabled, checkIteratorCache and cacheController). OPENFGA_CHECK_QUERY_CACHE_LIMIT / checkQueryCache.limit is deprecated upstream and is bound to a config key the OpenFGA server never unmarshals into its shared-cache size, so it silently falls back to the server's built-in default of 10000 regardless of the value set there. OPENFGA_CHECK_CACHE_LIMIT, rendered from this field, is the only value that actually sizes the cache as of OpenFGA v1.19+. The server binds this to a uint32 flag with no bounds checking of its own, so a negative value here would render as a literal negative string the server cannot parse; minimum: 0 catches that at lint/install time instead",
+                    "default": 10000
+                }
+            }
+        },
         "experimentals": {
             "type": "array",
             "description": "a list of experimental features to enable",

@@ -344,6 +344,11 @@ spec:
               value: "{{ .Values.checkQueryCache.ttl }}"
             {{- end }}
 
+            {{- if and .Values.checkCache.enabled .Values.checkCache.limit }}
+            - name: OPENFGA_CHECK_CACHE_LIMIT
+              value: "{{ .Values.checkCache.limit }}"
+            {{- end }}
+
             {{- if .Values.requestDurationDatastoreQueryCountBuckets }}
             - name: OPENFGA_REQUEST_DURATION_DATASTORE_QUERY_COUNT_BUCKETS
               value: "{{ join "," .Values.requestDurationDatastoreQueryCountBuckets }}"
