@@ -124,3 +124,31 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: maxsurge
+
+  - it: should accept a null rollingUpdate to clear it when switching to Recreate
+    set:
+      deploymentStrategy:
+        type: Recreate
+        rollingUpdate: null
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: Recreate
+            rollingUpdate: null
+
+  - it: should accept null rollingUpdate parameters to clear them
+    set:
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: null
+          maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: null
+              maxUnavailable: 0
