@@ -39,6 +39,29 @@
         "deploymentStrategy": {
             "type": ["object", "null"],
             "description": "Specifies the strategy used to replace old pods by new ones. Passed through verbatim to the deployment's spec.strategy field. For more information see https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["RollingUpdate", "Recreate"],
+                    "description": "Type of deployment strategy"
+                },
+                "rollingUpdate": {
+                    "type": "object",
+                    "description": "Rolling update parameters, used when type is RollingUpdate",
+                    "properties": {
+                        "maxSurge": {
+                            "type": ["integer", "string"],
+                            "description": "Maximum number or percentage of pods that can be scheduled above the desired number of pods"
+                        },
+                        "maxUnavailable": {
+                            "type": ["integer", "string"],
+                            "description": "Maximum number or percentage of pods that can be unavailable during the update"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "additionalProperties": false,
             "default": {}
         },
         "autoscaling": {

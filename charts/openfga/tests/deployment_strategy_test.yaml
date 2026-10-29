@@ -35,13 +35,15 @@ tests:
     set:
       minReadySeconds: -1
     asserts:
-      - failedTemplate: {}
+      - failedTemplate:
+          errorPattern: minReadySeconds
 
   - it: should reject minReadySeconds of 600 or more
     set:
       minReadySeconds: 600
     asserts:
-      - failedTemplate: {}
+      - failedTemplate:
+          errorPattern: minReadySeconds
 
   - it: should not render strategy when deploymentStrategy is not set
     asserts:
@@ -81,3 +83,44 @@ tests:
       - equal:
           path: spec.strategy.type
           value: Recreate
+
+  - it: should render percentage values for maxSurge and maxUnavailable
+    set:
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 25%
+          maxUnavailable: 0%
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate.maxSurge
+          value: 25%
+      - equal:
+          path: spec.strategy.rollingUpdate.maxUnavailable
+          value: 0%
+
+  - it: should reject an unknown strategy type
+    set:
+      deploymentStrategy:
+        type: RollingUpdates
+    asserts:
+      - failedTemplate:
+          errorPattern: deploymentStrategy.type
+
+  - it: should reject an unknown deploymentStrategy key
+    set:
+      deploymentStrategy:
+        rollingupdate:
+          maxSurge: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: rollingupdate
+
+  - it: should reject an unknown rollingUpdate key
+    set:
+      deploymentStrategy:
+        rollingUpdate:
+          maxsurge: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: maxsurge
