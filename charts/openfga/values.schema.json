@@ -30,6 +30,40 @@
             "description": "The number of OpenFGA server replicas (pods) to deploy",
             "default": 3
         },
+        "minReadySeconds": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 599,
+            "description": "Minimum number of seconds for which a newly created pod should be ready without any of its containers crashing, for it to be considered available. Must be non-negative and smaller than the deployment's progressDeadlineSeconds (Kubernetes default: 600). Defaults to the Kubernetes default (0). For more information see https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#min-ready-seconds"
+        },
+        "deploymentStrategy": {
+            "type": ["object", "null"],
+            "description": "Specifies the strategy used to replace old pods by new ones. Passed through verbatim to the deployment's spec.strategy field. For more information see https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy",
+            "properties": {
+                "type": {
+                    "type": ["string", "null"],
+                    "enum": ["RollingUpdate", "Recreate", null],
+                    "description": "Type of deployment strategy"
+                },
+                "rollingUpdate": {
+                    "type": ["object", "null"],
+                    "description": "Rolling update parameters, used when type is RollingUpdate",
+                    "properties": {
+                        "maxSurge": {
+                            "type": ["integer", "string", "null"],
+                            "description": "Maximum number or percentage of pods that can be scheduled above the desired number of pods"
+                        },
+                        "maxUnavailable": {
+                            "type": ["integer", "string", "null"],
+                            "description": "Maximum number or percentage of pods that can be unavailable during the update"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "additionalProperties": false,
+            "default": {}
+        },
         "autoscaling": {
             "type": "object",
             "properties": {
