@@ -1,0 +1,13 @@
+# Installs the openfga-operator subchart next to OpenFGA through chart-testing:
+# subchart resolution, operator RBAC and the operator pod starting up. The
+# memory datastore needs no migration, so the Deployment is not opted in to
+# operator migrations; the Postgres migration path is covered by the operator
+# E2E step in .github/workflows/test.yml.
+
+datastore:
+  engine: memory
+
+openfga-operator:
+  enabled: true
+  image:
+    pullPolicy: Never

@@ -1,0 +1,103 @@
+# -- Used as the dependency condition by the openfga chart; has no effect when
+# this chart is installed on its own.
+enabled: true
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/openfga/openfga-operator
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (defaults to the chart appVersion). CI publishes the
+  # appVersion tag once per version and does not overwrite it, so it stays stable
+  # for a given chart version. To pin a specific main build instead, use the
+  # immutable `<appVersion>-<git-sha>` tag or a digest.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+# -- Override the namespace for all operator resources.
+# Useful when the parent chart deploys subcharts into a different namespace.
+namespaceOverride: ""
+
+serviceAccount:
+  # -- Specifies whether a service account should be created.
+  create: true
+  # -- Annotations to add to the service account.
+  annotations: {}
+  # -- The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template.
+  name: ""
+
+rbac:
+  # -- Create the Role and RoleBinding the operator needs in the watched namespace.
+  create: true
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+
+# -- Namespace to watch for OpenFGA Deployments.
+# Leave empty to default to the operator pod's own namespace (read from
+# the POD_NAMESPACE env var, set via the downward API). This usually
+# equals the release namespace, but when `namespaceOverride` puts the
+# operator in a different namespace than the release, the watch follows
+# the pod — not the release. Set this explicitly to watch a specific
+# namespace independent of where the operator runs. The target namespace
+# must exist before installation so Helm can create the Role and RoleBinding.
+watchNamespace: ""
+
+leaderElection:
+  # -- Enable leader election for controller manager.
+  enabled: true
+
+metrics:
+  # -- Serve controller-runtime metrics on a `metrics` port (8080). Plain HTTP
+  # without authentication, so leave off unless something scrapes it.
+  enabled: false
+
+migrationJob:
+  # -- Number of pod failures before a migration Job is considered failed.
+  backoffLimit: 3
+  # -- Maximum wall-clock seconds a migration Job can run before being terminated.
+  # 0 disables the deadline. A migration that is cut off, such as an index build
+  # on a large table, has to start over on the next attempt.
+  activeDeadlineSeconds: 0
+  # -- Seconds to keep completed Job pods for log inspection before garbage collection.
+  # Failed Jobs are retained for the operator's fixed 60-second retry delay.
+  ttlSecondsAfterFinished: 300
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+podDisruptionBudget:
+  # -- Enable a PodDisruptionBudget for the operator.
+  enabled: false
+  # -- Minimum number of pods that must be available during disruption.
+  # Cannot be set together with maxUnavailable.
+  minAvailable: ""
+  # -- Maximum number of pods that can be unavailable during disruption.
+  # Defaults to 1 when enabled and minAvailable is not set.
+  maxUnavailable: 1
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
