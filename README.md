@@ -20,23 +20,6 @@ It is designed to make it easy for developers to model their application permiss
 
 See [CONTRIBUTING](https://github.com/openfga/.github/blob/main/CONTRIBUTING.md).
 
-## Publishing
-
-The Release Charts workflow runs on pushes to `main` and can also be started
-manually to recover a failed publication. It packages and signs new chart
-versions, uploads them to draft GitHub Releases, waits for the default operator
-image to be available, and pushes the charts to GHCR. Each chart is pulled back
-and compared with its release archive before any draft is published.
-
-GitHub Releases are undrafted only after all required registry artifacts are
-available. The GitHub Pages Helm index is updated afterward so it never links
-to draft release assets. An index failure can therefore leave a published release
-temporarily absent from the Helm index; rerunning the workflow repairs it.
-
-Retries reuse existing release archives and provenance files instead of
-repackaging them. Already published chart versions are not pushed to GHCR again.
-The operator image is built and signed separately by the Operator workflow.
-
 ## Author
 
 [OpenFGA](https://github.com/openfga)

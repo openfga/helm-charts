@@ -4,15 +4,9 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
-
-concurrency:
-  group: release-charts
-  cancel-in-progress: false
 
 jobs:
   release:
-    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
       packages: write
@@ -48,9 +42,6 @@ jobs:
           helm repo add openfga https://openfga.github.io/helm-charts
           helm repo update
 
-      - name: Test release publication ordering
-        run: bash .github/scripts/release-charts_test.sh
-
       - name: Install chart-releaser
         uses: helm/chart-releaser-action@df287104677278f869ca5480bd260358397cc3f9 # v1.8.0
         with:
@@ -59,6 +50,19 @@ jobs:
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
+      - name: Package changed charts
+        run: |
+          set -euo pipefail
+          latest_tag=$(git describe --tags --abbrev=0 HEAD~ 2>/dev/null || git rev-list --max-parents=0 --first-parent HEAD)
+          mkdir -p .cr-release-packages
+          git diff --find-renames --name-only "$latest_tag" -- charts |
+            cut -d / -f 1-2 | sort -u |
+            while IFS= read -r chart; do
+              if [[ -f "$chart/Chart.yaml" ]]; then
+                cr package "$chart" --config .github/cr.yaml
+              fi
+            done
+
       - name: Login to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
@@ -66,8 +70,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish charts before undrafting releases
+      - name: Push charts to GHCR
+        if: ${{ hashFiles('.cr-release-packages/*.tgz') != '' }}
+        run: |
+          set -euo pipefail
+          for pkg in .cr-release-packages/*.tgz; do
+            helm push "$pkg" "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
+          done
+
+      - name: Publish GitHub releases and Helm index
+        if: ${{ hashFiles('.cr-release-packages/*.tgz') != '' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash .github/scripts/release-charts.sh
+        run: |
+          cr upload --owner "${{ github.repository_owner }}" \
+            --git-repo "${{ github.event.repository.name }}" \
+            --commit "$GITHUB_SHA" --config .github/cr.yaml --skip-existing
+          cr index --owner "${{ github.repository_owner }}" \
+            --git-repo "${{ github.event.repository.name }}" \
+            --config .github/cr.yaml --push

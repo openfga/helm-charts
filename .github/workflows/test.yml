@@ -5,17 +5,6 @@ permissions:
 on: pull_request
 
 jobs:
-  release-publication:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Test release publication ordering
-        run: bash .github/scripts/release-charts_test.sh
-
   lint-test:
     runs-on: ubuntu-latest
     steps:
