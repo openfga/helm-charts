@@ -19,3 +19,21 @@ updates:
       dependencies:
         patterns:
           - "*"
+
+  - package-ecosystem: "gomod"
+    directory: "/operator"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/operator"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns:
+          - "*"

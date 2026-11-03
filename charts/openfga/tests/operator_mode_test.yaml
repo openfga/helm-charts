@@ -1,0 +1,282 @@
+suite: operator mode
+templates:
+  - templates/deployment.yaml
+tests:
+  # --- Deployment annotations ---
+  - it: should set operator annotations when operator and migration are enabled
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+          value: "true"
+      - equal:
+          path: metadata.annotations["openfga.dev/container-name"]
+          value: openfga
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+
+  - it: should set the migration service account annotation when the chart creates one
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      migration.serviceAccount.create: true
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+          value: RELEASE-NAME-openfga-migration
+
+  - it: should pass migration Job configuration to the operator
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.migrations.resources.requests.cpu: 100m
+      migrate.timeout: 2m
+      migrate.extraInitContainers:
+        - name: prepare-proxy
+          image: busybox:1.36
+      migrate.sidecars:
+        - name: database-proxy
+          image: "{{ .Release.Name }}-proxy:v2"
+      migrate.extraVolumes:
+        - name: proxy-config
+          secret:
+            secretName: database-proxy
+      migrate.extraVolumeMounts:
+        - name: proxy-config
+          mountPath: /credentials
+          readOnly: true
+      migrate.annotations:
+        helm.sh/hook: post-install
+        admission.example.com/inject: enabled
+      migrate.labels:
+        app.kubernetes.io/component: overridden
+        network-policy.example.com/database: allowed
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-init-containers"]
+          value: '[{"image":"busybox:1.36","name":"prepare-proxy"}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-sidecars"]
+          value: '[{"image":"RELEASE-NAME-proxy:v2","name":"database-proxy"}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-volumes"]
+          value: '[{"name":"proxy-config","secret":{"secretName":"database-proxy"}}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-volume-mounts"]
+          value: '[{"mountPath":"/credentials","name":"proxy-config","readOnly":true}]'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-resources"]
+          value: '{"requests":{"cpu":"100m"}}'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-timeout"]
+          value: 2m
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-annotations"]
+          value: '{"admission.example.com/inject":"enabled"}'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-labels"]
+          value: '{"app.kubernetes.io/component":"overridden","network-policy.example.com/database":"allowed"}'
+
+  - it: should not set operator annotations when operator is disabled
+    set:
+      openfga-operator.enabled: false
+      annotations:
+        custom: value
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+      - equal:
+          path: metadata.annotations.custom
+          value: value
+
+  - it: should not set operator annotations for the memory datastore
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: memory
+    asserts:
+      - isNull:
+          path: metadata.annotations
+
+  - it: should derive the migration trigger from the datastore settings
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: postgres://a/openfga
+    asserts:
+      - matchRegex:
+          path: metadata.annotations["openfga.dev/migration-trigger"]
+          pattern: ^[0-9a-f]{16}$
+
+  - it: should change the migration trigger when the database or migration.trigger changes
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: postgres://b/openfga
+      migration.trigger: "2"
+    asserts:
+      - notEqual:
+          path: metadata.annotations["openfga.dev/migration-trigger"]
+          # value for postgres://a/openfga with no explicit trigger, from the case above
+          value: 791636a2daefd486
+
+  - it: should not change the migration trigger when only the database password changes
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: postgres://openfga:other-password@a/openfga
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-trigger"]
+          value: 791636a2daefd486
+
+  - it: should forward migrate labels and non-hook annotations to the operator
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      migrate.labels:
+        team: auth
+      migrate.annotations:
+        helm.sh/hook: post-install
+        sidecar.istio.io/inject: "false"
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-labels"]
+          value: '{"team":"auth"}'
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-annotations"]
+          value: '{"sidecar.istio.io/inject":"false"}'
+
+  - it: should not emit migration metadata annotations for hook-only annotations
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-labels"]
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-annotations"]
+
+  - it: should use custom migration service account name when set
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      migration.serviceAccount.name: my-custom-sa
+    asserts:
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+          value: my-custom-sa
+
+  - it: should not set migration-service-account annotation by default
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-service-account"]
+
+  # --- Replica count ---
+  # The operator never changes the replica count, so it renders as in legacy mode.
+  - it: should set replicas to replicaCount in operator mode
+    set:
+      openfga-operator.enabled: true
+      replicaCount: 3
+      datastore.engine: postgres
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: should leave replicas to the autoscaler in operator mode
+    set:
+      openfga-operator.enabled: true
+      autoscaling.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - isNull:
+          path: spec.replicas
+      - equal:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+          value: "true"
+
+  - it: should set replicas to replicaCount when operator is disabled
+    set:
+      openfga-operator.enabled: false
+      replicaCount: 5
+      datastore.engine: postgres
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 5
+
+  # applyMigrations=false opts out: no operator annotations, replicas rendered normally.
+  - it: should not use operator mode when applyMigrations is false
+    set:
+      openfga-operator.enabled: true
+      replicaCount: 4
+      datastore.engine: postgres
+      datastore.applyMigrations: false
+    asserts:
+      - isNull:
+          path: metadata.annotations["openfga.dev/migration-enabled"]
+      - equal:
+          path: spec.replicas
+          value: 4
+
+  # --- initContainers gating ---
+  - it: should not render migration initContainers when operator is enabled
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.waitForMigrations: true
+      datastore.migrationType: job
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  - it: should render migration initContainers when operator is disabled
+    set:
+      openfga-operator.enabled: false
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.applyMigrations: true
+      datastore.waitForMigrations: true
+      datastore.migrationType: job
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.initContainers
+
+  # --- Pod template labels ---
+  # The pod template must carry the full common label set (helm.sh/chart,
+  # component, version, managed-by, part-of) — not just selectorLabels —
+  # so logging/monitoring tooling that filters on these labels keeps working
+  # across upgrades. Regression guard for the operator-migration branch.
+  - it: should include common labels on pod template metadata when operator is disabled
+    set:
+      openfga-operator.enabled: false
+    asserts:
+      - isNotEmpty:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: authorization-controller
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/part-of"]
+          value: openfga
+
+  - it: should include common labels on pod template metadata when operator is enabled
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+    asserts:
+      - isNotEmpty:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: authorization-controller
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/part-of"]
+          value: openfga

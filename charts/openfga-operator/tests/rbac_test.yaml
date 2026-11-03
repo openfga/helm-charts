@@ -1,0 +1,16 @@
+suite: operator RBAC
+templates:
+  - templates/role.yaml
+  - templates/rolebinding.yaml
+tests:
+  - it: should create the Role and RoleBinding by default
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: should create nothing when rbac.create is false
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 0

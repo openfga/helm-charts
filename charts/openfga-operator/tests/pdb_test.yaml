@@ -1,0 +1,25 @@
+suite: operator PodDisruptionBudget
+templates:
+  - templates/pdb.yaml
+tests:
+  - it: should preserve zero minAvailable
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: 0
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 0
+      - isNull:
+          path: spec.maxUnavailable
+
+  - it: should preserve zero maxUnavailable
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 0
+      - isNull:
+          path: spec.minAvailable
