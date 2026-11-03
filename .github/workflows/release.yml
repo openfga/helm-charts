@@ -4,9 +4,15 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: release-charts
+  cancel-in-progress: false
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
       packages: write
@@ -42,13 +48,16 @@ jobs:
           helm repo add openfga https://openfga.github.io/helm-charts
           helm repo update
 
-      - name: Run chart-releaser
+      - name: Test release publication ordering
+        run: bash .github/scripts/release-charts_test.sh
+
+      - name: Install chart-releaser
         uses: helm/chart-releaser-action@df287104677278f869ca5480bd260358397cc3f9 # v1.8.0
         with:
-          config: .github/cr.yaml
+          install_only: true
+          version: v1.9.0
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-          CR_SKIP_EXISTING: true
 
       - name: Login to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -57,11 +66,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push chart to GHCR
-        if: ${{ hashFiles('.cr-release-packages/*.tgz') != '' }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          for pkg in .cr-release-packages/*.tgz; do
-            helm push "${pkg}" "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
-          done
+      - name: Publish charts before undrafting releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/release-charts.sh
