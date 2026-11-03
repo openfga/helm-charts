@@ -273,6 +273,41 @@ entries:
         url: https://openfga.github.io/helm-charts/pgp-public-key.asc
     apiVersion: v2
     appVersion: v1.22.1
+    created: "2026-11-03T15:42:43.698139305Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
+      version: 12.12.10
+    - condition: mysql.enabled
+      name: mysql
+      repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
+      version: 9.6.0
+    - name: common
+      repository: oci://registry-1.docker.io/bitnamicharts
+      tags:
+      - bitnami-common
+      version: 2.13.3
+    - condition: openfga-operator.enabled
+      name: openfga-operator
+      repository: file://../openfga-operator
+      version: 0.1.0
+    description: A Kubernetes Helm chart for the OpenFGA project.
+    digest: 262bf85d65ce761aab93fc39c9f5f5ebb1d5ff5155e9624fcfd9fc280c418bf5
+    home: https://openfga.github.io/helm-charts
+    icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+    name: openfga
+    type: application
+    urls:
+    - https://github.com/openfga/helm-charts/releases/download/openfga-0.4.0/openfga-0.4.0.tgz
+    version: 0.4.0
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/signKey: |
+        fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+        url: https://openfga.github.io/helm-charts/pgp-public-key.asc
+    apiVersion: v2
+    appVersion: v1.22.1
     created: "2026-10-29T16:05:14.290110865Z"
     dependencies:
     - condition: postgresql.enabled
@@ -3903,4 +3938,29 @@ entries:
     urls:
     - https://github.com/openfga/helm-charts/releases/download/openfga-0.1.0/openfga-0.1.0.tgz
     version: 0.1.0
-generated: "2026-10-29T16:05:14.290562682Z"
+  openfga-operator:
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/operator: "true"
+      artifacthub.io/operatorCapabilities: Basic Install
+      artifacthub.io/signKey: |
+        fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+        url: https://openfga.github.io/helm-charts/pgp-public-key.asc
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-11-03T15:42:43.919058538Z"
+    description: Helm chart for the OpenFGA Kubernetes operator.
+    digest: 51c1c9be4452016b4a0125ac7aab741fc16ea659f2d60117bf9f449dc95558fb
+    home: https://openfga.github.io/helm-charts
+    icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+    maintainers:
+    - name: OpenFGA Authors
+      url: https://github.com/openfga
+    name: openfga-operator
+    sources:
+    - https://github.com/openfga/helm-charts
+    type: application
+    urls:
+    - https://github.com/openfga/helm-charts/releases/download/openfga-operator-0.1.0/openfga-operator-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-11-03T15:42:43.920037081Z"
