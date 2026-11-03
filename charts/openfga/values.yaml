@@ -354,6 +354,8 @@ autoscaling:
 
 nodeSelector: {}
 
+priorityClassName: ""
+
 tolerations: []
 
 topologySpreadConstraints: []

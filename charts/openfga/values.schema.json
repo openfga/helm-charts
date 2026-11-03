@@ -129,6 +129,11 @@
             "description": "Specifies the node which pods managed by the deployment will get assigned to. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector.",
             "default": {}
         },
+        "priorityClassName": {
+            "type": "string",
+            "description": "The name of the PriorityClass for the pods managed by the deployment. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/.",
+            "default": ""
+        },
         "affinity": {
             "type": "object",
             "description": "Specifies the deployment affinity which expands the types of constraints you can define on pods assignment and scheduling. For more information see https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity.",

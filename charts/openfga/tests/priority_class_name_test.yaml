@@ -1,0 +1,16 @@
+suite: deployment - priorityClassName
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should not render priorityClassName when not set
+    asserts:
+      - notExists:
+          path: spec.template.spec.priorityClassName
+
+  - it: should render priorityClassName when set
+    set:
+      priorityClassName: high-priority
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: high-priority
