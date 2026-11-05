@@ -1,3 +1,19 @@
+{{- if include "openfga.operatorMigrations" . }}
+NOTE: database migrations are run by the openfga-operator. Whenever the OpenFGA
+image or datastore settings change it runs the {{ include "openfga.fullname" . }}-migrate Job and
+records the migrated version in the {{ include "openfga.fullname" . }}-migration-status ConfigMap. On a new database the
+OpenFGA pods stay NotReady until the first migration completes.
+
+If the pods do not become ready, check the operator and the migration Job:
+
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=openfga-operator --tail=100
+  kubectl get job/{{ include "openfga.fullname" . }}-migrate -n {{ .Release.Namespace }} -o yaml
+  kubectl describe deployment/{{ include "openfga.fullname" . }} -n {{ .Release.Namespace }}
+
+A `MigrationFailed` condition on the Deployment means the migration Job failed;
+the operator retries it every 60s.
+
+{{ end -}}
 1. Get the application URL by running these commands:
 {{- if .Values.ingress.enabled }}
 {{- range $host := .Values.ingress.hosts }}

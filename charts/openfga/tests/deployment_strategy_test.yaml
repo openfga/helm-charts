@@ -1,0 +1,154 @@
+suite: deployment - minReadySeconds and deploymentStrategy
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should not render minReadySeconds when not set
+    asserts:
+      - notExists:
+          path: spec.minReadySeconds
+
+  - it: should render minReadySeconds when set to 0
+    set:
+      minReadySeconds: 0
+    asserts:
+      - equal:
+          path: spec.minReadySeconds
+          value: 0
+
+  - it: should render minReadySeconds when set to a positive value
+    set:
+      minReadySeconds: 60
+    asserts:
+      - equal:
+          path: spec.minReadySeconds
+          value: 60
+
+  - it: should render minReadySeconds at the maximum allowed value
+    set:
+      minReadySeconds: 599
+    asserts:
+      - equal:
+          path: spec.minReadySeconds
+          value: 599
+
+  - it: should reject a negative minReadySeconds
+    set:
+      minReadySeconds: -1
+    asserts:
+      - failedTemplate:
+          errorPattern: minReadySeconds
+
+  - it: should reject minReadySeconds of 600 or more
+    set:
+      minReadySeconds: 600
+    asserts:
+      - failedTemplate:
+          errorPattern: minReadySeconds
+
+  - it: should not render strategy when deploymentStrategy is not set
+    asserts:
+      - notExists:
+          path: spec.strategy
+
+  - it: should not render strategy when deploymentStrategy is explicitly null
+    set:
+      deploymentStrategy: null
+    asserts:
+      - notExists:
+          path: spec.strategy
+
+  - it: should render deploymentStrategy verbatim as spec.strategy
+    set:
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+      - equal:
+          path: spec.strategy.rollingUpdate.maxSurge
+          value: 1
+      - equal:
+          path: spec.strategy.rollingUpdate.maxUnavailable
+          value: 0
+
+  - it: should render a Recreate strategy
+    set:
+      deploymentStrategy:
+        type: Recreate
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: should render percentage values for maxSurge and maxUnavailable
+    set:
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 25%
+          maxUnavailable: 0%
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate.maxSurge
+          value: 25%
+      - equal:
+          path: spec.strategy.rollingUpdate.maxUnavailable
+          value: 0%
+
+  - it: should reject an unknown strategy type
+    set:
+      deploymentStrategy:
+        type: RollingUpdates
+    asserts:
+      - failedTemplate:
+          errorPattern: deploymentStrategy.type
+
+  - it: should reject an unknown deploymentStrategy key
+    set:
+      deploymentStrategy:
+        rollingupdate:
+          maxSurge: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: rollingupdate
+
+  - it: should reject an unknown rollingUpdate key
+    set:
+      deploymentStrategy:
+        rollingUpdate:
+          maxsurge: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: maxsurge
+
+  - it: should accept a null rollingUpdate to clear it when switching to Recreate
+    set:
+      deploymentStrategy:
+        type: Recreate
+        rollingUpdate: null
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: Recreate
+            rollingUpdate: null
+
+  - it: should accept null rollingUpdate parameters to clear them
+    set:
+      deploymentStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: null
+          maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: null
+              maxUnavailable: 0
