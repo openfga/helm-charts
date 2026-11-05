@@ -1,0 +1,53 @@
+suite: deployment - checkCache
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should render OPENFGA_CHECK_CACHE_LIMIT when checkCache.enabled is unset (defaults true) and checkCache.limit is set
+    set:
+      checkCache:
+        limit: 500000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_CHECK_CACHE_LIMIT
+            value: "500000"
+
+  - it: should not render OPENFGA_CHECK_CACHE_LIMIT when checkCache.enabled is explicitly false
+    set:
+      checkCache:
+        enabled: false
+        limit: 500000
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_CHECK_CACHE_LIMIT
+          any: true
+
+  - it: should not render OPENFGA_CHECK_CACHE_LIMIT when checkCache.limit is unset
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_CHECK_CACHE_LIMIT
+          any: true
+
+  - it: checkCache.limit is independent of the deprecated checkQueryCache.limit
+    set:
+      checkQueryCache:
+        enabled: true
+        limit: 100000
+      checkCache:
+        limit: 500000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_CHECK_QUERY_CACHE_LIMIT
+            value: "100000"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENFGA_CHECK_CACHE_LIMIT
+            value: "500000"
