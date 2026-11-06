@@ -45,10 +45,23 @@ jobs:
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@92c6b97fa9f664492a2592e0d1d80bc6bf378957 # v1.9.0
         with:
-          config: .github/cr.yaml
+          install_only: true
+          version: v1.9.0
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-          CR_SKIP_EXISTING: true
+
+      - name: Package changed charts
+        run: |
+          set -euo pipefail
+          latest_tag=$(git describe --tags --abbrev=0 HEAD~ 2>/dev/null || git rev-list --max-parents=0 --first-parent HEAD)
+          mkdir -p .cr-release-packages
+          git diff --find-renames --name-only "$latest_tag" -- charts |
+            cut -d / -f 1-2 | sort -u |
+            while IFS= read -r chart; do
+              if [[ -f "$chart/Chart.yaml" ]]; then
+                cr package "$chart" --config .github/cr.yaml
+              fi
+            done
 
       - name: Login to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -57,11 +70,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push chart to GHCR
+      - name: Push charts to GHCR
         if: ${{ hashFiles('.cr-release-packages/*.tgz') != '' }}
         run: |
           set -euo pipefail
-          shopt -s nullglob
           for pkg in .cr-release-packages/*.tgz; do
-            helm push "${pkg}" "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
+            helm push "$pkg" "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
           done
+
+      - name: Publish GitHub releases and Helm index
+        if: ${{ hashFiles('.cr-release-packages/*.tgz') != '' }}
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cr upload --owner "${{ github.repository_owner }}" \
+            --git-repo "${{ github.event.repository.name }}" \
+            --commit "$GITHUB_SHA" --config .github/cr.yaml --skip-existing
+          cr index --owner "${{ github.repository_owner }}" \
+            --git-repo "${{ github.event.repository.name }}" \
+            --config .github/cr.yaml --push
