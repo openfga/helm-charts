@@ -42,14 +42,13 @@ jobs:
           helm repo add openfga https://openfga.github.io/helm-charts
           helm repo update
 
-      - name: Run chart-releaser
+      - name: Install chart-releaser
         uses: helm/chart-releaser-action@92c6b97fa9f664492a2592e0d1d80bc6bf378957 # v1.9.0
         with:
           install_only: true
-          version: v1.9.0
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
+      # Packaging runs outside chart-releaser-action so charts reach GHCR before
+      # their GitHub releases are published. Change detection mirrors the action's.
       - name: Package changed charts
         run: |
           set -euo pipefail
@@ -70,22 +69,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push charts to GHCR
+      - name: Push chart to GHCR
         if: ${{ hashFiles('.cr-release-packages/*.tgz') != '' }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
           for pkg in .cr-release-packages/*.tgz; do
-            helm push "$pkg" "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
+            helm push "${pkg}" "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
           done
 
       - name: Publish GitHub releases and Helm index
         if: ${{ hashFiles('.cr-release-packages/*.tgz') != '' }}
+        uses: helm/chart-releaser-action@92c6b97fa9f664492a2592e0d1d80bc6bf378957 # v1.9.0
+        with:
+          config: .github/cr.yaml
+          skip_packaging: true
         env:
-          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cr upload --owner "${{ github.repository_owner }}" \
-            --git-repo "${{ github.event.repository.name }}" \
-            --commit "$GITHUB_SHA" --config .github/cr.yaml --skip-existing
-          cr index --owner "${{ github.repository_owner }}" \
-            --git-repo "${{ github.event.repository.name }}" \
-            --config .github/cr.yaml --push
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          CR_SKIP_EXISTING: true
