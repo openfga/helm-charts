@@ -166,6 +166,26 @@ datastore:
 
 The operator only runs migrations; replicas, autoscaling and the pod template stay under the chart's control. It records the migrated version in the `<release>-migration-status` ConfigMap and sets a `MigrationFailed` condition on the Deployment if a migration fails. The migration Job is built from the OpenFGA pod spec, so `sidecars` such as a database proxy and `extraInitContainers` run alongside it, and the `migrate.*` values (labels, non-hook annotations such as `sidecar.istio.io/inject: "false"`, extra volumes, init containers, sidecars, timeout) and `datastore.migrations.resources` are applied to it. The Job runs as the OpenFGA service account; set `migration.serviceAccount.create` to give it a dedicated `<release>-migration` one, for example with cloud IAM annotations for DDL permissions. Migrations run when the image tag or the datastore connection settings change, so pin `image.tag` to a release rather than a floating tag; set `migration.trigger` to any new value to run one on demand. See the [operator README](../../operator/README.md) for how it works and its limitations.
 
+### Configuring a PodDisruptionBudget
+
+Enable a `policy/v1` PodDisruptionBudget to keep a minimum number of OpenFGA pods available during voluntary disruptions such as node drains and cluster upgrades. Set **exactly one** of `pdb.minAvailable` or `pdb.maxUnavailable` (the other must be an empty string); each accepts an integer or a percentage string.
+
+```yaml
+pdb:
+  create: true
+  minAvailable: 1
+  maxUnavailable: ""
+```
+
+```yaml
+pdb:
+  create: true
+  minAvailable: ""
+  maxUnavailable: "25%"
+```
+
+Avoid a `minAvailable` greater than or equal to the number of replicas (including a single replica, as with the `memory` datastore), since that blocks node drains.
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `openfga` deployment:

@@ -356,6 +356,14 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
 
+# PodDisruptionBudget for the OpenFGA pods.
+# Set exactly one of minAvailable or maxUnavailable (leave the other as "").
+# Each accepts an integer (e.g. 1) or a percentage string (e.g. "50%").
+pdb:
+  create: false
+  minAvailable: 1
+  maxUnavailable: ""
+
 nodeSelector: {}
 
 tolerations: []

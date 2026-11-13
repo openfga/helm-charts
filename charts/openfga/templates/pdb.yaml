@@ -1,0 +1,26 @@
+{{- if .Values.pdb.create }}
+{{- $minSet := and (not (kindIs "invalid" .Values.pdb.minAvailable)) (ne (toString .Values.pdb.minAvailable) "") }}
+{{- $maxSet := and (not (kindIs "invalid" .Values.pdb.maxUnavailable)) (ne (toString .Values.pdb.maxUnavailable) "") }}
+{{- if and $minSet $maxSet }}
+{{- fail "pdb: only one of pdb.minAvailable or pdb.maxUnavailable may be set; set the other to an empty string" }}
+{{- end }}
+{{- if not (or $minSet $maxSet) }}
+{{- fail "pdb: one of pdb.minAvailable or pdb.maxUnavailable must be set when pdb.create is true" }}
+{{- end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "openfga.fullname" . }}
+  namespace: {{ include "openfga.namespace" . }}
+  labels:
+    {{- include "openfga.labels" . | nindent 4 }}
+spec:
+  {{- if $minSet }}
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "openfga.selectorLabels" . | nindent 6 }}
+{{- end }}
