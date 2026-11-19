@@ -58,6 +58,10 @@ initContainer:
 
 ## Configure extra options for OpenFGA containers' liveness, readiness and startup probes
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes
+##
+## The probes use the native gRPC probe. Native gRPC probes do not support TLS, so when grpc.tls.enabled
+## is true they run the `openfga healthcheck` command instead, which does not verify the server
+## certificate. Use the custom*Probe values below to replace them.
 
 ## @param livenessProbe.enabled Enable liveness probes on OpenFGA containers.
 ## @param livenessProbe.initialDelaySeconds Number of seconds after the container has started before liveness probes are initiated.

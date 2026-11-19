@@ -1,0 +1,168 @@
+suite: probes and helm test
+templates:
+  - templates/deployment.yaml
+  - templates/tests/test-connection.yaml
+set:
+  startupProbe.enabled: true
+tests:
+  - it: should use the native gRPC probe when gRPC TLS is disabled
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.grpc.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.grpc.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.grpc.port
+          value: 8081
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.exec
+
+  - it: should use the native gRPC probe when HTTP is disabled and gRPC TLS is disabled
+    template: templates/deployment.yaml
+    set:
+      http.enabled: false
+      grpc.addr: 0.0.0.0:9000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.grpc.port
+          value: 9000
+
+  - it: should run openfga healthcheck when gRPC TLS is enabled
+    template: templates/deployment.yaml
+    set:
+      image.tag: v1.23.0
+      grpc.tls.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value: ["/openfga", "healthcheck"]
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.exec.command
+          value: ["/openfga", "healthcheck"]
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.exec.command
+          value: ["/openfga", "healthcheck"]
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.grpc
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.periodSeconds
+          value: 10
+
+  - it: should run openfga healthcheck when gRPC TLS is enabled whatever the HTTP settings
+    template: templates/deployment.yaml
+    set:
+      image.tag: v1.23.0
+      grpc.tls.enabled: true
+      http.tls.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.exec.command
+          value: ["/openfga", "healthcheck"]
+
+  - it: should run openfga healthcheck when gRPC TLS is enabled and HTTP is disabled
+    template: templates/deployment.yaml
+    set:
+      image.tag: v1.23.0
+      grpc.tls.enabled: true
+      http.enabled: false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.exec.command
+          value: ["/openfga", "healthcheck"]
+
+  - it: should keep grpc_health_probe for images without openfga healthcheck
+    template: templates/deployment.yaml
+    set:
+      image.tag: v1.22.1
+      grpc.tls.enabled: true
+      grpc.tls.cert: /certs/tls.crt
+      grpc.tls.key: /certs/tls.key
+      grpc.tls.ca: /certs/ca.crt
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value:
+            - grpc_health_probe
+            - -addr=0.0.0.0:8081
+            - -tls
+            - -tls-ca-cert=/certs/ca.crt
+            - -tls-client-cert=/certs/tls.crt
+            - -tls-client-key=/certs/tls.key
+
+  - it: should prefer custom probes
+    template: templates/deployment.yaml
+    set:
+      grpc.tls.enabled: true
+      http.enabled: false
+      customLivenessProbe:
+        tcpSocket:
+          port: 8081
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            tcpSocket:
+              port: 8081
+
+  - it: should not render disabled probes
+    template: templates/deployment.yaml
+    set:
+      readinessProbe.enabled: false
+      livenessProbe.enabled: false
+      startupProbe.enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+
+  - it: should run openfga healthcheck in the helm test
+    template: templates/tests/test-connection.yaml
+    release:
+      name: rel
+    set:
+      image.tag: v1.23.0
+      grpc.addr: 0.0.0.0:9000
+    asserts:
+      - equal:
+          path: spec.containers[0].command
+          value: ["/openfga", "healthcheck", "--grpc-addr=rel-openfga:9000"]
+
+  - it: should run openfga healthcheck with TLS in the helm test when gRPC TLS is enabled
+    template: templates/tests/test-connection.yaml
+    release:
+      name: rel
+    set:
+      image.tag: v1.23.0
+      grpc.tls.enabled: true
+    asserts:
+      - equal:
+          path: spec.containers[0].command
+          value: ["/openfga", "healthcheck", "--grpc-addr=rel-openfga:8081", "--grpc-tls-enabled"]
+
+  - it: should run grpc_health_probe in the helm test for images without openfga healthcheck
+    template: templates/tests/test-connection.yaml
+    release:
+      name: rel
+    set:
+      image.tag: v1.22
+    asserts:
+      - equal:
+          path: spec.containers[0].command
+          value: ["grpc_health_probe", "-addr=rel-openfga:8081"]
+
+  - it: should treat image tags that are not a release version as having openfga healthcheck
+    template: templates/tests/test-connection.yaml
+    set:
+      image.tag: main-0123abc
+    asserts:
+      - equal:
+          path: spec.containers[0].command[0]
+          value: /openfga
