@@ -254,7 +254,7 @@ bundled subcharts are disabled. Otherwise the URI lives in the chart-managed Sec
 exist yet at pre-install time, so those cases keep the legacy post-* hooks.
 */}}
 {{- define "openfga.migrate.usePreInstallHooks" -}}
-{{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations (eq .Values.datastore.migrationType "job") (or .Values.datastore.uriSecret (and .Values.datastore.existingSecret .Values.datastore.secretKeys.uriKey)) (not .Values.postgresql.enabled) (not .Values.mysql.enabled) -}}
+{{- if and (not (index .Values "openfga-operator" "enabled")) (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations (eq .Values.datastore.migrationType "job") (or .Values.datastore.uriSecret (and .Values.datastore.existingSecret .Values.datastore.secretKeys.uriKey)) (not .Values.postgresql.enabled) (not .Values.mysql.enabled) -}}
 true
 {{- end -}}
 {{- end -}}
