@@ -12,10 +12,20 @@ spec:
     {{- toYaml . | nindent 8 }}
   {{- end }}
   containers:
-    - name: grpc-health-probe
+    - name: healthcheck
       image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
       imagePullPolicy: {{ .Values.image.pullPolicy }}
+      {{- if include "openfga.hasHealthcheckCommand" . }}
+      command:
+        - /openfga
+        - healthcheck
+        - --grpc-addr={{ include "openfga.fullname" . }}:{{ (split ":" .Values.grpc.addr)._1 }}
+        {{- if .Values.grpc.tls.enabled }}
+        - --grpc-tls-enabled
+        {{- end }}
+      {{- else }}
       command: ["grpc_health_probe", '-addr={{ include "openfga.fullname" . }}:{{ (split ":" .Values.grpc.addr)._1 }}']
+      {{- end }}
       {{- with .Values.testContainerSpec }}
         {{- toYaml . | nindent 6 }}
       {{- end }}

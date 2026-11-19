@@ -246,3 +246,41 @@ Return true if a secret object should be created
       key: "password"
 {{- end -}}
 {{- end -}}
+
+{{/*
+Returns "true" when the OpenFGA image provides the `openfga healthcheck` command. Images tagged with
+an older release (such as v1.22.1 or v1.22) only ship the grpc_health_probe binary. Other tags, such
+as custom builds, are assumed to provide the command.
+*/}}
+{{- define "openfga.hasHealthcheckCommand" -}}
+{{- $version := regexFind "^v?[0-9]+\\.[0-9]+(\\.[0-9]+)?" (toString (.Values.image.tag | default .Chart.AppVersion)) -}}
+{{- if not (and $version (semverCompare "<1.23.0" $version)) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Handler for the liveness, readiness and startup probes. Native gRPC probes cannot use TLS, so when gRPC
+TLS is enabled the probes run `openfga healthcheck` in the container, or grpc_health_probe for images
+that do not have the command.
+*/}}
+{{- define "openfga.probeHandler" -}}
+{{- if not .Values.grpc.tls.enabled -}}
+grpc:
+  port: {{ (split ":" .Values.grpc.addr)._1 }}
+{{- else if include "openfga.hasHealthcheckCommand" . -}}
+exec:
+  command:
+    - /openfga
+    - healthcheck
+{{- else -}}
+exec:
+  command:
+    - grpc_health_probe
+    - -addr={{ .Values.grpc.addr }}
+    - -tls
+    - -tls-ca-cert={{ .Values.grpc.tls.ca }}
+    - -tls-client-cert={{ .Values.grpc.tls.cert }}
+    - -tls-client-key={{ .Values.grpc.tls.key }}
+{{- end -}}
+{{- end -}}
