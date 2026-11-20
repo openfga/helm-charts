@@ -164,6 +164,7 @@ Replace `<release>`, `<user>`, `<password>`, and `<database>` with your actual v
 - **`postgres:15`** — matches the Bitnami sub-chart's PostgreSQL 15.4. Using the same major version avoids data directory incompatibilities. You can upgrade to a newer major version after the migration succeeds.
 - **`PGDATA=/bitnami/postgresql/data`** — tells the official image to use the same data directory path as Bitnami, so the existing data is found in place.
 - **Init container** — creates `postgresql.conf` and `pg_hba.conf` inside PGDATA, which Bitnami stores elsewhere. This only runs once (the `if` guard skips creation on subsequent restarts).
+- **Migration hooks** — the Secret and the PostgreSQL Deployment are created by this release, so the chart keeps the `post-upgrade` hook for the migration Job and it runs after they exist. See [Database Migrations](../README.md#database-migrations).
 
 ## Step 3: Run the Upgrade
 
