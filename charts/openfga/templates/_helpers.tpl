@@ -106,7 +106,7 @@ the migration Job and its pod
 {{- define "openfga.migrationAnnotations" -}}
 {{- $out := dict -}}
 {{- range $k, $v := .Values.migrate.annotations -}}
-{{- if not (hasPrefix "helm.sh/" $k) -}}{{- $_ := set $out $k (toString $v) -}}{{- end -}}
+{{- if not (or (hasPrefix "helm.sh/" $k) (kindIs "invalid" $v)) -}}{{- $_ := set $out $k (toString $v) -}}{{- end -}}
 {{- end -}}
 {{- toJson $out -}}
 {{- end -}}
@@ -245,4 +245,88 @@ Return true if a secret object should be created
       name: {{ include "openfga.datastore.secretName" . | quote }}
       key: "password"
 {{- end -}}
+{{- end -}}
+
+{{/*
+Return true if the chart renders the migration hook Job
+*/}}
+{{- define "openfga.migrate.hookJob" -}}
+{{- if and (not (index .Values "openfga-operator" "enabled")) (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations (eq .Values.datastore.migrationType "job") -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return true if nothing the migration Job reads is created by this release
+*/}}
+{{- define "openfga.migrate.externalDatastore" -}}
+{{- $ds := .Values.datastore -}}
+{{- $uriFromSecret := or $ds.uriSecret (and $ds.existingSecret $ds.secretKeys.uriKey) -}}
+{{- $chartUsername := and $ds.username (not (and $ds.existingSecret $ds.secretKeys.usernameKey)) -}}
+{{- $chartPassword := and $ds.password (not (and $ds.existingSecret $ds.secretKeys.passwordKey)) -}}
+{{- if and $uriFromSecret (not $chartUsername) (not $chartPassword) (not .Values.postgresql.enabled) (not .Values.mysql.enabled) (not .Values.extraObjects) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Annotations of the migration hook Job, as JSON
+*/}}
+{{- define "openfga.migrate.hookAnnotations" -}}
+{{- $annotations := dict -}}
+{{- if not (kindIs "invalid" .Values.migrate.annotations) -}}
+{{- $events := ternary "pre-install,pre-upgrade" "post-install,post-upgrade,post-rollback,post-delete" (eq (include "openfga.migrate.externalDatastore" .) "true") -}}
+{{- $annotations = dict "helm.sh/hook" $events "helm.sh/hook-weight" "-5" "helm.sh/hook-delete-policy" "before-hook-creation" -}}
+{{- range $k, $v := .Values.migrate.annotations -}}
+{{- if kindIs "invalid" $v -}}
+{{- $_ := unset $annotations $k -}}
+{{- else -}}
+{{- $_ := set $annotations $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $annotations -}}
+{{- end -}}
+
+{{/*
+Return true if the migration Job runs as a pre-install hook
+*/}}
+{{- define "openfga.migrate.preInstallHook" -}}
+{{- if include "openfga.migrate.hookJob" . -}}
+{{- $events := get (include "openfga.migrate.hookAnnotations" . | fromJson) "helm.sh/hook" | default "" | nospace | splitList "," -}}
+{{- if has "pre-install" $events -}}
+true
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Name of the service account the migration hook Job runs as
+*/}}
+{{- define "openfga.migrate.hookServiceAccountName" -}}
+{{- if and .Values.serviceAccount.create (include "openfga.migrate.preInstallHook" .) -}}
+{{ include "openfga.fullname" . }}-migrate
+{{- else -}}
+{{ include "openfga.serviceAccountName" . }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Annotations of the migration hook Job's own service account, as JSON
+*/}}
+{{- define "openfga.migrate.hookServiceAccountAnnotations" -}}
+{{- $job := include "openfga.migrate.hookAnnotations" . | fromJson -}}
+{{- $annotations := dict -}}
+{{- range $k, $v := .Values.serviceAccount.annotations -}}
+{{- if not (hasPrefix "helm.sh/" $k) -}}
+{{- $_ := set $annotations $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- range $k := list "helm.sh/hook" "helm.sh/hook-delete-policy" -}}
+{{- with get $job $k -}}
+{{- $_ := set $annotations $k . -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $annotations "helm.sh/hook-weight" (sub (int (get $job "helm.sh/hook-weight")) 5 | toString) -}}
+{{- toJson $annotations -}}
 {{- end -}}

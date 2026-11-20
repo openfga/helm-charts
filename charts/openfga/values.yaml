@@ -22,7 +22,8 @@ commonLabels: {}
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account
+  # Annotations to add to the service account. A pre-install migration Job runs as its own
+  # <fullname>-migrate account, which gets a copy of these without their helm.sh/* keys.
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
@@ -381,10 +382,12 @@ migrate:
   sidecars: []
   # -- Added to the migration Job and its pod. With the operator, helm.sh/* keys
   # are dropped and the rest is forwarded (e.g. sidecar.istio.io/inject: "false").
-  annotations:
-    helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
-    helm.sh/hook-weight: "-5"
-    helm.sh/hook-delete-policy: "before-hook-creation"
+  # Without the operator the chart adds the Helm hook keys: pre-install,pre-upgrade when
+  # nothing the Job reads is created by the release, and
+  # post-install,post-upgrade,post-rollback,post-delete otherwise. A key set here replaces the
+  # chart's value, a null key removes it, and `annotations: null` renders the Job without hooks.
+  # See "Database Migrations" in the README.
+  annotations: {}
   # -- Added to the migration Job and its pod in both modes.
   labels: {}
   timeout:
