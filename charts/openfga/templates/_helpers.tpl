@@ -106,7 +106,7 @@ the migration Job and its pod
 {{- define "openfga.migrationAnnotations" -}}
 {{- $out := dict -}}
 {{- range $k, $v := .Values.migrate.annotations -}}
-{{- if not (hasPrefix "helm.sh/" $k) -}}{{- $_ := set $out $k (toString $v) -}}{{- end -}}
+{{- if not (or (hasPrefix "helm.sh/" $k) (kindIs "invalid" $v)) -}}{{- $_ := set $out $k (toString $v) -}}{{- end -}}
 {{- end -}}
 {{- toJson $out -}}
 {{- end -}}
@@ -273,9 +273,19 @@ true
 Annotations of the migration hook Job, as JSON
 */}}
 {{- define "openfga.migrate.hookAnnotations" -}}
+{{- $annotations := dict -}}
+{{- if not (kindIs "invalid" .Values.migrate.annotations) -}}
 {{- $events := ternary "pre-install,pre-upgrade" "post-install,post-upgrade,post-rollback,post-delete" (eq (include "openfga.migrate.externalDatastore" .) "true") -}}
-{{- $annotations := dict "helm.sh/hook" $events "helm.sh/hook-weight" "-5" "helm.sh/hook-delete-policy" "before-hook-creation" -}}
-{{- toJson (mergeOverwrite $annotations (.Values.migrate.annotations | default dict)) -}}
+{{- $annotations = dict "helm.sh/hook" $events "helm.sh/hook-weight" "-5" "helm.sh/hook-delete-policy" "before-hook-creation" -}}
+{{- range $k, $v := .Values.migrate.annotations -}}
+{{- if kindIs "invalid" $v -}}
+{{- $_ := unset $annotations $k -}}
+{{- else -}}
+{{- $_ := set $annotations $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $annotations -}}
 {{- end -}}
 
 {{/*

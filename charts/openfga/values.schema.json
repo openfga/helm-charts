@@ -1257,9 +1257,12 @@
                 },
                 "annotations": {
                     "type": "object",
-                    "description": "Map of annotations to add to the migration job's manifest",
+                    "description": "Map of annotations to add to the migration job's manifest. A null value removes a chart default, and a null map renders the job without Helm hooks",
                     "additionalProperties": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "default": {}
                 },
