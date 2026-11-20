@@ -262,7 +262,7 @@ Return true if nothing the migration Job reads is created by this release
 {{- define "openfga.migrate.externalDatastore" -}}
 {{- $ds := .Values.datastore -}}
 {{- $uriFromSecret := or $ds.uriSecret (and $ds.existingSecret $ds.secretKeys.uriKey) -}}
-{{- if and $uriFromSecret (not .Values.postgresql.enabled) (not .Values.mysql.enabled) -}}
+{{- if and $uriFromSecret (not .Values.postgresql.enabled) (not .Values.mysql.enabled) (not .Values.extraObjects) -}}
 true
 {{- end -}}
 {{- end -}}

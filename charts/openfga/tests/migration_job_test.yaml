@@ -68,6 +68,25 @@ tests:
           path: metadata.annotations["helm.sh/hook"]
           value: "post-install,post-upgrade,post-rollback,post-delete"
 
+  - it: keeps the legacy hooks when the release ships extraObjects
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      extraObjects:
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: my-secret
+          stringData:
+            uri: postgres://openfga:changeme@openfga-postgres:5432/openfga
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga
+
   - it: lets migrate.annotations override the chart's pre-install hook keys
     set:
       datastore.engine: postgres
