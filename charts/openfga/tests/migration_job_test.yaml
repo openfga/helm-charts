@@ -87,6 +87,42 @@ tests:
           path: spec.template.spec.serviceAccountName
           value: RELEASE-NAME-openfga
 
+  - it: keeps the legacy hooks when the password comes from the chart-managed Secret
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      datastore.password: changeme
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
+
+  - it: keeps the legacy hooks when the username comes from the chart-managed Secret
+    set:
+      datastore.engine: postgres
+      datastore.existingSecret: my-secret
+      datastore.secretKeys.uriKey: uri
+      datastore.secretKeys.passwordKey: password
+      datastore.username: openfga
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade,post-rollback,post-delete"
+
+  - it: runs as a pre-install/pre-upgrade hook when existingSecret supplies every credential
+    set:
+      datastore.engine: postgres
+      datastore.existingSecret: my-secret
+      datastore.secretKeys.uriKey: uri
+      datastore.secretKeys.usernameKey: username
+      datastore.secretKeys.passwordKey: password
+      datastore.username: ignored
+      datastore.password: ignored
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+
   - it: lets migrate.annotations override the chart's pre-install hook keys
     set:
       datastore.engine: postgres
