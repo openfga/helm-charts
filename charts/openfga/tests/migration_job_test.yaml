@@ -14,6 +14,9 @@ tests:
       - equal:
           path: metadata.annotations["helm.sh/hook-delete-policy"]
           value: "before-hook-creation"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga
 
   - it: runs as a pre-install/pre-upgrade hook for an externally provided datastore (uriSecret)
     set:
@@ -32,6 +35,9 @@ tests:
       - notMatchRegex:
           path: metadata.annotations["helm.sh/hook"]
           pattern: "post-"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migrate
 
   - it: runs as a pre-install/pre-upgrade hook for an externally provided datastore (existingSecret with uriKey)
     set:
@@ -76,10 +82,50 @@ tests:
       - equal:
           path: metadata.annotations["helm.sh/hook-weight"]
           value: "-3"
-      # A key the user does not set still falls back to the chart default.
       - equal:
           path: metadata.annotations["helm.sh/hook-delete-policy"]
           value: "before-hook-creation"
+
+  - it: lets migrate.annotations opt an in-release datastore into pre-install hooks
+    set:
+      datastore.engine: postgres
+      migrate.annotations:
+        helm.sh/hook: pre-install, pre-upgrade
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install, pre-upgrade"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga-migrate
+
+  - it: lets migrate.annotations keep the legacy hooks for an external datastore
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      migrate.annotations:
+        helm.sh/hook: post-install,post-upgrade
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "post-install,post-upgrade"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-openfga
+
+  - it: runs as the existing ServiceAccount when the chart does not create one
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      serviceAccount.create: false
+      serviceAccount.name: existing-account
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: existing-account
 
   - it: is not rendered when migrations run as an init container
     set:
