@@ -124,6 +124,7 @@ Replace `<release>`, `<user>`, `<password>`, and `<database>` with your actual v
 - **`mysql:8.0`** — matches the Bitnami sub-chart's MySQL 8.0.x. Using the same major version avoids data directory incompatibilities. You can upgrade to a newer version after the migration succeeds.
 - **`--datadir=/bitnami/mysql/data`** — tells the official image to use the same data directory path as Bitnami, so the existing data is found in place.
 - **No init container needed** — unlike PostgreSQL, MySQL auto-detects an existing data directory and does not require config file fixups.
+- **Migration hooks** — the Secret and the MySQL Deployment are created by this release, so the chart keeps the `post-upgrade` hook for the migration Job and it runs after they exist. See [Database Migrations](../README.md#database-migrations).
 
 ## Step 3: Run the Upgrade
 
