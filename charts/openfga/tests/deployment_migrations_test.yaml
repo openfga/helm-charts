@@ -1,0 +1,129 @@
+suite: deployment - migration init containers
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should run migrate-database when migrationType is initContainer and waitForMigrations is false
+    set:
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.migrationType: initContainer
+      datastore.waitForMigrations: false
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers
+          content:
+            name: migrate-database
+          any: true
+
+  - it: should run migrate-database without wait-for-migration when migrationType is initContainer and waitForMigrations is true
+    set:
+      datastore.engine: mysql
+      datastore.uri: "root:secret@tcp(localhost:3306)/openfga?parseTime=true"
+      datastore.migrationType: initContainer
+      datastore.waitForMigrations: true
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers
+          content:
+            name: migrate-database
+          any: true
+      - notContains:
+          path: spec.template.spec.initContainers
+          content:
+            name: wait-for-migration
+          any: true
+
+  - it: should render migrate.extraInitContainers before migrate-database when waitForMigrations is false
+    set:
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.migrationType: initContainer
+      datastore.waitForMigrations: false
+      migrate.extraInitContainers:
+        - name: prepare-proxy
+          image: busybox
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: prepare-proxy
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: migrate-database
+
+  - it: should not run migrate-database when applyMigrations is false, even with extraInitContainers
+    set:
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.migrationType: initContainer
+      datastore.applyMigrations: false
+      extraInitContainers:
+        - name: extra-init
+          image: busybox
+    asserts:
+      - notContains:
+          path: spec.template.spec.initContainers
+          content:
+            name: migrate-database
+          any: true
+      - contains:
+          path: spec.template.spec.initContainers
+          content:
+            name: extra-init
+          any: true
+
+  - it: should not render initContainers when applyMigrations is false
+    set:
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.migrationType: initContainer
+      datastore.applyMigrations: false
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  - it: should not wait for the migration job when waitForMigrations is false
+    set:
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.migrationType: job
+      datastore.waitForMigrations: false
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  - it: should wait for the migration job before extraInitContainers when waitForMigrations is true
+    set:
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.migrationType: job
+      datastore.waitForMigrations: true
+      extraInitContainers:
+        - name: extra-init
+          image: busybox
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-migration
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: extra-init
+
+  - it: should not run migrate-database for the memory engine
+    set:
+      datastore.engine: memory
+      datastore.migrationType: initContainer
+      datastore.waitForMigrations: false
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  - it: should not run migrate-database when the operator runs migrations
+    set:
+      openfga-operator.enabled: true
+      datastore.engine: postgres
+      datastore.uri: "postgres://localhost/openfga"
+      datastore.migrationType: initContainer
+      datastore.waitForMigrations: false
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers

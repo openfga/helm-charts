@@ -531,7 +531,7 @@
                 },
                 "waitForMigrations": {
                     "type": "boolean",
-                    "description": "wait for migrations to complete before starting the server",
+                    "description": "wait for the migration job to complete before starting the server; only used when migrationType is job",
                     "default": true
                 }
             }
