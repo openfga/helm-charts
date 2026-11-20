@@ -45,6 +45,16 @@ tests:
       - notExists:
           path: spec.template.spec.initContainers
 
+  - it: waits for the migration Job when it is a regular resource without hooks
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      migrate.annotations: null
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-migration
+
   - it: waits for the migration Job when migrate.annotations keeps the legacy hooks
     set:
       datastore.engine: postgres
