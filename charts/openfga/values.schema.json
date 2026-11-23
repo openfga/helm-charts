@@ -1073,6 +1073,11 @@
             },
             "default": {}
         },
+        "dnsConfig": {
+            "type": ["object", "null"],
+            "description": "DNS configuration for OpenFGA server pods, merged with the default pod DNS policy. For example, options: [{name: timeout, value: '1'}].",
+            "default": {}
+        },
         "service": {
             "type": "object",
             "properties": {
