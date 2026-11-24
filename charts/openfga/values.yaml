@@ -33,6 +33,9 @@ annotations: {}
 podAnnotations: {}
 podExtraLabels: {}
 
+# Optional pod DNS configuration, merged with the default DNS policy.
+dnsConfig: {}
+
 extraEnvVars: []
 extraVolumes: []
 extraVolumeMounts: []

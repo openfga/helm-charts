@@ -1,0 +1,48 @@
+suite: deployment - DNS configuration
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: should preserve default DNS settings when not configured
+    asserts:
+      - notExists:
+          path: spec.template.spec.dnsConfig
+
+  - it: should accept null to clear DNS configuration
+    set:
+      dnsConfig: null
+    asserts:
+      - notExists:
+          path: spec.template.spec.dnsConfig
+
+  - it: should render resolver options without overriding the DNS policy
+    set:
+      dnsConfig:
+        options: [{name: timeout, value: "1"}]
+    asserts:
+      - equal:
+          path: spec.template.spec.dnsConfig
+          value:
+            options: [{name: timeout, value: "1"}]
+      - notExists:
+          path: spec.template.spec.dnsPolicy
+
+  - it: should preserve nameservers, searches and options without values
+    set:
+      dnsConfig:
+        nameservers: [192.0.2.53]
+        searches: [example.internal]
+        options: [{name: ndots, value: "2"}, {name: rotate}]
+    asserts:
+      - equal:
+          path: spec.template.spec.dnsConfig
+          value:
+            nameservers: [192.0.2.53]
+            searches: [example.internal]
+            options: [{name: ndots, value: "2"}, {name: rotate}]
+
+  - it: should reject DNS configuration that is not an object
+    set:
+      dnsConfig: "timeout:1"
+    asserts:
+      - failedTemplate:
+          errorPattern: dnsConfig
