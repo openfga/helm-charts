@@ -95,6 +95,34 @@
             },
             "additionalProperties": false
         },
+        "pdb": {
+            "type": "object",
+            "description": "Configures a PodDisruptionBudget for the OpenFGA pods. Exactly one of minAvailable or maxUnavailable must be set when create is true.",
+            "properties": {
+                "create": {
+                    "type": "boolean",
+                    "description": "Enable/disable creation of a PodDisruptionBudget for the OpenFGA deployment",
+                    "default": false
+                },
+                "minAvailable": {
+                    "description": "Minimum number (integer) or percentage (e.g. \"50%\") of pods that must remain available during voluntary disruptions. Set to an empty string when using maxUnavailable.",
+                    "default": 1,
+                    "anyOf": [
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "string", "pattern": "^([0-9]+%)?$" }
+                    ]
+                },
+                "maxUnavailable": {
+                    "description": "Maximum number (integer) or percentage (e.g. \"25%\") of pods that can be unavailable during voluntary disruptions. Set to an empty string when using minAvailable.",
+                    "default": "",
+                    "anyOf": [
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "string", "pattern": "^([0-9]+%)?$" }
+                    ]
+                }
+            },
+            "additionalProperties": false
+        },
         "commonLabels": {
             "type": "object",
             "description": "Common labels to apply to OpenFGA resources",

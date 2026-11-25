@@ -1,0 +1,115 @@
+suite: pod disruption budget
+templates:
+  - templates/pdb.yaml
+tests:
+  - it: should not render a PodDisruptionBudget by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render a policy/v1 PodDisruptionBudget with minAvailable 1 when created
+    set:
+      pdb.create: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PodDisruptionBudget
+      - isAPIVersion:
+          of: policy/v1
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - notExists:
+          path: spec.maxUnavailable
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: openfga
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  - it: should render only maxUnavailable when it is set instead of minAvailable
+    set:
+      pdb:
+        create: true
+        minAvailable: ""
+        maxUnavailable: 1
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: should accept a percentage for minAvailable
+    set:
+      pdb:
+        create: true
+        minAvailable: 50%
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 50%
+
+  - it: should accept a percentage for maxUnavailable
+    set:
+      pdb:
+        create: true
+        minAvailable: ""
+        maxUnavailable: 25%
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 25%
+      - notExists:
+          path: spec.minAvailable
+
+  - it: should accept maxUnavailable of 0
+    set:
+      pdb:
+        create: true
+        minAvailable: ""
+        maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 0
+
+  - it: should fail when both minAvailable and maxUnavailable are set
+    set:
+      pdb:
+        create: true
+        minAvailable: 1
+        maxUnavailable: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: only one of pdb.minAvailable or pdb.maxUnavailable
+
+  - it: should fail when neither minAvailable nor maxUnavailable is set
+    set:
+      pdb:
+        create: true
+        minAvailable: ""
+        maxUnavailable: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: one of pdb.minAvailable or pdb.maxUnavailable must be set
+
+  - it: should reject an invalid percentage string
+    set:
+      pdb:
+        create: true
+        minAvailable: abc
+    asserts:
+      - failedTemplate:
+          errorPattern: minAvailable
+
+  - it: should reject an unknown pdb key
+    set:
+      pdb:
+        create: true
+        minAvailble: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: minAvailble
