@@ -367,6 +367,8 @@ topologySpreadConstraints: []
 
 affinity: {}
 
+terminationGracePeriodSeconds:
+
 # @param sidecars Add additional sidecar containers to the pods
 # Example:
 # sidecars:
