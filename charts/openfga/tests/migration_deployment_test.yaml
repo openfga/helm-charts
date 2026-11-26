@@ -1,0 +1,67 @@
+suite: migration deployment - wait-for-migration init container
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: waits for the migration Job under the legacy post-* hooks
+    set:
+      datastore.engine: postgres
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.initContainers
+          count: 1
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-migration
+
+  - it: does not wait for a Job that runs as a pre-install hook
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+    asserts:
+      - notExists:
+          path: spec.template.spec.initContainers
+
+  - it: keeps extraInitContainers when the Job runs as a pre-install hook
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      extraInitContainers:
+        - name: extra
+          image: busybox
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.initContainers
+          count: 1
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: extra
+
+  - it: does not wait when migrate.annotations opts into pre-install hooks
+    set:
+      datastore.engine: postgres
+      migrate.annotations:
+        helm.sh/hook: pre-install,pre-upgrade
+    asserts:
+      - notExists:
+          path: spec.template.spec.initContainers
+
+  - it: waits for the migration Job when it is a regular resource without hooks
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      migrate.annotations: null
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-migration
+
+  - it: waits for the migration Job when migrate.annotations keeps the legacy hooks
+    set:
+      datastore.engine: postgres
+      datastore.uriSecret: my-secret
+      migrate.annotations:
+        helm.sh/hook: post-install,post-upgrade
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-migration
