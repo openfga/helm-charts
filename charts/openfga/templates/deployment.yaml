@@ -85,9 +85,11 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- $legacyMigrations := and (not (index .Values "openfga-operator" "enabled")) (has .Values.datastore.engine (list "postgres" "mysql")) }}
-      {{ if or (and $legacyMigrations .Values.datastore.applyMigrations .Values.datastore.waitForMigrations) .Values.extraInitContainers }}
+      {{- $jobWait := and $legacyMigrations .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
+      {{- $initMigrate := and $legacyMigrations .Values.datastore.applyMigrations (eq .Values.datastore.migrationType "initContainer") }}
+      {{- if or $jobWait $initMigrate .Values.extraInitContainers }}
       initContainers:
-        {{- if and $legacyMigrations .Values.datastore.applyMigrations .Values.datastore.waitForMigrations (eq .Values.datastore.migrationType "job") }}
+        {{- if $jobWait }}
         - name: wait-for-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -97,7 +99,7 @@ spec:
           resources:
             {{- toYaml .Values.datastore.migrations.resources | nindent 12 }}
         {{- end }}
-        {{- if and $legacyMigrations (eq .Values.datastore.migrationType "initContainer") }}
+        {{- if $initMigrate }}
         {{- with .Values.migrate.extraInitContainers }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
